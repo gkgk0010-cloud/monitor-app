@@ -276,12 +276,12 @@ export default function TeacherMonitorPage() {
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.container}>
-        <header style={styles.header}>
-          <h1 style={styles.title}>실시간 학생 모니터링</h1>
+    <div className="monitor-page" style={styles.page}>
+      <div className="monitor-container" style={styles.container}>
+        <header className="monitor-header" style={styles.header}>
+          <h1 className="monitor-title" style={styles.title}>실시간 학생 모니터링</h1>
           <div style={styles.headerRight}>
-            <button type="button" onClick={handleCopyTodayStatus} style={styles.copyBtn} title="오늘 출석·미접속 현황 한 번에 카톡용 복사">
+            <button type="button" onClick={handleCopyTodayStatus} className="monitor-copy-btn" style={styles.copyBtn} title="오늘 출석·미접속 현황 한 번에 카톡용 복사">
               📢 오늘 출석·미접속 복사
             </button>
             <button type="button" onClick={() => setLegendOpen((o) => !o)} style={styles.legendBtn} aria-expanded={legendOpen}>
@@ -303,15 +303,15 @@ export default function TeacherMonitorPage() {
         )}
 
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>집중 관리 존 <span style={styles.count}>(상위 {MAIN_ZONE_MAX}명)</span></h2>
-          <div style={styles.cardGrid}>
+          <h2 className="monitor-section-title" style={styles.sectionTitle}>집중 관리 존 <span style={styles.count}>(상위 {MAIN_ZONE_MAX}명)</span></h2>
+          <div className="monitor-card-grid" style={styles.cardGrid}>
             {main.map((row) => {
               const s = style[row.student_color] || style.white;
               const isGold = row.student_color === 'gold';
               return (
                 <div
                   key={row.id}
-                  className={isGold ? 'card-gold-shimmer' : undefined}
+                  className={`monitor-card ${isGold ? 'card-gold-shimmer' : ''}`}
                   style={{
                     ...styles.card,
                     borderLeftColor: s.border,
@@ -320,17 +320,18 @@ export default function TeacherMonitorPage() {
                   }}
                 >
                   <div style={styles.cardHeader}>
-                    <span style={styles.cardName}>{row.student_name ?? '-'}</span>
+                    <span className="monitor-card-name" style={styles.cardName}>{row.student_name ?? '-'}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       {isAbsent2Days(row.last_active) && <span style={styles.badgeAbsent2}>이틀 미접속</span>}
-                      <span style={{ ...styles.badge, background: s.badge }}>{s.label}</span>
+                      <span className="monitor-badge" style={{ ...styles.badge, background: s.badge }}>{s.label}</span>
                     </div>
                   </div>
-                  {row.last_active != null && <div style={styles.cardTime} title="마지막 상태 반영 시각 (한국시간)">{formatActive(row.last_active)}</div>}
-                  <div style={styles.cardInfo}>{getDisplayMent(row, s)}</div>
+                  {row.last_active != null && <div className="monitor-card-time" style={styles.cardTime} title="마지막 상태 반영 시각 (한국시간)">{formatActive(row.last_active)}</div>}
+                  <div className="monitor-card-info" style={styles.cardInfo}>{getDisplayMent(row, s)}</div>
                   <button
                     type="button"
                     onClick={() => copyToClipboard(getKakaoMent(row, s))}
+                    className="monitor-card-copy"
                     style={styles.cardCopyBtn}
                     title="카톡 멘트 복사"
                     aria-label="카톡 멘트 복사"

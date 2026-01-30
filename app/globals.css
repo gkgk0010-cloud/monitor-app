@@ -62,3 +62,48 @@ html, body {
     transform: translateX(-50%) translateY(-4px);
   }
 }
+
+/* 모바일: 폰에서 30명 한눈에 더 잘 보이게 */
+@media (max-width: 640px) {
+  .monitor-page .monitor-card-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+  }
+  .monitor-page .monitor-card {
+    padding: 10px 12px !important;
+    border-radius: 14px !important;
+  }
+  .monitor-page .monitor-card .monitor-card-name {
+    font-size: 13px !important;
+  }
+  .monitor-page .monitor-card .monitor-card-time {
+    font-size: 10px !important;
+    margin-bottom: 2px !important;
+  }
+  .monitor-page .monitor-card .monitor-card-info {
+    font-size: 11px !important;
+    line-height: 1.3 !important;
+    margin-bottom: 6px !important;
+  }
+  .monitor-page .monitor-card .monitor-card-copy {
+    padding: 5px 8px !important;
+    font-size: 10px !important;
+  }
+  .monitor-page .monitor-card .monitor-badge {
+    padding: 2px 5px !important;
+    font-size: 9px !important;
+  }
+  .monitor-page .monitor-section-title {
+    font-size: 0.9rem !important;
+  }
+  .monitor-page .monitor-container {
+    padding: 14px 16px 24px !important;
+  }
+  .monitor-page .monitor-header .monitor-title {
+    font-size: 1.1rem !important;
+  }
+  .monitor-page .monitor-copy-btn {
+    font-size: 11px !important;
+    padding: 5px 10px !important;
+  }
+}
