@@ -1,0 +1,64 @@
+/* 똑패스와 동일한 톤 */
+:root {
+  --primary: #5b7cfa;
+  --primary-dark: #4a6ae8;
+  --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --main-gradient: linear-gradient(to right, #6a11cb 0%, #2575fc 100%);
+  --success: #34a853;
+  --danger: #ea4335;
+  --text: #3d405b;
+  --text-dark: #374151;
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-bg-92: rgba(255, 255, 255, 0.92);
+  --glass-border: rgba(255, 255, 255, 0.5);
+  --glass-shadow: 0 8px 32px rgba(31, 38, 135, 0.05);
+  --card-shadow: 0 4px 24px rgba(106, 17, 203, 0.08);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  min-height: 100vh;
+  font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  color: var(--text-dark);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* gold 카드 테두리 반짝임 (오늘의 MVP) */
+@keyframes gold-shimmer {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(212, 175, 55, 0.4), 6px 6px 12px rgba(212, 175, 55, 0.2), -6px -6px 12px rgba(255, 255, 255, 0.5);
+    border-left-color: #d4af37;
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(212, 175, 55, 0.7), 0 0 14px rgba(244, 228, 166, 0.5), 6px 6px 12px rgba(212, 175, 55, 0.3), -6px -6px 12px rgba(255, 255, 255, 0.5);
+    border-left-color: #f4e4a6;
+  }
+}
+
+.card-gold-shimmer {
+  animation: gold-shimmer 2s ease-in-out infinite;
+}
+
+@keyframes toastFade {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  12% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  88% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px);
+  }
+}
