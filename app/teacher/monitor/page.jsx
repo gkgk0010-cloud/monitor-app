@@ -107,6 +107,18 @@ function isAbsent2Days(ts) {
   }
 }
 
+/** 최근 N분 이내 활동(한국시간 기준) → "지금 접속 중"으로 셈 */
+function isActiveWithinMinutes(ts, minutes) {
+  if (!ts) return false;
+  try {
+    const d = toUTCThenKorea(ts);
+    if (!d || isNaN(d.getTime())) return false;
+    return (Date.now() - d.getTime()) <= minutes * 60 * 1000;
+  } catch {
+    return false;
+  }
+}
+
 function getKakaoMent(row, style) {
   const name = (row.student_name || '').trim() || '이름없음';
   const color = row.student_color || 'white';
@@ -157,6 +169,7 @@ export default function TeacherMonitorPage() {
   const [fetchError, setFetchError] = useState(null);
   const [legendOpen, setLegendOpen] = useState(false);
   const [copyToast, setCopyToast] = useState(null);
+  const [detailStudent, setDetailStudent] = useState(null);
 
   useEffect(() => {
     studentsRef.current = students;
@@ -228,6 +241,8 @@ export default function TeacherMonitorPage() {
   const style = STATUS_STYLE;
   const todaySurvivors = students.filter((r) => isTodayKorea(r.last_active));
   const todayAbsent = students.filter((r) => !isTodayKorea(r.last_active));
+  const liveNowCount = students.filter((r) => isActiveWithinMinutes(r.last_active, 5)).length;
+  const todayEventsCount = statusLogs.filter((log) => isTodayKorea(log?.created_at)).length;
 
   const toInitialStyle = (name) => {
     const s = (name || '').trim();
@@ -290,6 +305,16 @@ export default function TeacherMonitorPage() {
             <span style={styles.liveBadge}><span style={styles.liveDot} /> 실시간</span>
           </div>
         </header>
+        <div style={styles.summaryBar}>
+          <span style={styles.summaryIcon}>🕐</span>
+          <span>24시간 실시간 모니터링</span>
+          <span style={styles.summarySep}>·</span>
+          <span>오늘 출석 <strong>{todaySurvivors.length}명</strong></span>
+          <span style={styles.summarySep}>·</span>
+          <span>지금 접속 중 <strong style={{ color: liveNowCount > 0 ? '#16a34a' : undefined }}>{liveNowCount}명</strong></span>
+          <span style={styles.summarySep}>·</span>
+          <span>오늘 사건 <strong>{todayEventsCount}건</strong></span>
+        </div>
         {copyToast && <div style={styles.toast}>{copyToast}</div>}
 
         {legendOpen && (
@@ -311,13 +336,18 @@ export default function TeacherMonitorPage() {
               return (
                 <div
                   key={row.id}
+                  role="button"
+                  tabIndex={0}
                   className={`monitor-card ${isGold ? 'card-gold-shimmer' : ''}`}
                   style={{
                     ...styles.card,
                     borderLeftColor: s.border,
                     borderLeftWidth: isGold ? 5 : 4,
                     background: s.bg,
+                    cursor: 'pointer',
                   }}
+                  onClick={() => setDetailStudent(row)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailStudent(row); } }}
                 >
                   <div style={styles.cardHeader}>
                     <span className="monitor-card-name" style={styles.cardName}>{row.student_name ?? '-'}</span>
@@ -330,7 +360,7 @@ export default function TeacherMonitorPage() {
                   <div className="monitor-card-info" style={styles.cardInfo}>{getDisplayMent(row, s)}</div>
                   <button
                     type="button"
-                    onClick={() => copyToClipboard(getKakaoMent(row, s))}
+                    onClick={(e) => { e.stopPropagation(); copyToClipboard(getKakaoMent(row, s)); }}
                     className="monitor-card-copy"
                     style={styles.cardCopyBtn}
                     title="카톡 멘트 복사"
@@ -408,7 +438,56 @@ export default function TeacherMonitorPage() {
             )}
           </div>
         </section>
+
+        <section style={styles.section}>
+          <h2 style={styles.sectionTitle}>📋 카톡 멘트 · 빠른 복사</h2>
+          <div style={styles.copySection}>
+            <button type="button" onClick={handleCopyTodayStatus} style={styles.copySectionBtn} title="오늘 출석·미접속 현황 한 번에 카톡용 복사">
+              📢 오늘 출석·미접속 복사
+            </button>
+            <span style={styles.copySectionHint}>집중관리존 카드의 💬 복사로 개별 멘트 복사</span>
+          </div>
+        </section>
         {/* end sections */}
+
+        {detailStudent && (
+          <div style={styles.modalOverlay} onClick={() => setDetailStudent(null)} role="dialog" aria-modal="true" aria-labelledby="detail-title">
+            <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalHeader}>
+                <h2 id="detail-title" style={styles.modalTitle}>🕵️‍♂️ {detailStudent.student_name ?? '-'} 상세</h2>
+                <button type="button" onClick={() => setDetailStudent(null)} style={styles.modalClose} aria-label="닫기">✕</button>
+              </div>
+              <div style={styles.modalBody}>
+                <div style={styles.detailBlock}>
+                  <h3 style={styles.detailBlockTitle}>📊 오늘의 스코어</h3>
+                  <p style={styles.detailPlaceholder}>데이터 수집 연동 예정 · 오늘 N문제 풀이, 정답률 N%</p>
+                </div>
+                <div style={styles.detailBlock}>
+                  <h3 style={styles.detailBlockTitle}>📉 오늘의 약점 (Worst 3)</h3>
+                  <p style={styles.detailPlaceholder}>태그별 오답 연동 예정 · 가정법, 관계사 등</p>
+                </div>
+                <div style={styles.detailBlock}>
+                  <h3 style={styles.detailBlockTitle}>📜 개인 로그</h3>
+                  <div style={styles.detailLogList}>
+                    {statusLogs.filter((log) => (log.student_name || '').trim() === (detailStudent.student_name || '').trim()).length === 0 ? (
+                      <p style={styles.detailLogEmpty}>이 학생의 사건 기록이 없어요.</p>
+                    ) : (
+                      statusLogs
+                        .filter((log) => (log.student_name || '').trim() === (detailStudent.student_name || '').trim())
+                        .slice(0, 20)
+                        .map((log) => (
+                          <div key={log.id} style={styles.detailLogItem}>
+                            <span style={styles.detailLogTime}>[{formatLogTime(log.created_at)}]</span>
+                            <span style={styles.detailLogMsg}>{log.message ?? log.event_type ?? ''}</span>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -432,6 +511,9 @@ const styles = {
   liveBadge: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#E8F5E9', borderRadius: 20, fontSize: 13, fontWeight: 600, color: '#2E7D32' },
   liveDot: { width: 8, height: 8, borderRadius: '50%', background: '#34a853' },
   toast: { position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', padding: '10px 20px', background: '#374151', color: '#fff', borderRadius: 12, fontSize: 14, zIndex: 9999, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' },
+  summaryBar: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, padding: '12px 16px', marginBottom: 20, background: 'linear-gradient(90deg, rgba(106,17,203,0.08) 0%, rgba(37,117,252,0.06) 100%)', borderRadius: 16, border: '1px solid rgba(106,17,203,0.15)', fontSize: 14, color: '#374151', fontWeight: 500 },
+  summaryIcon: { fontSize: 18 },
+  summarySep: { color: '#9ca3af', fontWeight: 400 },
   section: { marginBottom: 28 },
   sectionTitle: { margin: '0 0 14px', paddingLeft: 14, borderLeft: '4px solid #6a11cb', fontSize: '1rem', fontWeight: 700, color: '#374151' },
   count: { fontWeight: 500, color: '#6b7280', fontSize: '0.9rem' },
@@ -459,5 +541,22 @@ const styles = {
   logSep: { color: '#94a3b8', fontSize: 16 },
   logMessage: { color: '#1f2937', flex: 1, fontSize: 16, fontWeight: 500 },
   logEmpty: { padding: 28, textAlign: 'center', color: '#6b7280', fontSize: 16 },
+  copySection: { display: 'flex', flexDirection: 'column', gap: 10, padding: '16px 20px', background: 'rgba(255,255,255,0.92)', borderRadius: 18, border: '1px solid rgba(106,17,203,0.15)' },
+  copySectionBtn: { alignSelf: 'flex-start', padding: '10px 18px', border: '1px solid rgba(107,114,128,0.3)', borderRadius: 12, background: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)', fontSize: 14, fontWeight: 600, color: '#5b21b6', cursor: 'pointer' },
+  copySectionHint: { fontSize: 12, color: '#6b7280' },
+  modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 20 },
+  modalBox: { background: '#fff', borderRadius: 24, maxWidth: 420, width: '100%', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.2)' },
+  modalHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #e5e7eb' },
+  modalTitle: { margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#374151' },
+  modalClose: { width: 36, height: 36, border: 'none', background: 'transparent', fontSize: 18, color: '#6b7280', cursor: 'pointer', borderRadius: 8 },
+  modalBody: { padding: '20px 24px', overflowY: 'auto', flex: 1 },
+  detailBlock: { marginBottom: 24 },
+  detailBlockTitle: { margin: '0 0 10px', fontSize: '0.95rem', fontWeight: 700, color: '#374151' },
+  detailPlaceholder: { margin: 0, fontSize: 13, color: '#6b7280', lineHeight: 1.5 },
+  detailLogList: { background: '#f9fafb', borderRadius: 12, padding: 12, maxHeight: 200, overflowY: 'auto' },
+  detailLogEmpty: { margin: 0, padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 13 },
+  detailLogItem: { display: 'flex', gap: 8, alignItems: 'flex-start', padding: '8px 0', borderBottom: '1px solid #e5e7eb', fontSize: 13 },
+  detailLogTime: { fontFamily: 'monospace', color: '#6b7280', flexShrink: 0 },
+  detailLogMsg: { color: '#374151', flex: 1 },
   errorBox: { padding: 22, background: 'linear-gradient(135deg, #fce8e6 0%, #f9d5d2 100%)', borderRadius: 24, color: '#991b1b' },
 };
