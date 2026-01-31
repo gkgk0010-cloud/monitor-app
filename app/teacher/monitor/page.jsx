@@ -234,6 +234,8 @@ export default function TeacherMonitorPage() {
   const [tick, setTick] = useState(0);
   /** 폰에서 수동 갱신용 (빨간불/파란불 Realtime 끊김 시) */
   const refetchStudentsRef = useRef(null);
+  /** 실시간 사건 기록 수동 갱신용 (Realtime 끊김 시 3연속 오답·복습 완료 등 최신 반영) */
+  const refetchLogsRef = useRef(null);
 
   useEffect(() => {
     studentsRef.current = students;
@@ -394,12 +396,21 @@ export default function TeacherMonitorPage() {
         .limit(LOG_LIMIT);
       if (!error) setStatusLogs(data ?? []);
     };
+    refetchLogsRef.current = fetchLogs;
     fetchLogs();
     const ch = supabase
       .channel('status_logs_changes')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'status_logs' }, fetchLogs)
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    // 탭 복귀 시 사건 기록 재조회 (3연속 오답·복습 완료 등 최신 반영)
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') fetchLogs();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      supabase.removeChannel(ch);
+    };
   }, []);
 
   const { main, safe } = splitZones(students);
@@ -603,7 +614,17 @@ export default function TeacherMonitorPage() {
         </section>
 
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>📢 실시간 사건 기록 <span style={styles.count}>(최신 {LOG_LIMIT}건)</span></h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            <h2 style={styles.sectionTitle}>📢 실시간 사건 기록 <span style={styles.count}>(최신 {LOG_LIMIT}건)</span></h2>
+            <button
+              type="button"
+              onClick={() => refetchLogsRef.current?.()}
+              style={{ padding: '6px 12px', fontSize: 13, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer' }}
+              title="3연속 오답·복습 완료 등이 안 보일 때 눌러서 최신 기록 불러오기"
+            >
+              🔄 갱신
+            </button>
+          </div>
           <div style={styles.logList}>
             {statusLogs.length === 0 ? (
               <div style={styles.logEmpty}>아직 기록된 사건이 없어요.</div>
