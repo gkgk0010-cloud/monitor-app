@@ -200,10 +200,58 @@ export default function TeacherMonitorPage() {
   const [legendOpen, setLegendOpen] = useState(false);
   const [copyToast, setCopyToast] = useState(null);
   const [detailStudent, setDetailStudent] = useState(null);
+  const [detailTodayStats, setDetailTodayStats] = useState(null);
+  const [detailStatsLoading, setDetailStatsLoading] = useState(false);
 
   useEffect(() => {
     studentsRef.current = students;
   }, [students]);
+
+  useEffect(() => {
+    if (!detailStudent?.student_id) {
+      setDetailTodayStats(null);
+      return;
+    }
+    let cancelled = false;
+    setDetailStatsLoading(true);
+    supabase
+      .from('answer_logs')
+      .select('created_at, tag, correct')
+      .eq('student_id', detailStudent.student_id)
+      .order('created_at', { ascending: false })
+      .limit(500)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        setDetailStatsLoading(false);
+        if (error) {
+          setDetailTodayStats(null);
+          return;
+        }
+        const rows = Array.isArray(data) ? data : [];
+        const todayRows = rows.filter((r) => isTodayKorea(r?.created_at));
+        const problemsSolved = todayRows.length;
+        const correctCount = todayRows.filter((r) => r.correct === true).length;
+        const wrongCount = problemsSolved - correctCount;
+        const accuracyPercent = problemsSolved > 0 ? Math.round((correctCount / problemsSolved) * 100) : 0;
+        const wrongByTag = {};
+        todayRows.filter((r) => r.correct === false).forEach((r) => {
+          const t = (r.tag || '').trim() || '(태그없음)';
+          wrongByTag[t] = (wrongByTag[t] || 0) + 1;
+        });
+        const worst3 = Object.entries(wrongByTag)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([tag, count]) => ({ tag, count }));
+        setDetailTodayStats({
+          problemsSolved,
+          correctCount,
+          wrongCount,
+          accuracyPercent,
+          worst3,
+        });
+      });
+    return () => { cancelled = true; };
+  }, [detailStudent?.student_id]);
 
   const copyToClipboard = async (text) => {
     if (!text) return;
@@ -489,11 +537,31 @@ export default function TeacherMonitorPage() {
               <div style={styles.modalBody}>
                 <div style={styles.detailBlock}>
                   <h3 style={styles.detailBlockTitle}>📊 오늘의 스코어</h3>
-                  <p style={styles.detailPlaceholder}>데이터 수집 연동 예정 · 오늘 N문제 풀이, 정답률 N%</p>
+                  {detailStatsLoading ? (
+                    <p style={styles.detailPlaceholder}>불러오는 중...</p>
+                  ) : detailTodayStats ? (
+                    <p style={styles.detailScore}>
+                      오늘 <strong>{detailTodayStats.problemsSolved}문제</strong> 풀었고, 정답률은 <strong>{detailTodayStats.accuracyPercent}%</strong>입니다.
+                      <br />
+                      <span style={styles.detailScoreSub}>({detailTodayStats.correctCount}정답 / {detailTodayStats.wrongCount}오답)</span>
+                    </p>
+                  ) : (
+                    <p style={styles.detailPlaceholder}>오늘 푼 기록이 없어요. (1단계 Supabase 테이블 생성 + 2단계 똑패스 앱 연동 후 자동 반영)</p>
+                  )}
                 </div>
                 <div style={styles.detailBlock}>
                   <h3 style={styles.detailBlockTitle}>📉 오늘의 약점 (Worst 3)</h3>
-                  <p style={styles.detailPlaceholder}>태그별 오답 연동 예정 · 가정법, 관계사 등</p>
+                  {detailStatsLoading ? (
+                    <p style={styles.detailPlaceholder}>불러오는 중...</p>
+                  ) : detailTodayStats?.worst3?.length > 0 ? (
+                    <p style={styles.detailScore}>
+                      오늘 유독 <strong>{detailTodayStats.worst3.map((w) => `${w.tag} ${w.count}개`).join(', ')}</strong>에서 많이 틀렸어요.
+                    </p>
+                  ) : detailTodayStats ? (
+                    <p style={styles.detailPlaceholder}>오늘 오답이 없어요. 잘했어요!</p>
+                  ) : (
+                    <p style={styles.detailPlaceholder}>오늘 푼 기록이 없어요.</p>
+                  )}
                 </div>
                 <div style={styles.detailBlock}>
                   <h3 style={styles.detailBlockTitle}>📜 개인 로그</h3>
@@ -580,6 +648,8 @@ const styles = {
   detailBlock: { marginBottom: 24 },
   detailBlockTitle: { margin: '0 0 10px', fontSize: '0.95rem', fontWeight: 700, color: '#374151' },
   detailPlaceholder: { margin: 0, fontSize: 13, color: '#6b7280', lineHeight: 1.5 },
+  detailScore: { margin: 0, fontSize: 14, color: '#374151', lineHeight: 1.6 },
+  detailScoreSub: { fontSize: 13, color: '#6b7280' },
   detailLogList: { background: '#f9fafb', borderRadius: 12, padding: 12, maxHeight: 200, overflowY: 'auto' },
   detailLogEmpty: { margin: 0, padding: 16, textAlign: 'center', color: '#9ca3af', fontSize: 13 },
   detailLogItem: { display: 'flex', gap: 8, alignItems: 'flex-start', padding: '8px 0', borderBottom: '1px solid #e5e7eb', fontSize: 13 },
