@@ -76,6 +76,19 @@ function formatLogTime(ts) {
   }
 }
 
+/** 로그용 날짜+시간 (어제/오늘 구분용) */
+function formatLogDateAndTime(ts) {
+  if (!ts) return '--';
+  try {
+    const d = toUTCThenKorea(ts);
+    if (!d || isNaN(d.getTime())) return String(ts);
+    const opt = { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+    return d.toLocaleString('ko-KR', opt);
+  } catch {
+    return String(ts);
+  }
+}
+
 function isTodayKorea(ts) {
   if (!ts) return false;
   try {
@@ -158,6 +171,23 @@ function getKakaoMent(row, style) {
     default:
       return `${displayName}, 오늘도 응원해!!`;
   }
+}
+
+/** 실시간 사건 기록 한 행 → 그 로그에 맞는 카톡 개별멘트 (학생명 자동 반영) */
+function getKakaoMentForLog(logRow) {
+  if (!logRow) return '';
+  const name = (logRow.student_name || '').trim() || '이름없음';
+  const eventType = (logRow.event_type || '').toUpperCase();
+  const style = STATUS_STYLE;
+  const colorMap = { GOLD: 'gold', BLUE: 'blue', GREEN: 'green', RED: 'red', PURPLE: 'purple', SHOTGUN: 'white' };
+  const color = colorMap[eventType] || 'white';
+  const row = {
+    student_name: name,
+    student_color: color,
+    info_text: logRow.message || logRow.event_type || '',
+    last_active: logRow.created_at,
+  };
+  return getKakaoMent(row, style[color] || style.white);
 }
 
 export default function TeacherMonitorPage() {
@@ -429,23 +459,22 @@ export default function TeacherMonitorPage() {
             ) : (
               statusLogs.map((row) => (
                 <div key={row.id} style={styles.logItem}>
-                  <span style={styles.logTime}>[{formatLogTime(row.created_at)}]</span>
+                  <span style={styles.logTime} title="한국시간">[{formatLogDateAndTime(row.created_at)}]</span>
                   <span style={styles.logName}>{row.student_name ?? '-'}</span>
                   <span style={styles.logSep}>-</span>
                   <span style={styles.logMessage}>{row.message ?? row.event_type ?? ''}</span>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(getKakaoMentForLog(row))}
+                    style={styles.logCopyBtn}
+                    title="이 로그에 맞는 카톡 멘트 복사 (학생명 자동 반영)"
+                    aria-label="카톡 멘트 복사"
+                  >
+                    💬 복사
+                  </button>
                 </div>
               ))
             )}
-          </div>
-        </section>
-
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>📋 카톡 멘트 · 빠른 복사</h2>
-          <div style={styles.copySection}>
-            <button type="button" onClick={handleCopyTodayStatus} style={styles.copySectionBtn} title="오늘 출석·미접속 현황 한 번에 카톡용 복사">
-              📢 오늘 출석·미접속 복사
-            </button>
-            <span style={styles.copySectionHint}>집중관리존 카드의 💬 복사로 개별 멘트 복사</span>
           </div>
         </section>
         {/* end sections */}
@@ -477,7 +506,7 @@ export default function TeacherMonitorPage() {
                         .slice(0, 20)
                         .map((log) => (
                           <div key={log.id} style={styles.detailLogItem}>
-                            <span style={styles.detailLogTime}>[{formatLogTime(log.created_at)}]</span>
+                            <span style={styles.detailLogTime}>[{formatLogDateAndTime(log.created_at)}]</span>
                             <span style={styles.detailLogMsg}>{log.message ?? log.event_type ?? ''}</span>
                           </div>
                         ))
@@ -540,10 +569,8 @@ const styles = {
   logName: { fontWeight: 700, fontSize: 16, color: '#1f2937' },
   logSep: { color: '#94a3b8', fontSize: 16 },
   logMessage: { color: '#1f2937', flex: 1, fontSize: 16, fontWeight: 500 },
+  logCopyBtn: { flexShrink: 0, padding: '6px 12px', border: '1px solid rgba(107,114,128,0.3)', borderRadius: 10, background: 'rgba(255,255,255,0.9)', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 },
   logEmpty: { padding: 28, textAlign: 'center', color: '#6b7280', fontSize: 16 },
-  copySection: { display: 'flex', flexDirection: 'column', gap: 10, padding: '16px 20px', background: 'rgba(255,255,255,0.92)', borderRadius: 18, border: '1px solid rgba(106,17,203,0.15)' },
-  copySectionBtn: { alignSelf: 'flex-start', padding: '10px 18px', border: '1px solid rgba(107,114,128,0.3)', borderRadius: 12, background: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)', fontSize: 14, fontWeight: 600, color: '#5b21b6', cursor: 'pointer' },
-  copySectionHint: { fontSize: 12, color: '#6b7280' },
   modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 20 },
   modalBox: { background: '#fff', borderRadius: 24, maxWidth: 420, width: '100%', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.2)' },
   modalHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #e5e7eb' },
