@@ -232,6 +232,8 @@ export default function TeacherMonitorPage() {
   const [detailStatsLoading, setDetailStatsLoading] = useState(false);
   /** 집중관리존: 10초 후 정답/오답 → 대기 전환을 위해 1초마다 리렌더 */
   const [tick, setTick] = useState(0);
+  /** 폰에서 수동 갱신용 (빨간불/파란불 Realtime 끊김 시) */
+  const refetchStudentsRef = useRef(null);
 
   useEffect(() => {
     studentsRef.current = students;
@@ -311,9 +313,51 @@ export default function TeacherMonitorPage() {
     }
   };
 
+  /** 상세 모달 전체 내용을 카톡 등으로 보낼 수 있는 텍스트로 만듦 */
+  const getDetailModalCopyText = () => {
+    if (!detailStudent) return '';
+    const name = (detailStudent.student_name ?? '-').trim() || '-';
+    const lines = [`🕵️ ${name} 상세`, ''];
+
+    lines.push('📊 오늘의 스코어');
+    if (detailStatsLoading) {
+      lines.push('불러오는 중...');
+    } else if (detailTodayStats) {
+      lines.push(`오늘 ${detailTodayStats.problemsSolved}문제 풀었고, 정답률은 ${detailTodayStats.accuracyPercent}%입니다. (${detailTodayStats.correctCount}정답 / ${detailTodayStats.wrongCount}오답)`);
+    } else {
+      lines.push('오늘 푼 기록이 없어요.');
+    }
+    lines.push('');
+
+    lines.push('📉 오늘의 약점 (Worst 3)');
+    if (detailStatsLoading) {
+      lines.push('불러오는 중...');
+    } else if (detailTodayStats?.worst3?.length > 0) {
+      lines.push(`오늘 유독 ${detailTodayStats.worst3.map((w) => `${w.tag} ${w.count}개`).join(', ')}에서 많이 틀렸어요.`);
+    } else if (detailTodayStats) {
+      lines.push('오늘 오답이 없어요. 잘했어요!');
+    } else {
+      lines.push('오늘 푼 기록이 없어요.');
+    }
+    lines.push('');
+
+    lines.push('📜 개인 로그');
+    const studentLogs = statusLogs
+      .filter((log) => (log.student_name || '').trim() === name)
+      .slice(0, 20);
+    if (studentLogs.length === 0) {
+      lines.push('이 학생의 사건 기록이 없어요.');
+    } else {
+      studentLogs.forEach((log) => {
+        lines.push(`[${formatLogDateAndTime(log.created_at)}] ${log.message ?? log.event_type ?? ''}`);
+      });
+    }
+    return lines.join('\n');
+  };
+
   useEffect(() => {
     let channel;
-    const fetchInitial = async () => {
+    const fetchStudents = async () => {
       setFetchError(null);
       const { data, error } = await supabase.from('student_status').select('*');
       if (error) {
@@ -322,14 +366,23 @@ export default function TeacherMonitorPage() {
       }
       setStudents(sortStudents(data ?? []));
     };
-    fetchInitial();
+    refetchStudentsRef.current = fetchStudents;
+    fetchStudents();
     channel = supabase
       .channel('student_status_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'student_status' }, () => {
         supabase.from('student_status').select('*').then(({ data }) => setStudents(sortStudents(data ?? [])));
       })
       .subscribe();
-    return () => { if (channel) supabase.removeChannel(channel); };
+    // 폰/모바일: 탭 복귀 시 재조회 (WebSocket 끊김 시 빨간불/파란불 복구)
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') fetchStudents();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      if (channel) supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -441,7 +494,17 @@ export default function TeacherMonitorPage() {
         )}
 
         <section style={styles.section}>
-          <h2 className="monitor-section-title" style={styles.sectionTitle}>집중 관리 존 <span style={styles.count}>(상위 {MAIN_ZONE_MAX}명)</span></h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <h2 className="monitor-section-title" style={styles.sectionTitle}>집중 관리 존 <span style={styles.count}>(상위 {MAIN_ZONE_MAX}명)</span></h2>
+            <button
+              type="button"
+              onClick={() => refetchStudentsRef.current?.()}
+              style={{ padding: '6px 12px', fontSize: 13, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer' }}
+              title="폰에서 불이 안 바뀔 때 눌러서 최신 상태 불러오기"
+            >
+              🔄 갱신
+            </button>
+          </div>
           <p style={{ marginTop: -8, marginBottom: 12, fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>문제 풀 때마다 정답=파란불 · 오답=빨간불 실시간 반영 (주요 상황은 아래 실시간 사건 기록에)</p>
           <div className="monitor-card-grid" style={styles.cardGrid}>
             {main.map((row) => {
@@ -572,7 +635,17 @@ export default function TeacherMonitorPage() {
             <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <h2 id="detail-title" style={styles.modalTitle}>🕵️‍♂️ {detailStudent.student_name ?? '-'} 상세</h2>
-                <button type="button" onClick={() => setDetailStudent(null)} style={styles.modalClose} aria-label="닫기">✕</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); copyToClipboard(getDetailModalCopyText()); }}
+                    style={styles.logCopyBtn}
+                    title="상세 내용 카톡 등으로 보내기"
+                  >
+                    💬 복사
+                  </button>
+                  <button type="button" onClick={() => setDetailStudent(null)} style={styles.modalClose} aria-label="닫기">✕</button>
+                </div>
               </div>
               <div style={styles.modalBody}>
                 <div style={styles.detailBlock}>
@@ -679,9 +752,9 @@ const styles = {
   logMessage: { color: '#1f2937', flex: 1, fontSize: 16, fontWeight: 500 },
   logCopyBtn: { flexShrink: 0, padding: '6px 12px', border: '1px solid rgba(107,114,128,0.3)', borderRadius: 10, background: 'rgba(255,255,255,0.9)', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 },
   logEmpty: { padding: 28, textAlign: 'center', color: '#6b7280', fontSize: 16 },
-  modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: 20 },
-  modalBox: { background: '#fff', borderRadius: 24, maxWidth: 420, width: '100%', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.2)' },
-  modalHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid #e5e7eb' },
+  modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 10000, padding: '16px 20px 24px', overflowY: 'auto' },
+  modalBox: { background: '#fff', borderRadius: 24, maxWidth: 420, width: '100%', maxHeight: 'calc(100vh - 40px)', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 48px rgba(0,0,0,0.2)', flexShrink: 0 },
+  modalHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '20px 24px', borderBottom: '1px solid #e5e7eb', flexShrink: 0 },
   modalTitle: { margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#374151' },
   modalClose: { width: 36, height: 36, border: 'none', background: 'transparent', fontSize: 18, color: '#6b7280', cursor: 'pointer', borderRadius: 8 },
   modalBody: { padding: '20px 24px', overflowY: 'auto', flex: 1 },
