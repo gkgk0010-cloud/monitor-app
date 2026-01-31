@@ -6,6 +6,8 @@ import { supabase } from '@/utils/supabaseClient';
 const COLOR_ORDER = { gold: 0, red: 1, orange: 2, blue: 3, green: 4, purple: 5, white: 6 };
 const MAIN_ZONE_MAX = 30;
 const LOG_LIMIT = 20;
+/** 집중관리존: 최근 N초 이내 정답/오답만 파란불/빨간불로 표시, 그 외는 대기 */
+const ANSWER_LIGHT_SECONDS = 10;
 
 const STATUS_STYLE = {
   gold: { border: '#d4af37', bg: 'linear-gradient(135deg, #fffef0 0%, #fff9e6 50%, #fff4d6 100%)', badge: '#d4af37', label: '🏆 MVP', defaultMent: '🏆 일일 할당량(50문제) 클리어!' },
@@ -120,6 +122,32 @@ function isAbsent2Days(ts) {
   }
 }
 
+/** 집중관리존 CCTV: 최근 N초 이내 답안 제출이 있으면 파란불/빨간불 표시 */
+function isRecentAnswer(row) {
+  const at = row?.last_answer_at;
+  if (!at) return false;
+  try {
+    const d = toUTCThenKorea(at);
+    if (!d || isNaN(d.getTime())) return false;
+    return (Date.now() - d.getTime()) <= ANSWER_LIGHT_SECONDS * 1000;
+  } catch {
+    return false;
+  }
+}
+
+/** 집중관리존 카드용: 정답=파란불, 오답=빨간불, 그 외=대기(회색) */
+function getAnswerLightStyle(row) {
+  const recent = isRecentAnswer(row);
+  const result = (row?.last_answer_result || '').toLowerCase();
+  if (recent && result === 'correct') {
+    return { border: '#2563eb', bg: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', label: '정답', badge: '#2563eb' };
+  }
+  if (recent && result === 'incorrect') {
+    return { border: '#dc2626', bg: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)', label: '오답', badge: '#dc2626' };
+  }
+  return { border: '#94a3b8', bg: 'rgba(248, 250, 252, 0.98)', label: '대기', badge: '#94a3b8' };
+}
+
 /** 최근 N분 이내 활동(한국시간 기준) → "지금 접속 중"으로 셈 */
 function isActiveWithinMinutes(ts, minutes) {
   if (!ts) return false;
@@ -202,10 +230,17 @@ export default function TeacherMonitorPage() {
   const [detailStudent, setDetailStudent] = useState(null);
   const [detailTodayStats, setDetailTodayStats] = useState(null);
   const [detailStatsLoading, setDetailStatsLoading] = useState(false);
+  /** 집중관리존: 10초 후 정답/오답 → 대기 전환을 위해 1초마다 리렌더 */
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     studentsRef.current = students;
   }, [students]);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (!detailStudent?.student_id) {
@@ -407,21 +442,22 @@ export default function TeacherMonitorPage() {
 
         <section style={styles.section}>
           <h2 className="monitor-section-title" style={styles.sectionTitle}>집중 관리 존 <span style={styles.count}>(상위 {MAIN_ZONE_MAX}명)</span></h2>
+          <p style={{ marginTop: -8, marginBottom: 12, fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>문제 풀 때마다 정답=파란불 · 오답=빨간불 실시간 반영 (주요 상황은 아래 실시간 사건 기록에)</p>
           <div className="monitor-card-grid" style={styles.cardGrid}>
             {main.map((row) => {
+              const light = getAnswerLightStyle(row);
               const s = style[row.student_color] || style.white;
-              const isGold = row.student_color === 'gold';
               return (
                 <div
                   key={row.id}
                   role="button"
                   tabIndex={0}
-                  className={`monitor-card ${isGold ? 'card-gold-shimmer' : ''}`}
+                  className="monitor-card"
                   style={{
                     ...styles.card,
-                    borderLeftColor: s.border,
-                    borderLeftWidth: isGold ? 5 : 4,
-                    background: s.bg,
+                    borderLeftColor: light.border,
+                    borderLeftWidth: 4,
+                    background: light.bg,
                     cursor: 'pointer',
                   }}
                   onClick={() => setDetailStudent(row)}
@@ -431,11 +467,15 @@ export default function TeacherMonitorPage() {
                     <span className="monitor-card-name" style={styles.cardName}>{row.student_name ?? '-'}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       {isAbsent2Days(row.last_active) && <span style={styles.badgeAbsent2}>이틀 미접속</span>}
-                      <span className="monitor-badge" style={{ ...styles.badge, background: s.badge }}>{s.label}</span>
+                      <span className="monitor-badge" style={{ ...styles.badge, background: light.badge }}>{light.label}</span>
                     </div>
                   </div>
-                  {row.last_active != null && <div className="monitor-card-time" style={styles.cardTime} title="마지막 상태 반영 시각 (한국시간)">{formatActive(row.last_active)}</div>}
-                  <div className="monitor-card-info" style={styles.cardInfo}>{getDisplayMent(row, s)}</div>
+                  {row.last_active != null && <div className="monitor-card-time" style={styles.cardTime} title="마지막 활동 시각 (한국시간)">{formatActive(row.last_active)}</div>}
+                  <div className="monitor-card-info" style={styles.cardInfo}>
+                    {light.label === '정답' && (row.last_answer_tag ? `✅ 정답 · ${row.last_answer_tag}` : '✅ 정답')}
+                    {light.label === '오답' && (row.last_answer_tag ? `❌ 오답 · ${row.last_answer_tag}` : '❌ 오답')}
+                    {light.label === '대기' && '⏳ 대기'}
+                  </div>
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); copyToClipboard(getKakaoMent(row, s)); }}
