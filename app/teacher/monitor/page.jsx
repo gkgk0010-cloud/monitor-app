@@ -286,12 +286,37 @@ export default function TeacherMonitorPage() {
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3)
           .map(([tag, count]) => ({ tag, count }));
+
+        // 오늘의 족보 기록: quiz_type 'input'만 (태그별 + 전체 정답률)
+        const inputRows = rows.filter((r) => (r?.quiz_type || '').trim().toLowerCase() === 'input');
+        const todayInputRows = inputRows.filter((r) => isTodayKorea(r?.created_at));
+        const inputByTagMap = {};
+        todayInputRows.forEach((r) => {
+          const tag = (r.tag || '').trim() || '(태그없음)';
+          if (!inputByTagMap[tag]) inputByTagMap[tag] = { total: 0, correct: 0 };
+          inputByTagMap[tag].total += 1;
+          if (r.correct === true) inputByTagMap[tag].correct += 1;
+        });
+        const inputByTag = Object.entries(inputByTagMap).map(([tag, o]) => ({
+          tag,
+          total: o.total,
+          correct: o.correct,
+          percent: o.total ? Math.round((o.correct / o.total) * 100) : 0,
+        }));
+        const inputTotal = todayInputRows.length;
+        const inputCorrect = todayInputRows.filter((r) => r.correct === true).length;
+        const inputPercent = inputTotal > 0 ? Math.round((inputCorrect / inputTotal) * 100) : 0;
+
         setDetailTodayStats({
           problemsSolved,
           correctCount,
           wrongCount,
           accuracyPercent,
           worst3,
+          inputByTag,
+          inputTotal,
+          inputCorrect,
+          inputPercent,
         });
       });
     return () => { cancelled = true; };
@@ -345,6 +370,19 @@ export default function TeacherMonitorPage() {
       lines.push('오늘 오답이 없어요. 잘했어요!');
     } else {
       lines.push('오늘 푼 기록이 없어요.');
+    }
+    lines.push('');
+
+    lines.push('📚 오늘의 족보 기록');
+    if (detailStatsLoading) {
+      lines.push('불러오는 중...');
+    } else if (detailTodayStats?.inputTotal > 0) {
+      lines.push(`오늘 족보 ${detailTodayStats.inputTotal}문제 풀었고, 정답률 ${detailTodayStats.inputPercent}%입니다. (${detailTodayStats.inputCorrect}정답 / ${detailTodayStats.inputTotal - detailTodayStats.inputCorrect}오답)`);
+      if (detailTodayStats.inputByTag?.length > 0) {
+        lines.push(detailTodayStats.inputByTag.map((x) => `${x.tag} ${x.percent}%`).join(', '));
+      }
+    } else {
+      lines.push('오늘 족보 학습 기록이 없어요.');
     }
     lines.push('');
 
@@ -700,6 +738,28 @@ export default function TeacherMonitorPage() {
                     <p style={styles.detailPlaceholder}>오늘 오답이 없어요. 잘했어요!</p>
                   ) : (
                     <p style={styles.detailPlaceholder}>오늘 푼 기록이 없어요.</p>
+                  )}
+                </div>
+                <div style={styles.detailBlock}>
+                  <h3 style={styles.detailBlockTitle}>📚 오늘의 족보 기록</h3>
+                  {detailStatsLoading ? (
+                    <p style={styles.detailPlaceholder}>불러오는 중...</p>
+                  ) : detailTodayStats?.inputTotal > 0 ? (
+                    <p style={styles.detailScore}>
+                      오늘 족보 <strong>{detailTodayStats.inputTotal}문제</strong> 풀었고, 정답률 <strong>{detailTodayStats.inputPercent}%</strong>입니다.
+                      <br />
+                      <span style={styles.detailScoreSub}>({detailTodayStats.inputCorrect}정답 / {detailTodayStats.inputTotal - detailTodayStats.inputCorrect}오답)</span>
+                      {detailTodayStats.inputByTag?.length > 0 && (
+                        <>
+                          <br />
+                          <span style={styles.detailScoreSub}>
+                            {detailTodayStats.inputByTag.map((x) => `${x.tag} ${x.percent}%`).join(', ')}
+                          </span>
+                        </>
+                      )}
+                    </p>
+                  ) : (
+                    <p style={styles.detailPlaceholder}>오늘 족보 학습 기록이 없어요.</p>
                   )}
                 </div>
                 <div style={styles.detailBlock}>
