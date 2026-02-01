@@ -255,7 +255,7 @@ export default function TeacherMonitorPage() {
     setDetailStatsLoading(true);
     supabase
       .from('answer_logs')
-      .select('created_at, tag, correct')
+      .select('created_at, tag, correct, quiz_type')
       .eq('student_id', detailStudent.student_id)
       .order('created_at', { ascending: false })
       .limit(500)
@@ -267,7 +267,12 @@ export default function TeacherMonitorPage() {
           return;
         }
         const rows = Array.isArray(data) ? data : [];
-        const todayRows = rows.filter((r) => isTodayKorea(r?.created_at));
+        // 오늘의 스코어·약점: quiz_type 'output'(오늘의 연구·복습) 또는 'grammar'(과거 데이터)만 집계. 'input'(족보 테스트) 제외
+        const outputRows = rows.filter((r) => {
+          const qt = (r?.quiz_type || '').trim().toLowerCase();
+          return qt === 'output' || qt === 'grammar' || qt === '';
+        });
+        const todayRows = outputRows.filter((r) => isTodayKorea(r?.created_at));
         const problemsSolved = todayRows.length;
         const correctCount = todayRows.filter((r) => r.correct === true).length;
         const wrongCount = problemsSolved - correctCount;
