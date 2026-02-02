@@ -50,6 +50,9 @@ function sortByRecentFirst(rows) {
 /** 오늘의 연구 일일 상한 (표시용). 실제 answer_logs는 더 쌓일 수 있음 */
 const DAILY_CAP = 50;
 
+/** 출석/미접속 복사 시 한 번에 붙여넣기 편한 인원 수 (이 이상이면 N차 복사) */
+const COPY_CHUNK_SIZE = 40;
+
 /** 오늘 푼 문제 수를 최대 DAILY_CAP으로 캡한 표시용 값 (정답/오답·정답률도 비율 유지) */
 function getCappedTodayScore(stats) {
   if (!stats) return null;
@@ -271,6 +274,9 @@ export default function TeacherMonitorPage() {
   const refetchStudentsRef = useRef(null);
   /** 실시간 사건 기록 수동 갱신용 (Realtime 끊김 시 3연속 오답·복습 완료 등 최신 반영) */
   const refetchLogsRef = useRef(null);
+  /** 출석/미접속 N차 복사용 캐시 (인원 많을 때 나눠 붙여넣기) */
+  const attendanceCopyRef = useRef({ names: null, chunk: 0 });
+  const absentCopyRef = useRef({ initials: null, chunk: 0 });
 
   useEffect(() => {
     studentsRef.current = students;
@@ -535,6 +541,102 @@ export default function TeacherMonitorPage() {
     copyToClipboard(parts.join('\n'));
   };
 
+  /** 오늘 출석만 복사 (40명 초과 시 N차로 나눠 복사, 다시 클릭 시 다음 차수) */
+  const handleCopyTodayAttendanceOnly = async () => {
+    const ref = attendanceCopyRef.current;
+    if (ref.names === null || ref.chunk * COPY_CHUNK_SIZE >= ref.names.length) {
+      const { data: list, error } = await supabase.from('student_status').select('student_name, last_active');
+      if (error) {
+        setCopyToast('조회 실패. 다시 눌러주세요.');
+        setTimeout(() => setCopyToast(null), 3000);
+        return;
+      }
+      const rows = Array.isArray(list) ? list : [];
+      const survivors = rows.filter((r) => isTodayKorea(r.last_active));
+      ref.names = survivors.map((r) => (r.student_name || '').trim() || '-').filter(Boolean);
+      ref.chunk = 0;
+    }
+    const names = ref.names;
+    const total = names.length;
+    if (total === 0) {
+      setCopyToast('오늘 출석 0명');
+      setTimeout(() => setCopyToast(null), 2000);
+      ref.names = null;
+      ref.chunk = 0;
+      return;
+    }
+    const start = ref.chunk * COPY_CHUNK_SIZE;
+    const end = Math.min(start + COPY_CHUNK_SIZE, names.length);
+    const chunkNames = names.slice(start, end);
+    const isLast = end >= total;
+    const parts = [
+      '🤴 [똑패스] 오늘 출석',
+      total > COPY_CHUNK_SIZE ? `(${start + 1}~${end} / ${total}명)` : `(${total}명)`,
+      '',
+      ...chunkNames.map((name) => `· ${name}`),
+      '',
+      '💬 "숙제 끝내고 꿀잠 예약 🛌 진짜 고생했어!"',
+    ];
+    copyToClipboard(parts.join('\n'));
+    ref.chunk += 1;
+    if (ref.chunk * COPY_CHUNK_SIZE >= total) {
+      ref.names = null;
+      ref.chunk = 0;
+      setCopyToast(isLast && total > COPY_CHUNK_SIZE ? `마지막 차수 복사됨 (${chunkNames.length}명). 다음에 클릭하면 1차부터` : '복사됨');
+    } else {
+      setCopyToast(`${ref.chunk}차 복사됨 (${chunkNames.length}명). 다음 차수는 다시 클릭`);
+    }
+    setTimeout(() => setCopyToast(null), 3000);
+  };
+
+  /** 오늘 미접속만 복사 (40명 초과 시 N차로 나눠 복사) */
+  const handleCopyTodayAbsentOnly = async () => {
+    const ref = absentCopyRef.current;
+    if (ref.initials === null || ref.chunk * COPY_CHUNK_SIZE >= ref.initials.length) {
+      const { data: list, error } = await supabase.from('student_status').select('student_name, last_active');
+      if (error) {
+        setCopyToast('조회 실패. 다시 눌러주세요.');
+        setTimeout(() => setCopyToast(null), 3000);
+        return;
+      }
+      const rows = Array.isArray(list) ? list : [];
+      const absent = rows.filter((r) => !isTodayKorea(r.last_active));
+      ref.initials = absent.map((r) => toInitialStyle(r.student_name));
+      ref.chunk = 0;
+    }
+    const initials = ref.initials;
+    const total = initials.length;
+    if (total === 0) {
+      setCopyToast('오늘 미접속 0명');
+      setTimeout(() => setCopyToast(null), 2000);
+      ref.initials = null;
+      ref.chunk = 0;
+      return;
+    }
+    const start = ref.chunk * COPY_CHUNK_SIZE;
+    const end = Math.min(start + COPY_CHUNK_SIZE, initials.length);
+    const chunkInitials = initials.slice(start, end);
+    const isLast = end >= total;
+    const parts = [
+      '🍂 [똑패스] 오늘 미접속',
+      total > COPY_CHUNK_SIZE ? `(${start + 1}~${end} / ${total}명)` : `(${total}명)`,
+      '',
+      total > COPY_CHUNK_SIZE ? `· ${chunkInitials.join(', ')}` : `· ${chunkInitials.join(', ')}`,
+      '',
+      '💬 "나 다 싶으면... 조용히 앱 켜기 (아직 안 늦음 😉)"',
+    ];
+    copyToClipboard(parts.join('\n'));
+    ref.chunk += 1;
+    if (ref.chunk * COPY_CHUNK_SIZE >= total) {
+      ref.initials = null;
+      ref.chunk = 0;
+      setCopyToast(isLast && total > COPY_CHUNK_SIZE ? `마지막 차수 복사됨 (${chunkInitials.length}명). 다음에 클릭하면 1차부터` : '복사됨');
+    } else {
+      setCopyToast(`${ref.chunk}차 복사됨 (${chunkInitials.length}명). 다음 차수는 다시 클릭`);
+    }
+    setTimeout(() => setCopyToast(null), 3000);
+  };
+
   /** 이틀 미접속 학생들에게 보낼 멘트 복사 (이름 목록 + 공통 멘트) */
   const handleCopyAbsent2Ment = () => {
     if (absent2Days.length === 0) {
@@ -571,8 +673,14 @@ export default function TeacherMonitorPage() {
         <header className="monitor-header" style={styles.header}>
           <h1 className="monitor-title" style={styles.title}>실시간 학생 모니터링</h1>
           <div style={styles.headerRight}>
-            <button type="button" onClick={handleCopyTodayStatus} className="monitor-copy-btn" style={styles.copyBtn} title="오늘 출석·미접속 현황 한 번에 카톡용 복사">
-              📢 오늘 출석·미접속 복사
+            <button type="button" onClick={handleCopyTodayAttendanceOnly} className="monitor-copy-btn" style={styles.copyBtn} title="오늘 출석만 복사 (40명 넘으면 N차로 나눠 복사)">
+              📢 오늘 출석 복사
+            </button>
+            <button type="button" onClick={handleCopyTodayAbsentOnly} className="monitor-copy-btn" style={styles.copyBtn} title="오늘 미접속만 복사 (40명 넘으면 N차로 나눠 복사)">
+              🍂 오늘 미접속 복사
+            </button>
+            <button type="button" onClick={handleCopyTodayStatus} className="monitor-copy-btn" style={{ ...styles.copyBtn, opacity: 0.9, fontWeight: 500 }} title="출석+미접속 한 번에 복사 (인원 적을 때)">
+              한 번에 복사
             </button>
             <button type="button" onClick={() => setLegendOpen((o) => !o)} style={styles.legendBtn} aria-expanded={legendOpen}>
               ❓ 상태 설명
