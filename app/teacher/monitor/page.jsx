@@ -260,6 +260,7 @@ export default function TeacherMonitorPage() {
   const [students, setStudents] = useState([]);
   const studentsRef = useRef([]);
   const [statusLogs, setStatusLogs] = useState([]);
+  const [statusLogsError, setStatusLogsError] = useState(null);
   const [safeOpen, setSafeOpen] = useState(false);
   const [absent2Open, setAbsent2Open] = useState(false);
   const [fetchError, setFetchError] = useState(null);
@@ -474,12 +475,19 @@ export default function TeacherMonitorPage() {
 
   useEffect(() => {
     const fetchLogs = async () => {
+      setStatusLogsError(null);
       const { data, error } = await supabase
         .from('status_logs')
-        .select('id, student_id, student_name, event_type, message, created_at')
+        .select('id, student_name, event_type, message, created_at')
         .order('created_at', { ascending: false })
         .limit(LOG_LIMIT);
-      if (!error) setStatusLogs(data ?? []);
+      if (error) {
+        const msg = error.message || '알 수 없는 오류';
+        console.warn('실시간 사건 기록 조회 실패:', msg);
+        setStatusLogsError(msg);
+        return;
+      }
+      setStatusLogs(data ?? []);
     };
     refetchLogsRef.current = fetchLogs;
     fetchLogs();
@@ -841,10 +849,17 @@ export default function TeacherMonitorPage() {
               🔄 갱신
             </button>
           </div>
+          {statusLogsError && (
+            <div style={{ marginBottom: 12, padding: 10, background: 'rgba(239,68,68,0.1)', borderRadius: 8, color: 'var(--text)', fontSize: 13 }}>
+              ⚠️ 실시간 사건 기록 조회 실패: {statusLogsError}
+              <br />
+              <span style={{ opacity: 0.8 }}>Supabase Table Editor에서 status_logs 테이블·RLS 정책을 확인하세요. (빨간불_파란불_스코어_안될때_점검.md 참고)</span>
+            </div>
+          )}
           <div style={styles.logList}>
-            {statusLogs.length === 0 ? (
+            {statusLogs.length === 0 && !statusLogsError ? (
               <div style={styles.logEmpty}>아직 기록된 사건이 없어요.</div>
-            ) : (
+            ) : statusLogs.length === 0 ? null : (
               statusLogs.map((row) => (
                 <div key={row.id} style={styles.logItem}>
                   <span style={styles.logTime} title="한국시간">[{formatLogDateAndTime(row.created_at)}]</span>
