@@ -7,7 +7,7 @@ const COLOR_ORDER = { gold: 0, red: 1, orange: 2, blue: 3, green: 4, purple: 5, 
 const MAIN_ZONE_MAX = 30;
 const LOG_LIMIT = 20;
 /** 집중관리존: 최근 N초 이내 정답/오답만 파란불/빨간불로 표시, 그 외는 대기 */
-const ANSWER_LIGHT_SECONDS = 10;
+const ANSWER_LIGHT_SECONDS = 20;
 
 const STATUS_STYLE = {
   gold: { border: '#d4af37', bg: 'linear-gradient(135deg, #fffef0 0%, #fff9e6 50%, #fff4d6 100%)', badge: '#d4af37', label: '🏆 MVP', defaultMent: '🏆 일일 할당량(50문제) 클리어!' },
