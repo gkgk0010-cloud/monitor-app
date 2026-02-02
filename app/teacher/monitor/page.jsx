@@ -47,6 +47,20 @@ function sortByRecentFirst(rows) {
   return [...(rows || [])].sort((a, b) => getLatestActiveTs(b) - getLatestActiveTs(a));
 }
 
+/** 오늘의 연구 일일 상한 (표시용). 실제 answer_logs는 더 쌓일 수 있음 */
+const DAILY_CAP = 50;
+
+/** 오늘 푼 문제 수를 최대 DAILY_CAP으로 캡한 표시용 값 (정답/오답·정답률도 비율 유지) */
+function getCappedTodayScore(stats) {
+  if (!stats) return null;
+  const raw = stats.problemsSolved;
+  const displayedCount = Math.min(raw, DAILY_CAP);
+  const displayedCorrect = raw > 0 ? Math.round(displayedCount * stats.correctCount / raw) : stats.correctCount;
+  const displayedWrong = displayedCount - displayedCorrect;
+  const displayedAccuracy = displayedCount > 0 ? Math.round((displayedCorrect / displayedCount) * 100) : stats.accuracyPercent;
+  return { displayedCount, displayedCorrect, displayedWrong, displayedAccuracy };
+}
+
 /** 집중관리 30인 = 최근 활동 순 상위 30명 (문제 풀면 위로 올라옴, 새로 올라오면 순차적으로 내려감). 안전 = 그 외 전원 */
 function splitZones(rows) {
   const sorted = sortByRecentFirst(rows || []);
@@ -376,7 +390,8 @@ export default function TeacherMonitorPage() {
     if (detailStatsLoading) {
       lines.push('불러오는 중...');
     } else if (detailTodayStats) {
-      lines.push(`오늘 ${detailTodayStats.problemsSolved}문제 풀었고, 정답률은 ${detailTodayStats.accuracyPercent}%입니다. (${detailTodayStats.correctCount}정답 / ${detailTodayStats.wrongCount}오답)`);
+      const capped = getCappedTodayScore(detailTodayStats);
+      lines.push(`오늘 ${capped.displayedCount}문제 풀었고, 정답률은 ${capped.displayedAccuracy}%입니다. (${capped.displayedCorrect}정답 / ${capped.displayedWrong}오답)`);
     } else {
       lines.push('오늘 푼 기록이 없어요.');
     }
@@ -455,7 +470,7 @@ export default function TeacherMonitorPage() {
     const fetchLogs = async () => {
       const { data, error } = await supabase
         .from('status_logs')
-        .select('id, student_name, event_type, message, created_at')
+        .select('id, student_id, student_name, event_type, message, created_at')
         .order('created_at', { ascending: false })
         .limit(LOG_LIMIT);
       if (!error) setStatusLogs(data ?? []);
@@ -725,7 +740,10 @@ export default function TeacherMonitorPage() {
               statusLogs.map((row) => (
                 <div key={row.id} style={styles.logItem}>
                   <span style={styles.logTime} title="한국시간">[{formatLogDateAndTime(row.created_at)}]</span>
-                  <span style={styles.logName}>{row.student_name ?? '-'}</span>
+                  <span style={styles.logName}>
+                    {(row.student_name || '').trim() || '이름없음'}
+                    {((row.student_name || '').trim() === '이름없음' && row.student_id) ? ` (${row.student_id})` : ''}
+                  </span>
                   <span style={styles.logSep}>-</span>
                   <span style={styles.logMessage}>{row.message ?? row.event_type ?? ''}</span>
                   <button
@@ -767,11 +785,16 @@ export default function TeacherMonitorPage() {
                   {detailStatsLoading ? (
                     <p style={styles.detailPlaceholder}>불러오는 중...</p>
                   ) : detailTodayStats ? (
-                    <p style={styles.detailScore}>
-                      오늘 <strong>{detailTodayStats.problemsSolved}문제</strong> 풀었고, 정답률은 <strong>{detailTodayStats.accuracyPercent}%</strong>입니다.
-                      <br />
-                      <span style={styles.detailScoreSub}>({detailTodayStats.correctCount}정답 / {detailTodayStats.wrongCount}오답)</span>
-                    </p>
+                    (() => {
+                      const capped = getCappedTodayScore(detailTodayStats);
+                      return (
+                        <p style={styles.detailScore}>
+                          오늘 <strong>{capped.displayedCount}문제</strong> 풀었고, 정답률은 <strong>{capped.displayedAccuracy}%</strong>입니다.
+                          <br />
+                          <span style={styles.detailScoreSub}>({capped.displayedCorrect}정답 / {capped.displayedWrong}오답)</span>
+                        </p>
+                      );
+                    })()
                   ) : (
                     <p style={styles.detailPlaceholder}>오늘 푼 기록이 없어요. (1단계 Supabase 테이블 생성 + 2단계 똑패스 앱 연동 후 자동 반영)</p>
                   )}
