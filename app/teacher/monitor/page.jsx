@@ -30,8 +30,29 @@ function sortStudents(rows) {
   return [...(rows || [])].sort((a, b) => (COLOR_ORDER[a.student_color] ?? 99) - (COLOR_ORDER[b.student_color] ?? 99));
 }
 
-function splitZones(sorted) {
-  return { main: sorted.slice(0, MAIN_ZONE_MAX), safe: sorted.slice(MAIN_ZONE_MAX) };
+/** 최근 활동 시각 (문제 풀면 갱신됨). last_answer_at 우선, 없으면 last_active. 없으면 0 */
+function getLatestActiveTs(row) {
+  const at = row?.last_answer_at || row?.last_active;
+  if (!at) return 0;
+  try {
+    const d = toUTCThenKorea(at);
+    return d && !isNaN(d.getTime()) ? d.getTime() : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** 최근 활동 순 정렬 (방금 푼 사람이 맨 위 → 문제 풀면 위로 올라오고, 31번째는 안전으로 내려감) */
+function sortByRecentFirst(rows) {
+  return [...(rows || [])].sort((a, b) => getLatestActiveTs(b) - getLatestActiveTs(a));
+}
+
+/** 집중관리 30인 = 최근 활동 순 상위 30명 (문제 풀면 위로 올라옴, 새로 올라오면 순차적으로 내려감). 안전 = 그 외 전원 */
+function splitZones(rows) {
+  const sorted = sortByRecentFirst(rows || []);
+  const main = sorted.slice(0, MAIN_ZONE_MAX);
+  const safe = sorted.slice(MAIN_ZONE_MAX);
+  return { main, safe };
 }
 
 function toUTCThenKorea(ts) {
@@ -499,6 +520,25 @@ export default function TeacherMonitorPage() {
     copyToClipboard(parts.join('\n'));
   };
 
+  /** 이틀 미접속 학생들에게 보낼 멘트 복사 (이름 목록 + 공통 멘트) */
+  const handleCopyAbsent2Ment = () => {
+    if (absent2Days.length === 0) {
+      setCopyToast('이틀 미접속 학생이 없습니다.');
+      setTimeout(() => setCopyToast(null), 2000);
+      return;
+    }
+    const names = absent2Days.map((r) => (r.student_name || '').trim() || '(이름없음)').filter(Boolean);
+    const ment = [
+      '📅 [똑패스] 이틀째 접속이 없어요 (개별 발송용)',
+      '',
+      `대상: ${names.join(', ')}`,
+      '',
+      '💬 보낼 멘트:',
+      '"이틀째 앱에 안 들어오셨네요! 오늘만이라도 켜보시면 감사해요 😊 아직 안 늦었어요!"',
+    ];
+    copyToClipboard(ment.join('\n'));
+  };
+
   if (fetchError) {
     return (
       <div style={styles.page}>
@@ -549,7 +589,7 @@ export default function TeacherMonitorPage() {
 
         <section style={styles.section}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h2 className="monitor-section-title" style={styles.sectionTitle}>집중 관리 존 <span style={styles.count}>(상위 {MAIN_ZONE_MAX}명)</span></h2>
+            <h2 className="monitor-section-title" style={styles.sectionTitle}>집중 관리 존 <span style={styles.count}>(최근 활동 순 상위 {MAIN_ZONE_MAX}명 · 풀면 위로)</span></h2>
             <button
               type="button"
               onClick={() => refetchStudentsRef.current?.()}
@@ -559,7 +599,7 @@ export default function TeacherMonitorPage() {
               🔄 갱신
             </button>
           </div>
-          <p style={{ marginTop: -8, marginBottom: 12, fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>문제 풀 때마다 정답=파란불 · 오답=빨간불 실시간 반영 (주요 상황은 아래 실시간 사건 기록에)</p>
+          <p style={{ marginTop: -8, marginBottom: 12, fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>최근에 문제 푼 사람이 맨 위. 문제 풀면 위로 올라오고, 31번째는 안전 보관함으로 내려감 · 정답=파란불 / 오답=빨간불</p>
           <div className="monitor-card-grid" style={styles.cardGrid}>
             {main.map((row) => {
               const light = getAnswerLightStyle(row);
@@ -610,7 +650,17 @@ export default function TeacherMonitorPage() {
         </section>
 
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>이틀 연속 미접속</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+            <h2 style={styles.sectionTitle}>이틀 연속 미접속</h2>
+            <button
+              type="button"
+              onClick={handleCopyAbsent2Ment}
+              style={{ padding: '6px 12px', fontSize: 13, borderRadius: 8, border: '1px solid #ea580c', background: '#fff7ed', color: '#ea580c', cursor: 'pointer', fontWeight: 600 }}
+              title="이틀 미접속 학생 이름 + 보낼 멘트 복사"
+            >
+              📅 이틀 미접속 멘트 복사
+            </button>
+          </div>
           <div style={styles.absent2Bar} onClick={() => setAbsent2Open((o) => !o)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setAbsent2Open((o) => !o)}>
             <span>📅</span>
             <span>{absent2Days.length}명</span>
@@ -633,7 +683,7 @@ export default function TeacherMonitorPage() {
         </section>
 
         <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>안전 보관함</h2>
+          <h2 style={styles.sectionTitle}>안전 보관함 <span style={styles.count}>(그 외 전원)</span></h2>
           <div style={styles.safeBar} onClick={() => setSafeOpen((o) => !o)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setSafeOpen((o) => !o)}>
             <span>🟢</span>
             <span>외 {safe.length}명</span>
