@@ -53,6 +53,18 @@ const DAILY_CAP = 50;
 /** 출석/미접속 복사 시 한 번에 붙여넣기 편한 인원 수 (이 이상이면 N차 복사) */
 const COPY_CHUNK_SIZE = 40;
 
+/** 출석 복사 시 한 줄에 넣을 이름 수 (이만큼씩 묶어서 줄 수 줄임) */
+const NAMES_PER_LINE = 6;
+
+function formatNamesInLines(names, prefix = '· ') {
+  const lines = [];
+  for (let i = 0; i < names.length; i += NAMES_PER_LINE) {
+    const chunk = names.slice(i, i + NAMES_PER_LINE);
+    lines.push(chunk.map((name) => prefix + name).join(' '));
+  }
+  return lines;
+}
+
 /** 오늘 푼 문제 수를 최대 DAILY_CAP으로 캡한 표시용 값 (정답/오답·정답률도 비율 유지) */
 function getCappedTodayScore(stats) {
   if (!stats) return null;
@@ -539,7 +551,7 @@ export default function TeacherMonitorPage() {
       '📜 [똑패스] 오늘의 현황판',
       '',
       `🤴 오늘의 공주,왕자님 (${survN}명)`,
-      ...(survN > 0 ? survivorNames.map((name) => `· ${name}`) : []),
+      ...(survN > 0 ? formatNamesInLines(survivorNames) : []),
       '💬 "숙제 끝내고 꿀잠 예약 🛌 진짜 고생했어!"',
       '',
       `🍂 빈자리가 느껴져요 머쓱; (${absentN}명)`,
@@ -581,7 +593,7 @@ export default function TeacherMonitorPage() {
       '🤴 [똑패스] 오늘 출석',
       total > COPY_CHUNK_SIZE ? `(${start + 1}~${end} / ${total}명)` : `(${total}명)`,
       '',
-      ...chunkNames.map((name) => `· ${name}`),
+      ...formatNamesInLines(chunkNames),
       '',
       '💬 "숙제 끝내고 꿀잠 예약 🛌 진짜 고생했어!"',
     ];
