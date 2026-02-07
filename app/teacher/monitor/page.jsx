@@ -84,6 +84,7 @@ function splitZones(rows) {
   return { main, safe };
 }
 
+/** 타임존 없는 문자열(YYYY-MM-DD HH:mm:ss)은 이미 한국시간으로 간주. Z 붙이면 UTC로 잘못 해석되어 9시간 어긋남 → +09:00 사용 */
 function toUTCThenKorea(ts) {
   if (ts == null) return null;
   let s = typeof ts === 'string' ? ts.trim() : String(ts);
@@ -91,7 +92,7 @@ function toUTCThenKorea(ts) {
   if (s.endsWith('Z') || s.includes('+') || /-\d{2}:\d{2}$/.test(s)) return new Date(s);
   s = s.replace(/\s+/, 'T');
   if (!s.includes('T')) s += 'T00:00:00';
-  return new Date(s + 'Z');
+  return new Date(s + '+09:00');
 }
 
 function formatActive(ts) {
@@ -153,6 +154,17 @@ function isTodayKorea(ts) {
   } catch {
     return false;
   }
+}
+
+/** created_at_kst(한국시간 문자열) 있으면 그 날짜로 오늘 여부 판단, 없으면 created_at(UTC)로 */
+function isTodayByKstOrUtc(createdAtKst, createdAt) {
+  const kst = typeof createdAtKst === 'string' ? createdAtKst.trim() : '';
+  if (kst && /^\d{4}-\d{2}-\d{2}/.test(kst)) {
+    const datePart = kst.slice(0, 10);
+    const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    return datePart === todayKst;
+  }
+  return isTodayKorea(createdAt);
 }
 
 function isAbsent2Days(ts) {
@@ -309,7 +321,7 @@ export default function TeacherMonitorPage() {
     setDetailStatsLoading(true);
     supabase
       .from('answer_logs')
-      .select('created_at, tag, correct, quiz_type')
+      .select('created_at, created_at_kst, tag, correct, quiz_type')
       .eq('student_id', detailStudent.student_id)
       .order('created_at', { ascending: false })
       .limit(500)
@@ -326,7 +338,7 @@ export default function TeacherMonitorPage() {
           const qt = (r?.quiz_type || '').trim().toLowerCase();
           return qt === 'output' || qt === 'grammar' || qt === '';
         });
-        const todayRows = outputRows.filter((r) => isTodayKorea(r?.created_at));
+        const todayRows = outputRows.filter((r) => isTodayByKstOrUtc(r?.created_at_kst, r?.created_at));
         const problemsSolved = todayRows.length;
         const correctCount = todayRows.filter((r) => r.correct === true).length;
         const wrongCount = problemsSolved - correctCount;
@@ -343,7 +355,7 @@ export default function TeacherMonitorPage() {
 
         // 오늘의 족보 기록: quiz_type 'input'만 (태그별 + 전체 정답률)
         const inputRows = rows.filter((r) => (r?.quiz_type || '').trim().toLowerCase() === 'input');
-        const todayInputRows = inputRows.filter((r) => isTodayKorea(r?.created_at));
+        const todayInputRows = inputRows.filter((r) => isTodayByKstOrUtc(r?.created_at_kst, r?.created_at));
         const inputByTagMap = {};
         todayInputRows.forEach((r) => {
           const tag = (r.tag || '').trim() || '(태그없음)';
