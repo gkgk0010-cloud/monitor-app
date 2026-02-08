@@ -156,7 +156,7 @@ function isTodayKorea(ts) {
   }
 }
 
-/** answer_logs용: 무조건 KST 기준 오늘 여부. created_at_kst 있으면 그 날짜로, 없으면 created_at(UTC)를 KST로 변환해 비교 */
+/** answer_logs: 날짜/오늘 판단은 created_at_kst(텍스트 KST)만 사용. created_at(timestamptz)는 사용하지 않고, fallback 시에만 UTC→KST 변환해 비교 */
 function getKstDateString(ts) {
   if (!ts) return '';
   try {
