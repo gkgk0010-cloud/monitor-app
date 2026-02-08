@@ -156,15 +156,25 @@ function isTodayKorea(ts) {
   }
 }
 
-/** created_at_kst(한국시간 문자열) 있으면 그 날짜로 오늘 여부 판단, 없으면 created_at(UTC)로 */
+/** answer_logs용: 무조건 KST 기준 오늘 여부. created_at_kst 있으면 그 날짜로, 없으면 created_at(UTC)를 KST로 변환해 비교 */
+function getKstDateString(ts) {
+  if (!ts) return '';
+  try {
+    const d = typeof ts === 'string' && /Z|[+-]\d{2}:?\d{2}$/.test(ts) ? new Date(ts) : toUTCThenKorea(ts);
+    if (!d || isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+  } catch {
+    return '';
+  }
+}
+
 function isTodayByKstOrUtc(createdAtKst, createdAt) {
+  const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
   const kst = typeof createdAtKst === 'string' ? createdAtKst.trim() : '';
   if (kst && /^\d{4}-\d{2}-\d{2}/.test(kst)) {
-    const datePart = kst.slice(0, 10);
-    const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-    return datePart === todayKst;
+    return kst.slice(0, 10) === todayKst;
   }
-  return isTodayKorea(createdAt);
+  return getKstDateString(createdAt) === todayKst;
 }
 
 function isAbsent2Days(ts) {
