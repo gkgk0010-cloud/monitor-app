@@ -102,7 +102,11 @@ export default function WordsManagePage() {
     }
 
     if (id.startsWith('temp-')) {
-      const { data, error } = await supabase.from('words').insert(payload).select().single()
+      const { data, error } = await supabase
+        .from('words')
+        .insert(payload, { defaultToNull: false })
+        .select()
+        .single()
       if (error) {
         console.warn(error)
         alert(`추가 실패: ${error.message}`)

@@ -120,7 +120,7 @@ export default function BulkImport({ open, onClose, onSaved, existingSetNames })
         image_source: r.image_url ? (r.image_source || 'upload') : 'none',
       }))
 
-      const { error } = await supabase.from('words').insert(payload)
+      const { error } = await supabase.from('words').insert(payload, { defaultToNull: false })
       if (error) throw error
       onSaved()
       onClose()
