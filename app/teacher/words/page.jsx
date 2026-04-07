@@ -344,8 +344,8 @@ export default function WordsManagePage() {
                 lineHeight: 1.5,
               }}
             >
-              예문은 탭만 바꾼다고 자동 입력되지 않습니다. 예문 칸 옆{' '}
-              <strong style={{ color: COLORS.textPrimary }}>🔍</strong>를 누르거나{' '}
+              예문은 탭만 바꾼다고 자동 입력되지 않습니다. 예문 칸{' '}
+              <strong style={{ color: COLORS.textPrimary }}>안 오른쪽 돋보기</strong>를 누르거나{' '}
               <strong style={{ color: COLORS.textPrimary }}>Ctrl+S</strong>(예문 칸에 포커스)로 AI 예문을 넣을 수
               있고, 아래 패널에서 선택한 행을 한꺼번에 채울 수도 있습니다.
             </p>

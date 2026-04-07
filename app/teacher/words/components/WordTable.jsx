@@ -156,8 +156,15 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
                     }}
                   />
                 </td>
-                <td style={{ padding: 8, color: exampleEmpty ? COLORS.textHint : COLORS.textPrimary }}>
-                  <div style={{ display: 'flex', alignItems: 'stretch', gap: 6, minWidth: 200 }}>
+                <td
+                  style={{
+                    padding: 8,
+                    color: exampleEmpty ? COLORS.textHint : COLORS.textPrimary,
+                    minWidth: 220,
+                    verticalAlign: 'middle',
+                  }}
+                >
+                  <div style={{ position: 'relative', width: '100%', minWidth: 200 }}>
                     <input
                       value={example}
                       onChange={(e) => updateField(id, 'example_sentence', e.target.value)}
@@ -168,12 +175,12 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
                           void suggestExample(id)
                         }
                       }}
-                      placeholder="예문 (선택) — 🔍로 생성"
+                      placeholder="예문 (선택) — 오른쪽 돋보기로 AI 생성"
                       title="Ctrl+S: 예문 AI 제안"
                       style={{
-                        flex: 1,
-                        minWidth: 0,
-                        padding: '6px 8px',
+                        boxSizing: 'border-box',
+                        width: '100%',
+                        padding: '6px 40px 6px 8px',
                         borderRadius: RADIUS.sm,
                         border: `1px solid ${COLORS.border}`,
                         fontStyle: exampleEmpty ? 'italic' : 'normal',
@@ -187,18 +194,40 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => void suggestExample(id)}
                       style={{
-                        flexShrink: 0,
-                        width: 36,
+                        position: 'absolute',
+                        right: 4,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: 32,
+                        height: 30,
                         padding: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: 'none',
                         borderRadius: RADIUS.sm,
-                        border: `1px solid ${COLORS.border}`,
-                        background: COLORS.primarySoft,
+                        background: busyExampleId === id ? COLORS.border : COLORS.primarySoft,
                         cursor: busyExampleId === id ? 'wait' : 'pointer',
-                        fontSize: 16,
-                        lineHeight: 1,
                       }}
                     >
-                      {busyExampleId === id ? '…' : '🔍'}
+                      {busyExampleId === id ? (
+                        <span style={{ fontSize: 14, color: COLORS.textSecondary }}>…</span>
+                      ) : (
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke={COLORS.accentText}
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden
+                        >
+                          <circle cx="11" cy="11" r="7" />
+                          <path d="M20 20 16.65 16.65" />
+                        </svg>
+                      )}
                     </button>
                   </div>
                 </td>
