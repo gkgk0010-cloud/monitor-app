@@ -36,9 +36,12 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
     )
   }
 
-  const commitRow = (id) => {
+  /** blur 시점에 부모 state가 아직 갱신 안 됐을 수 있어, 방금 입력한 필드 값을 patch 로 넘김 */
+  const commitRow = (id, patch) => {
     const row = rows.find((r) => String(r.id) === String(id))
-    if (row && onRowCommit) void onRowCommit(row)
+    if (!row || !onRowCommit) return
+    const merged = patch ? { ...row, ...patch } : row
+    void onRowCommit(merged)
   }
 
   return (
@@ -97,7 +100,7 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
                   <input
                     value={row.word != null ? String(row.word) : ''}
                     onChange={(e) => updateField(id, 'word', e.target.value)}
-                    onBlur={() => commitRow(id)}
+                    onBlur={(e) => commitRow(id, { word: e.target.value })}
                     style={{
                       width: '100%',
                       minWidth: 100,
@@ -111,7 +114,7 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
                   <input
                     value={meaning}
                     onChange={(e) => updateField(id, 'meaning', e.target.value)}
-                    onBlur={() => commitRow(id)}
+                    onBlur={(e) => commitRow(id, { meaning: e.target.value })}
                     placeholder={meaningEmpty ? '뜻 입력' : ''}
                     style={{
                       width: '100%',
@@ -126,7 +129,7 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
                   <input
                     value={example}
                     onChange={(e) => updateField(id, 'example_sentence', e.target.value)}
-                    onBlur={() => commitRow(id)}
+                    onBlur={(e) => commitRow(id, { example_sentence: e.target.value })}
                     placeholder="예문 (선택)"
                     style={{
                       width: '100%',
@@ -142,7 +145,7 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
                   <input
                     value={row.set_name != null ? String(row.set_name) : ''}
                     onChange={(e) => updateField(id, 'set_name', e.target.value)}
-                    onBlur={() => commitRow(id)}
+                    onBlur={(e) => commitRow(id, { set_name: e.target.value })}
                     style={{
                       width: '100%',
                       minWidth: 100,
@@ -158,7 +161,9 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
                     min={1}
                     value={row.day != null ? Number(row.day) : 1}
                     onChange={(e) => updateField(id, 'day', parseInt(e.target.value, 10) || 1)}
-                    onBlur={() => commitRow(id)}
+                    onBlur={(e) =>
+                      commitRow(id, { day: parseInt(e.target.value, 10) || 1 })
+                    }
                     style={{
                       width: 64,
                       padding: '6px 8px',

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
@@ -17,6 +17,14 @@ export default function WordsManagePage() {
   const [emptyOnly, setEmptyOnly] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkOpen, setBulkOpen] = useState(false)
+  const [saveHint, setSaveHint] = useState(null)
+  const saveHintTimerRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
+    }
+  }, [])
 
   const loadWords = useCallback(async () => {
     setLoading(true)
@@ -108,12 +116,19 @@ export default function WordsManagePage() {
         return
       }
       setWords((prev) => prev.map((r) => (String(r.id) === id ? data : r)))
+      if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
+      setSaveHint('추가되었습니다.')
+      saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2500)
     } else {
       const { error } = await supabase.from('words').update(payload).eq('id', id)
       if (error) {
         console.warn(error)
         alert(`저장 실패: ${error.message}`)
+        return
       }
+      if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
+      setSaveHint('저장했습니다.')
+      saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2500)
     }
   }
 
@@ -295,6 +310,24 @@ export default function WordsManagePage() {
             <span style={{ fontSize: 14, color: COLORS.textPrimary }}>빈 필드만 보기</span>
           </label>
         </div>
+
+        {saveHint ? (
+          <div
+            role="status"
+            style={{
+              marginBottom: 12,
+              padding: '10px 14px',
+              borderRadius: RADIUS.md,
+              background: COLORS.successBg,
+              border: `1px solid ${COLORS.border}`,
+              color: COLORS.textPrimary,
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            {saveHint}
+          </div>
+        ) : null}
 
         {loading ? (
           <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
