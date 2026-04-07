@@ -1,12 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 
 /**
  * @param {{
  *   rows: Array<Record<string, unknown>>
- *   onRowsChange: (rows: Array<Record<string, unknown>>) => void
+ *   onRowsChange:
+ *     | ((rows: Array<Record<string, unknown>>) => void)
+ *     | ((updater: (prev: Array<Record<string, unknown>>) => Array<Record<string, unknown>>) => void)
  *   selectedIds: Set<string>
  *   onSelectedIdsChange: (ids: Set<string>) => void
  *   onRowCommit?: (row: Record<string, unknown>) => void | Promise<void>
@@ -31,6 +33,10 @@ export default function WordTable({
   const [imagePicker, setImagePicker] = useState(null)
   const [imageLoadingId, setImageLoadingId] = useState(null)
 
+  /** 비동기(이미지 검색 등) 직후 클로저의 rows 가 옛값일 수 있어, 렌더마다 동기화 */
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
+
   const allIds = rows.map((r) => String(r.id))
   const allSelected = rows.length > 0 && allIds.every((id) => selectedIds.has(id))
 
@@ -50,20 +56,20 @@ export default function WordTable({
   }
 
   const updateField = (id, field, value) => {
-    onRowsChange(
-      rows.map((r) => (String(r.id) === String(id) ? { ...r, [field]: value } : r)),
+    onRowsChange((prev) =>
+      prev.map((r) => (String(r.id) === String(id) ? { ...r, [field]: value } : r)),
     )
   }
 
   /** 연속 updateField 는 stale rows 로 서로 덮어쓸 수 있음 → 한 번에 병합 */
   const patchRow = (id, patch) => {
-    onRowsChange(
-      rows.map((r) => (String(r.id) === String(id) ? { ...r, ...patch } : r)),
+    onRowsChange((prev) =>
+      prev.map((r) => (String(r.id) === String(id) ? { ...r, ...patch } : r)),
     )
   }
 
   const commitRow = (id, patch) => {
-    const row = rows.find((r) => String(r.id) === String(id))
+    const row = rowsRef.current.find((r) => String(r.id) === String(id))
     if (!row || !onRowCommit) return
     const merged = patch ? { ...row, ...patch } : row
     void onRowCommit(merged)

@@ -43,7 +43,10 @@ export default function CreateWordSetPage() {
   }
 
   const onRowsChange = (next) => {
-    setRows(next.map((r) => ({ ...r, set_name: setName })))
+    setRows((prev) => {
+      const base = typeof next === 'function' ? next(prev) : next
+      return base.map((r) => ({ ...r, set_name: setName }))
+    })
   }
 
   const addEmptyRow = () => {

@@ -8,6 +8,7 @@ import WordTable from './components/WordTable'
 import BulkImport from './components/BulkImport'
 import AutoFillPanel from './components/AutoFillPanel'
 import { normalizeWordDifficulty } from './utils/parsers'
+import { filterWordRows } from './utils/wordFilters'
 
 export default function WordsManagePage() {
   const [words, setWords] = useState([])
@@ -63,29 +64,10 @@ export default function WordsManagePage() {
     return { total, noImage, noExample }
   }, [words])
 
-  const filtered = useMemo(() => {
-    let list = words
-    const q = search.trim().toLowerCase()
-    if (q) {
-      list = list.filter((w) => {
-        const word = String(w.word || '').toLowerCase()
-        const meaning = String(w.meaning || '').toLowerCase()
-        return word.includes(q) || meaning.includes(q)
-      })
-    }
-    if (setFilter.trim()) {
-      list = list.filter((w) => String(w.set_name || '') === setFilter)
-    }
-    if (emptyOnly) {
-      list = list.filter((w) => {
-        const m = w.meaning != null ? String(w.meaning).trim() : ''
-        const ex = w.example_sentence != null ? String(w.example_sentence).trim() : ''
-        const im = w.image_url != null ? String(w.image_url).trim() : ''
-        return !m || !ex || !im
-      })
-    }
-    return list
-  }, [words, search, setFilter, emptyOnly])
+  const filtered = useMemo(
+    () => filterWordRows(words, { search, setFilter, emptyOnly }),
+    [words, search, setFilter, emptyOnly],
+  )
 
   const handleRowCommit = async (row) => {
     const id = String(row.id)
@@ -366,8 +348,13 @@ export default function WordsManagePage() {
             <WordTable
               rows={filtered}
               onRowsChange={(next) => {
-                const nextById = new Map(next.map((r) => [String(r.id), r]))
-                setWords((prev) => prev.map((r) => nextById.get(String(r.id)) ?? r))
+                setWords((prev) => {
+                  const prevFiltered = filterWordRows(prev, { search, setFilter, emptyOnly })
+                  const merged =
+                    typeof next === 'function' ? next(prevFiltered) : next
+                  const nextById = new Map(merged.map((r) => [String(r.id), r]))
+                  return prev.map((r) => nextById.get(String(r.id)) ?? r)
+                })
               }}
               selectedIds={selectedIds}
               onSelectedIdsChange={setSelectedIds}
