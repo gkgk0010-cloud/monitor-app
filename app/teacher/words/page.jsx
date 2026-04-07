@@ -107,7 +107,10 @@ export default function WordsManagePage() {
     if (id.startsWith('temp-')) {
       const { data, error } = await supabase
         .from('words')
-        .insert(payload, { defaultToNull: false })
+        .upsert(payload, {
+          onConflict: 'set_name,word',
+          defaultToNull: false,
+        })
         .select()
         .single()
       if (error) {
@@ -117,8 +120,8 @@ export default function WordsManagePage() {
       }
       setWords((prev) => prev.map((r) => (String(r.id) === id ? data : r)))
       if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
-      setSaveHint('추가되었습니다.')
-      saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2500)
+      setSaveHint('저장했습니다. (같은 세트에 같은 영단어가 이미 있으면 그 행을 덮어씁니다)')
+      saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 3000)
     } else {
       const { error } = await supabase.from('words').update(payload).eq('id', id)
       if (error) {
