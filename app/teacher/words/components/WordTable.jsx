@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 
 /**
@@ -12,6 +13,7 @@ import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
  * }} props
  */
 export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedIdsChange, onRowCommit }) {
+  const [busyExampleId, setBusyExampleId] = useState(null)
   const allIds = rows.map((r) => String(r.id))
   const allSelected = rows.length > 0 && allIds.every((id) => selectedIds.has(id))
 
@@ -42,6 +44,35 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
     if (!row || !onRowCommit) return
     const merged = patch ? { ...row, ...patch } : row
     void onRowCommit(merged)
+  }
+
+  const suggestExample = async (id) => {
+    const row = rows.find((r) => String(r.id) === String(id))
+    if (!row) return
+    const word = String(row.word || '').trim()
+    const meaning = String(row.meaning || '').trim()
+    if (!word) {
+      alert('영단어를 먼저 입력하세요.')
+      return
+    }
+    setBusyExampleId(String(id))
+    try {
+      const res = await fetch('/api/suggest-example', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ word, meaning: meaning || undefined }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || '예문 요청 실패')
+      const ex = String(json.example_sentence || '').trim()
+      if (!ex) throw new Error('예문을 받지 못했습니다.')
+      updateField(id, 'example_sentence', ex)
+      commitRow(id, { example_sentence: ex })
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusyExampleId(null)
+    }
   }
 
   return (
@@ -126,20 +157,50 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
                   />
                 </td>
                 <td style={{ padding: 8, color: exampleEmpty ? COLORS.textHint : COLORS.textPrimary }}>
-                  <input
-                    value={example}
-                    onChange={(e) => updateField(id, 'example_sentence', e.target.value)}
-                    onBlur={(e) => commitRow(id, { example_sentence: e.target.value })}
-                    placeholder="예문 (선택)"
-                    style={{
-                      width: '100%',
-                      minWidth: 160,
-                      padding: '6px 8px',
-                      borderRadius: RADIUS.sm,
-                      border: `1px solid ${COLORS.border}`,
-                      fontStyle: exampleEmpty ? 'italic' : 'normal',
-                    }}
-                  />
+                  <div style={{ display: 'flex', alignItems: 'stretch', gap: 6, minWidth: 200 }}>
+                    <input
+                      value={example}
+                      onChange={(e) => updateField(id, 'example_sentence', e.target.value)}
+                      onBlur={(e) => commitRow(id, { example_sentence: e.target.value })}
+                      onKeyDown={(e) => {
+                        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                          e.preventDefault()
+                          void suggestExample(id)
+                        }
+                      }}
+                      placeholder="예문 (선택) — 🔍로 생성"
+                      title="Ctrl+S: 예문 AI 제안"
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        padding: '6px 8px',
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.border}`,
+                        fontStyle: exampleEmpty ? 'italic' : 'normal',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      title="예문 AI 제안 (Ctrl+S)"
+                      aria-label="예문 찾기"
+                      disabled={busyExampleId === id}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => void suggestExample(id)}
+                      style={{
+                        flexShrink: 0,
+                        width: 36,
+                        padding: 0,
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.border}`,
+                        background: COLORS.primarySoft,
+                        cursor: busyExampleId === id ? 'wait' : 'pointer',
+                        fontSize: 16,
+                        lineHeight: 1,
+                      }}
+                    >
+                      {busyExampleId === id ? '…' : '🔍'}
+                    </button>
+                  </div>
                 </td>
                 <td style={{ padding: 8 }}>
                   <input
