@@ -199,7 +199,21 @@ export default function WordsManagePage() {
           </Link>
           <h1 style={{ fontSize: 20, fontWeight: 700 }}>단어 관리</h1>
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Link
+            href="/teacher/words/create"
+            style={{
+              padding: '10px 16px',
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.textOnGreen}`,
+              color: COLORS.textOnGreen,
+              fontWeight: 600,
+              textDecoration: 'none',
+              fontSize: 14,
+            }}
+          >
+            새 세트 만들기
+          </Link>
           <button
             type="button"
             onClick={addEmptyRow}

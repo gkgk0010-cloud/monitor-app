@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import { parseWordText, normalizeWordDifficulty } from '../utils/parsers'
@@ -19,9 +19,20 @@ const TABS = [
  *   onClose: () => void
  *   onSaved: () => void
  *   existingSetNames: string[]
+ *   localOnly?: boolean
+ *   onLocalImported?: (rows: Array<Record<string, unknown>>) => void
+ *   initialSetName?: string
  * }} props
  */
-export default function BulkImport({ open, onClose, onSaved, existingSetNames }) {
+export default function BulkImport({
+  open,
+  onClose,
+  onSaved,
+  existingSetNames,
+  localOnly = false,
+  onLocalImported,
+  initialSetName,
+}) {
   const [tab, setTab] = useState('ai')
   const [aiPassage, setAiPassage] = useState('')
   const [pasteText, setPasteText] = useState('')
@@ -32,6 +43,12 @@ export default function BulkImport({ open, onClose, onSaved, existingSetNames })
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [saving, setSaving] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
+
+  useEffect(() => {
+    if (open && initialSetName != null && String(initialSetName).trim() !== '') {
+      setSetName(String(initialSetName).trim())
+    }
+  }, [open, initialSetName])
 
   if (!open) return null
 
@@ -116,6 +133,28 @@ export default function BulkImport({ open, onClose, onSaved, existingSetNames })
         image_url: r.image_url ? String(r.image_url) : null,
         image_source: r.image_url ? (r.image_source || 'upload') : 'none',
       }))
+
+      if (localOnly && onLocalImported) {
+        const stamp = Date.now()
+        const mapped = payload.map((p, i) => ({
+          id: `import-${stamp}-${i}`,
+          word: p.word,
+          meaning: p.meaning,
+          example_sentence: p.example_sentence,
+          set_name: p.set_name,
+          day: p.day,
+          difficulty: p.difficulty,
+          image_url: p.image_url,
+          image_source: p.image_source,
+        }))
+        onLocalImported(mapped)
+        onClose()
+        resetPreview()
+        setAiPassage('')
+        setPasteText('')
+        setCsvText('')
+        return
+      }
 
       const { error } = await supabase.from('words').upsert(payload, {
         onConflict: 'set_name,word',
@@ -393,7 +432,9 @@ export default function BulkImport({ open, onClose, onSaved, existingSetNames })
               >
                 {saving
                   ? '저장 중…'
-                  : `${previewRows.filter((r) => String(r.word).trim() && String(r.meaning).trim()).length}개 저장`}
+                  : localOnly
+                    ? `${previewRows.filter((r) => String(r.word).trim() && String(r.meaning).trim()).length}개 테이블에 추가`
+                    : `${previewRows.filter((r) => String(r.word).trim() && String(r.meaning).trim()).length}개 저장`}
               </button>
             </>
           ) : null}

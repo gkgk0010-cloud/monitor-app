@@ -10,10 +10,27 @@ import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
  *   selectedIds: Set<string>
  *   onSelectedIdsChange: (ids: Set<string>) => void
  *   onRowCommit?: (row: Record<string, unknown>) => void | Promise<void>
+ *   showSetNameColumn?: boolean
+ *   showDayColumn?: boolean
+ *   dayReadOnly?: boolean
+ *   showImageColumn?: boolean
  * }} props
  */
-export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedIdsChange, onRowCommit }) {
+export default function WordTable({
+  rows,
+  onRowsChange,
+  selectedIds,
+  onSelectedIdsChange,
+  onRowCommit,
+  showSetNameColumn = true,
+  showDayColumn = true,
+  dayReadOnly = false,
+  showImageColumn = true,
+}) {
   const [busyExampleId, setBusyExampleId] = useState(null)
+  const [imagePicker, setImagePicker] = useState(null)
+  const [imageLoadingId, setImageLoadingId] = useState(null)
+
   const allIds = rows.map((r) => String(r.id))
   const allSelected = rows.length > 0 && allIds.every((id) => selectedIds.has(id))
 
@@ -38,7 +55,6 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
     )
   }
 
-  /** blur 시점에 부모 state가 아직 갱신 안 됐을 수 있어, 방금 입력한 필드 값을 patch 로 넘김 */
   const commitRow = (id, patch) => {
     const row = rows.find((r) => String(r.id) === String(id))
     if (!row || !onRowCommit) return
@@ -75,6 +91,43 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
     }
   }
 
+  const openImagePicker = async (id) => {
+    const row = rows.find((r) => String(r.id) === String(id))
+    if (!row) return
+    const q = String(row.word || '').trim()
+    if (!q) {
+      alert('영단어를 먼저 입력하세요.')
+      return
+    }
+    setImageLoadingId(String(id))
+    setImagePicker({ id: String(id), photos: [] })
+    try {
+      const res = await fetch(`/api/unsplash?q=${encodeURIComponent(q)}`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || '이미지 검색 실패')
+      const photos = json.photos || []
+      if (photos.length === 0) {
+        alert('이미지를 찾지 못했습니다. 다른 영단어로 시도해 보세요.')
+        setImagePicker(null)
+        return
+      }
+      setImagePicker({ id: String(id), photos })
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e))
+      setImagePicker(null)
+    } finally {
+      setImageLoadingId(null)
+    }
+  }
+
+  const pickImage = (id, photo) => {
+    const url = photo.regular || photo.thumb
+    updateField(id, 'image_url', url)
+    updateField(id, 'image_source', 'unsplash')
+    commitRow(id, { image_url: url, image_source: 'unsplash' })
+    setImagePicker(null)
+  }
+
   return (
     <div
       style={{
@@ -98,9 +151,16 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
             </th>
             <th style={{ padding: '10px 8px', color: COLORS.accentText }}>word</th>
             <th style={{ padding: '10px 8px', color: COLORS.accentText }}>meaning</th>
+            {showImageColumn ? (
+              <th style={{ padding: '10px 8px', color: COLORS.accentText, width: 120 }}>image</th>
+            ) : null}
             <th style={{ padding: '10px 8px', color: COLORS.accentText }}>example_sentence</th>
-            <th style={{ padding: '10px 8px', color: COLORS.accentText }}>set_name</th>
-            <th style={{ padding: '10px 8px', width: 72, color: COLORS.accentText }}>day</th>
+            {showSetNameColumn ? (
+              <th style={{ padding: '10px 8px', color: COLORS.accentText }}>set_name</th>
+            ) : null}
+            {showDayColumn ? (
+              <th style={{ padding: '10px 8px', width: 72, color: COLORS.accentText }}>day</th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -110,6 +170,7 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
             const example = row.example_sentence != null ? String(row.example_sentence) : ''
             const meaningEmpty = !meaning.trim()
             const exampleEmpty = !example.trim()
+            const img = row.image_url ? String(row.image_url).trim() : ''
 
             return (
               <tr
@@ -156,6 +217,46 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
                     }}
                   />
                 </td>
+                {showImageColumn ? (
+                  <td style={{ padding: 8, verticalAlign: 'middle' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      {img ? (
+                        <img
+                          src={img}
+                          alt=""
+                          style={{
+                            width: 40,
+                            height: 40,
+                            objectFit: 'cover',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${COLORS.border}`,
+                          }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 12, color: COLORS.textHint }}>—</span>
+                      )}
+                      <button
+                        type="button"
+                        title="Unsplash에서 이미지 찾기"
+                        onClick={() => void openImagePicker(id)}
+                        disabled={imageLoadingId === id}
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: 12,
+                          borderRadius: RADIUS.sm,
+                          border: `1px solid ${COLORS.primary}`,
+                          background: COLORS.primarySoft,
+                          color: COLORS.accentText,
+                          cursor: imageLoadingId === id ? 'wait' : 'pointer',
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {imageLoadingId === id ? '검색…' : '이미지'}
+                      </button>
+                    </div>
+                  </td>
+                ) : null}
                 <td
                   style={{
                     padding: 8,
@@ -231,37 +332,47 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
                     </button>
                   </div>
                 </td>
-                <td style={{ padding: 8 }}>
-                  <input
-                    value={row.set_name != null ? String(row.set_name) : ''}
-                    onChange={(e) => updateField(id, 'set_name', e.target.value)}
-                    onBlur={(e) => commitRow(id, { set_name: e.target.value })}
-                    style={{
-                      width: '100%',
-                      minWidth: 100,
-                      padding: '6px 8px',
-                      borderRadius: RADIUS.sm,
-                      border: `1px solid ${COLORS.border}`,
-                    }}
-                  />
-                </td>
-                <td style={{ padding: 8 }}>
-                  <input
-                    type="number"
-                    min={1}
-                    value={row.day != null ? Number(row.day) : 1}
-                    onChange={(e) => updateField(id, 'day', parseInt(e.target.value, 10) || 1)}
-                    onBlur={(e) =>
-                      commitRow(id, { day: parseInt(e.target.value, 10) || 1 })
-                    }
-                    style={{
-                      width: 64,
-                      padding: '6px 8px',
-                      borderRadius: RADIUS.sm,
-                      border: `1px solid ${COLORS.border}`,
-                    }}
-                  />
-                </td>
+                {showSetNameColumn ? (
+                  <td style={{ padding: 8 }}>
+                    <input
+                      value={row.set_name != null ? String(row.set_name) : ''}
+                      onChange={(e) => updateField(id, 'set_name', e.target.value)}
+                      onBlur={(e) => commitRow(id, { set_name: e.target.value })}
+                      style={{
+                        width: '100%',
+                        minWidth: 100,
+                        padding: '6px 8px',
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.border}`,
+                      }}
+                    />
+                  </td>
+                ) : null}
+                {showDayColumn ? (
+                  <td style={{ padding: 8 }}>
+                    {dayReadOnly ? (
+                      <span style={{ fontWeight: 600, color: COLORS.accentText }}>
+                        {row.day != null ? Number(row.day) : '—'}
+                      </span>
+                    ) : (
+                      <input
+                        type="number"
+                        min={1}
+                        value={row.day != null ? Number(row.day) : 1}
+                        onChange={(e) => updateField(id, 'day', parseInt(e.target.value, 10) || 1)}
+                        onBlur={(e) =>
+                          commitRow(id, { day: parseInt(e.target.value, 10) || 1 })
+                        }
+                        style={{
+                          width: 64,
+                          padding: '6px 8px',
+                          borderRadius: RADIUS.sm,
+                          border: `1px solid ${COLORS.border}`,
+                        }}
+                      />
+                    )}
+                  </td>
+                ) : null}
               </tr>
             )
           })}
@@ -269,6 +380,58 @@ export default function WordTable({ rows, onRowsChange, selectedIds, onSelectedI
       </table>
       {rows.length === 0 ? (
         <p style={{ padding: 24, textAlign: 'center', color: COLORS.textSecondary }}>행이 없습니다</p>
+      ) : null}
+
+      {imagePicker && imagePicker.photos?.length > 0 ? (
+        <div
+          style={{
+            position: 'sticky',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            padding: 12,
+            marginTop: 8,
+            borderTop: `1px solid ${COLORS.border}`,
+            background: COLORS.surface,
+            boxShadow: '0 -4px 12px rgba(0,0,0,0.08)',
+          }}
+        >
+          <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 8 }}>
+            이미지 선택 (Unsplash)
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {imagePicker.photos.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => pickImage(imagePicker.id, p)}
+                style={{
+                  padding: 0,
+                  border: `2px solid ${COLORS.border}`,
+                  borderRadius: RADIUS.sm,
+                  cursor: 'pointer',
+                  overflow: 'hidden',
+                  background: 'none',
+                }}
+              >
+                <img src={p.thumb} alt="" style={{ width: 80, height: 80, objectFit: 'cover', display: 'block' }} />
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setImagePicker(null)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: RADIUS.sm,
+                border: `1px solid ${COLORS.border}`,
+                background: COLORS.bg,
+                cursor: 'pointer',
+              }}
+            >
+              닫기
+            </button>
+          </div>
+        </div>
       ) : null}
     </div>
   )

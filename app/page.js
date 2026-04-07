@@ -71,6 +71,14 @@ export default function Home() {
           <span style={{ fontSize: 36, marginBottom: 8 }}>📚</span>
           단어 관리
         </Link>
+        <Link
+          href="/teacher/words/create"
+          style={cardStyle}
+          className="home-menu-card"
+        >
+          <span style={{ fontSize: 36, marginBottom: 8 }}>➕</span>
+          새 세트 만들기
+        </Link>
       </div>
     </div>
   );
