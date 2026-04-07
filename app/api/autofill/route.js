@@ -43,6 +43,15 @@ ${JSON.stringify(
   })
 
   const data = await res.json()
+  if (!res.ok) {
+    let msg = data.error?.message || data.detail || 'Claude 요청 실패'
+    if (/credit|balance|billing|insufficient|payment/i.test(String(msg))) {
+      msg =
+        '[Anthropic/Claude] API 크레딧이 부족합니다. console.anthropic.com → Plans & Billing 을 확인하세요. '
+    }
+    return Response.json({ filled: [], error: msg }, { status: 502 })
+  }
+
   const text = data.content?.[0]?.text || '[]'
 
   try {

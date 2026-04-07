@@ -224,7 +224,9 @@ export default function CreateWordSetPage() {
             />
           </label>
           <p style={{ margin: 0, fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.5 }}>
-            DB에 있는 전체 단어 목록은 보이지 않습니다. 카드만 입력한 뒤, Day를 나누고 저장하면 됩니다.
+            DB에 있는 전체 단어 목록은 보이지 않습니다. 카드만 입력한 뒤, Day를 나누고 저장하면 됩니다. 예문
+            돋보기·자동채우기는 Anthropic(Claude) API를 쓰며, 계정에 크레딧이 있어야 합니다. 이미지는 Unsplash만
+            사용합니다.
           </p>
         </div>
 

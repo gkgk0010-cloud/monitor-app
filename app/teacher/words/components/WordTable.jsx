@@ -55,6 +55,13 @@ export default function WordTable({
     )
   }
 
+  /** 연속 updateField 는 stale rows 로 서로 덮어쓸 수 있음 → 한 번에 병합 */
+  const patchRow = (id, patch) => {
+    onRowsChange(
+      rows.map((r) => (String(r.id) === String(id) ? { ...r, ...patch } : r)),
+    )
+  }
+
   const commitRow = (id, patch) => {
     const row = rows.find((r) => String(r.id) === String(id))
     if (!row || !onRowCommit) return
@@ -122,8 +129,7 @@ export default function WordTable({
 
   const pickImage = (id, photo) => {
     const url = photo.regular || photo.thumb
-    updateField(id, 'image_url', url)
-    updateField(id, 'image_source', 'unsplash')
+    patchRow(id, { image_url: url, image_source: 'unsplash' })
     commitRow(id, { image_url: url, image_source: 'unsplash' })
     setImagePicker(null)
   }

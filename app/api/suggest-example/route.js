@@ -44,7 +44,11 @@ export async function POST(req) {
 
   const data = await res.json()
   if (!res.ok) {
-    const msg = data.error?.message || data.detail || 'Claude 요청 실패'
+    let msg = data.error?.message || data.detail || 'Claude 요청 실패'
+    if (/credit|balance|billing|insufficient|payment/i.test(String(msg))) {
+      msg =
+        '[Anthropic/Claude] API 크레딧이 부족합니다. console.anthropic.com → Plans & Billing 에서 충전 또는 플랜을 확인하세요. '
+    }
     return Response.json({ error: msg }, { status: 502 })
   }
 

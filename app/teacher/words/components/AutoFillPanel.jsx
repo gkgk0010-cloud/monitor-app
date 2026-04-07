@@ -67,6 +67,13 @@ export default function AutoFillPanel({ rows, onFilled }) {
         }),
       })
       const json = await res.json()
+      if (!res.ok && json.error) {
+        setLog(String(json.error))
+        alert(String(json.error))
+        setBusy(false)
+        setProgress(0)
+        return
+      }
       const filled = json.filled || []
       for (const f of filled) {
         const id = String(f.id)
