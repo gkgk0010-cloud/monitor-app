@@ -7,12 +7,7 @@ import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import WordTable from './components/WordTable'
 import BulkImport from './components/BulkImport'
 import AutoFillPanel from './components/AutoFillPanel'
-
-/** DB words.difficulty NOT NULL 대응 */
-function difficultyOrZero(row) {
-  const n = Number(row?.difficulty)
-  return Number.isFinite(n) ? n : 0
-}
+import { normalizeWordDifficulty } from './utils/parsers'
 
 export default function WordsManagePage() {
   const [words, setWords] = useState([])
@@ -96,7 +91,7 @@ export default function WordsManagePage() {
       example_sentence: String(row.example_sentence || '').trim() || null,
       set_name: String(row.set_name || '토익 기본 단어').trim() || '토익 기본 단어',
       day: Math.max(1, parseInt(String(row.day ?? 1), 10) || 1),
-      difficulty: difficultyOrZero(row),
+      difficulty: normalizeWordDifficulty(row?.difficulty),
       image_url: row.image_url ? String(row.image_url).trim() : null,
       image_source: row.image_url ? String(row.image_source || 'none') : 'none',
     }
@@ -133,7 +128,7 @@ export default function WordsManagePage() {
         day: 1,
         image_url: null,
         image_source: 'none',
-        difficulty: 0,
+        difficulty: 1,
       },
       ...prev,
     ])

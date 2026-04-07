@@ -67,3 +67,14 @@ function parseListFormat(lines) {
     })
     .filter((r) => r.word)
 }
+
+/** DB words_difficulty_check (일반적으로 1~5) — 0·null 은 CHECK 위반 */
+export const WORD_DIFFICULTY_MIN = 1
+export const WORD_DIFFICULTY_MAX = 5
+
+export function normalizeWordDifficulty(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return WORD_DIFFICULTY_MIN
+  const k = Math.floor(n)
+  return Math.min(WORD_DIFFICULTY_MAX, Math.max(WORD_DIFFICULTY_MIN, k))
+}

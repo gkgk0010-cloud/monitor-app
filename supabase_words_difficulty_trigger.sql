@@ -1,5 +1,6 @@
--- words.difficulty 가 NOT NULL 인데 클라이언트가 null 을 보낼 때 대비 (캐시된 옛 번들 등)
--- Supabase → SQL Editor 에서 한 번 실행
+-- words.difficulty: NOT NULL + words_difficulty_check(보통 1~5) — 0 은 CHECK 위반
+-- 이미 실행한 경우: 함수만 다시 CREATE OR REPLACE 하면 됨
+-- Supabase → SQL Editor 에서 실행
 
 CREATE OR REPLACE FUNCTION public.words_coerce_difficulty()
 RETURNS TRIGGER
@@ -8,8 +9,8 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  IF NEW.difficulty IS NULL THEN
-    NEW.difficulty := 0;
+  IF NEW.difficulty IS NULL OR NEW.difficulty = 0 THEN
+    NEW.difficulty := 1;
   END IF;
   RETURN NEW;
 END;
@@ -22,5 +23,5 @@ CREATE TRIGGER trg_words_coerce_difficulty
   FOR EACH ROW
   EXECUTE PROCEDURE public.words_coerce_difficulty();
 
--- (선택) 컬럼 생략 시에도 0 이 들어가게 하려면:
--- ALTER TABLE public.words ALTER COLUMN difficulty SET DEFAULT 0;
+-- (선택) 컬럼 생략 시 기본값
+-- ALTER TABLE public.words ALTER COLUMN difficulty SET DEFAULT 1;
