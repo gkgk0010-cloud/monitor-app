@@ -112,7 +112,10 @@ export default function BulkImport({ open, onClose, onSaved, existingSetNames })
         example_sentence: String(r.example_sentence || '').trim() || null,
         set_name: String(r.set_name || setName).trim() || '토익 기본 단어',
         day: Math.max(1, parseInt(String(r.day ?? day), 10) || 1),
-        difficulty: r.difficulty != null ? Number(r.difficulty) : null,
+        difficulty: (() => {
+          const n = Number(r.difficulty)
+          return Number.isFinite(n) ? n : 0
+        })(),
         image_url: r.image_url ? String(r.image_url) : null,
         image_source: r.image_url ? (r.image_source || 'upload') : 'none',
       }))
