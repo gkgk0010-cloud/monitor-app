@@ -107,3 +107,9 @@ html, body {
     padding: 5px 10px !important;
   }
 }
+
+/* 홈: 모니터 / 단어 관리 선택 카드 */
+.home-menu-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.25);
+}

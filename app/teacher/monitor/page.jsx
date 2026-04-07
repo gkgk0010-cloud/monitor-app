@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/utils/supabaseClient';
 
 const COLOR_ORDER = { gold: 0, red: 1, orange: 2, blue: 3, green: 4, purple: 5, white: 6 };
@@ -715,6 +716,13 @@ export default function TeacherMonitorPage() {
         <header className="monitor-header" style={styles.header}>
           <h1 className="monitor-title" style={styles.title}>실시간 학생 모니터링</h1>
           <div style={styles.headerRight}>
+            <Link
+              href="/teacher/words"
+              className="monitor-copy-btn"
+              style={{ ...styles.copyBtn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+            >
+              📚 단어 관리
+            </Link>
             <button type="button" onClick={handleCopyTodayAttendanceOnly} className="monitor-copy-btn" style={styles.copyBtn} title="오늘 출석만 복사 (40명 넘으면 N차로 나눠 복사)">
               📢 오늘 출석 복사
             </button>
@@ -736,7 +744,7 @@ export default function TeacherMonitorPage() {
           <span style={styles.summarySep}>·</span>
           <span>오늘 출석 <strong>{todaySurvivors.length}명</strong></span>
           <span style={styles.summarySep}>·</span>
-          <span>지금 접속 중 <strong style={{ color: liveNowCount > 0 ? '#16a34a' : undefined }}>{liveNowCount}명</strong></span>
+          <span>지금 접속 중 <strong style={{ color: liveNowCount > 0 ? '#5b7cfa' : undefined }}>{liveNowCount}명</strong></span>
           <span style={styles.summarySep}>·</span>
           <span>오늘 사건 <strong>{todayEventsCount}건</strong></span>
         </div>
@@ -1034,8 +1042,8 @@ const styles = {
   legendPanel: { display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20, padding: 12, background: 'rgba(255,255,255,0.9)', borderRadius: 16 },
   legendItem: { padding: '6px 12px', borderLeft: '4px solid', borderRadius: 8, fontSize: 12 },
   copyBtn: { padding: '6px 12px', border: '1px solid rgba(107,114,128,0.3)', borderRadius: 12, background: 'rgba(255,255,255,0.9)', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 },
-  liveBadge: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#E8F5E9', borderRadius: 20, fontSize: 13, fontWeight: 600, color: '#2E7D32' },
-  liveDot: { width: 8, height: 8, borderRadius: '50%', background: '#34a853' },
+  liveBadge: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#ede9fe', borderRadius: 20, fontSize: 13, fontWeight: 600, color: '#5b21b6' },
+  liveDot: { width: 8, height: 8, borderRadius: '50%', background: '#764ba2' },
   toast: { position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', padding: '10px 20px', background: '#374151', color: '#fff', borderRadius: 12, fontSize: 14, zIndex: 9999, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' },
   summaryBar: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, padding: '12px 16px', marginBottom: 20, background: 'linear-gradient(90deg, rgba(106,17,203,0.08) 0%, rgba(37,117,252,0.06) 100%)', borderRadius: 16, border: '1px solid rgba(106,17,203,0.15)', fontSize: 14, color: '#374151', fontWeight: 500 },
   summaryIcon: { fontSize: 18 },

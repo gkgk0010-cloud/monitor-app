@@ -160,7 +160,7 @@ export default function WordsManagePage() {
           margin: '0 auto 20px',
           padding: '16px 20px',
           borderRadius: RADIUS.lg,
-          background: COLORS.primary,
+          background: COLORS.headerGradient,
           color: COLORS.textOnGreen,
           boxShadow: SHADOW.card,
           display: 'flex',
@@ -200,7 +200,7 @@ export default function WordsManagePage() {
               borderRadius: RADIUS.md,
               border: 'none',
               background: COLORS.textOnGreen,
-              color: COLORS.primary,
+              color: COLORS.primaryDark,
               fontWeight: 700,
               cursor: 'pointer',
             }}
