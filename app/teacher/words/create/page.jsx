@@ -42,11 +42,9 @@ export default function CreateWordSetPage() {
     setRows((prev) => prev.map((r) => ({ ...r, set_name: v })))
   }
 
+  /** 세트 이름은 syncSetName에서만 전 행에 반영. 여기서 매번 map 하면 타이핑마다 전체 행이 갱신되어 느려짐 */
   const onRowsChange = (next) => {
-    setRows((prev) => {
-      const base = typeof next === 'function' ? next(prev) : next
-      return base.map((r) => ({ ...r, set_name: setName }))
-    })
+    setRows((prev) => (typeof next === 'function' ? next(prev) : next))
   }
 
   const addEmptyRow = () => {

@@ -66,10 +66,18 @@ export default function WordsManagePage() {
     return { total, noImage, noExample }
   }, [words])
 
-  const filtered = useMemo(
-    () => filterWordRows(words, { search, setFilter, dayFilter, emptyOnly }),
-    [words, search, setFilter, dayFilter, emptyOnly],
+  const filterOpts = useMemo(
+    () => ({ search, setFilter, dayFilter, emptyOnly }),
+    [search, setFilter, dayFilter, emptyOnly],
   )
+
+  const filtered = useMemo(() => filterWordRows(words, filterOpts), [words, filterOpts])
+
+  /** 타이핑 시 setWords 업데이터 안에서 매번 전체 words를 다시 필터하지 않도록 캐시 */
+  const wordsRef = useRef(words)
+  const filteredRef = useRef(filtered)
+  wordsRef.current = words
+  filteredRef.current = filtered
 
   const daysInSelectedSet = useMemo(() => {
     if (!setFilter.trim()) return []
@@ -514,12 +522,9 @@ export default function WordsManagePage() {
               rows={filtered}
               onRowsChange={(next) => {
                 setWords((prev) => {
-                  const prevFiltered = filterWordRows(prev, {
-                    search,
-                    setFilter,
-                    dayFilter,
-                    emptyOnly,
-                  })
+                  const prevFiltered = Object.is(prev, wordsRef.current)
+                    ? filteredRef.current
+                    : filterWordRows(prev, filterOpts)
                   const merged =
                     typeof next === 'function' ? next(prevFiltered) : next
                   const nextById = new Map(merged.map((r) => [String(r.id), r]))
