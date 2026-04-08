@@ -25,8 +25,8 @@ function emptyRow(setName) {
 }
 
 export default function CreateWordSetPage() {
-  const [setName, setSetName] = useState('토익 기본 단어')
-  const [rows, setRows] = useState(() => [emptyRow('토익 기본 단어')])
+  const [setName, setSetName] = useState('')
+  const [rows, setRows] = useState(() => [emptyRow('')])
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkOpen, setBulkOpen] = useState(false)
   const [dayMode, setDayMode] = useState('equal')
@@ -37,7 +37,7 @@ export default function CreateWordSetPage() {
   const [hint, setHint] = useState(null)
 
   const syncSetName = (name) => {
-    const v = String(name).trim() || '토익 기본 단어'
+    const v = String(name)
     setSetName(v)
     setRows((prev) => prev.map((r) => ({ ...r, set_name: v })))
   }
@@ -141,6 +141,17 @@ export default function CreateWordSetPage() {
     setRows((prev) => prev.map((r) => ({ ...(map.get(String(r.id)) || r), set_name: setName })))
   }
 
+  const handleRowDelete = (row) => {
+    if (!confirm('이 행을 목록에서 삭제할까요?')) return
+    const id = String(row.id)
+    setRows((prev) => prev.filter((r) => String(r.id) !== id))
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: COLORS.bg, padding: '20px 16px 40px' }}>
       <header
@@ -216,7 +227,7 @@ export default function CreateWordSetPage() {
             <input
               value={setName}
               onChange={(e) => syncSetName(e.target.value)}
-              placeholder="예: 토익 기본 단어"
+              placeholder="세트 이름 (필수)"
               style={{
                 flex: '1 1 240px',
                 padding: '10px 12px',
@@ -228,8 +239,8 @@ export default function CreateWordSetPage() {
           </label>
           <p style={{ margin: 0, fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.5 }}>
             DB에 있는 전체 단어 목록은 보이지 않습니다. 카드만 입력한 뒤, Day를 나누고 저장하면 됩니다. 예문
-            돋보기·자동채우기는 Anthropic(Claude) API를 쓰며, 계정에 크레딧이 있어야 합니다. 이미지는 Unsplash만
-            사용합니다.
+            돋보기·자동채우기는 Anthropic(Claude) API를 쓰며, 계정에 크레딧이 있어야 합니다. 이미지는 검색·URL·
+            드래그·붙여넣기를 지원합니다.
           </p>
         </div>
 
@@ -340,6 +351,8 @@ export default function CreateWordSetPage() {
           showDayColumn={hasDayPreview}
           dayReadOnly={hasDayPreview}
           showImageColumn
+          showDeleteColumn
+          onRowDelete={handleRowDelete}
         />
 
         <AutoFillPanel rows={autoFillRows} onFilled={handleAutoFilled} />

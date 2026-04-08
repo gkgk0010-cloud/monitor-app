@@ -1,5 +1,5 @@
-/** 단어 관리 화면과 동일한 필터 (검색·set·빈 필드만) */
-export function filterWordRows(words, { search, setFilter, emptyOnly }) {
+/** 단어 관리 화면과 동일한 필터 (검색·set·day·빈 필드) */
+export function filterWordRows(words, { search, setFilter, dayFilter, emptyOnly }) {
   let list = words
   const q = search.trim().toLowerCase()
   if (q) {
@@ -11,6 +11,10 @@ export function filterWordRows(words, { search, setFilter, emptyOnly }) {
   }
   if (setFilter.trim()) {
     list = list.filter((w) => String(w.set_name || '') === setFilter)
+  }
+  if (dayFilter != null && dayFilter !== '') {
+    const d = Number(dayFilter)
+    list = list.filter((w) => Number(w.day) === d)
   }
   if (emptyOnly) {
     list = list.filter((w) => {

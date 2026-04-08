@@ -5,6 +5,7 @@
 
 DROP POLICY IF EXISTS "words_anon_insert" ON public.words;
 DROP POLICY IF EXISTS "words_anon_update" ON public.words;
+DROP POLICY IF EXISTS "words_anon_delete" ON public.words;
 
 CREATE POLICY "words_anon_insert"
   ON public.words
@@ -18,3 +19,9 @@ CREATE POLICY "words_anon_update"
   TO anon
   USING (true)
   WITH CHECK (true);
+
+CREATE POLICY "words_anon_delete"
+  ON public.words
+  FOR DELETE
+  TO anon
+  USING (true);

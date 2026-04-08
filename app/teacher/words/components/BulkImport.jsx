@@ -38,17 +38,31 @@ export default function BulkImport({
   const [pasteText, setPasteText] = useState('')
   const [csvText, setCsvText] = useState('')
   const [previewRows, setPreviewRows] = useState([])
-  const [setName, setSetName] = useState('토익 기본 단어')
+  const [setName, setSetName] = useState('')
   const [day, setDay] = useState(1)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [saving, setSaving] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
 
   useEffect(() => {
-    if (open && initialSetName != null && String(initialSetName).trim() !== '') {
-      setSetName(String(initialSetName).trim())
+    if (!open) return
+    if (initialSetName !== undefined) {
+      setSetName(String(initialSetName))
+    } else {
+      setSetName('')
     }
   }, [open, initialSetName])
+
+  const handlePreviewRowDelete = (row) => {
+    if (!confirm('이 행을 미리보기에서 제거할까요?')) return
+    const id = String(row.id)
+    setPreviewRows((prev) => prev.filter((r) => String(r.id) !== id))
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+  }
 
   if (!open) return null
 
@@ -121,13 +135,18 @@ export default function BulkImport({
       alert('저장할 단어가 없습니다. 영단어·뜻을 모두 입력했는지 확인하세요.')
       return
     }
+    const trimmedSet = String(setName).trim()
+    if (!trimmedSet && !localOnly) {
+      alert('세트 이름을 입력하세요.')
+      return
+    }
     setSaving(true)
     try {
       const payload = valid.map((r) => ({
         word: String(r.word).trim(),
         meaning: String(r.meaning).trim(),
         example_sentence: String(r.example_sentence || '').trim() || null,
-        set_name: String(r.set_name || setName).trim() || '토익 기본 단어',
+        set_name: String(r.set_name || setName).trim() || trimmedSet,
         day: Math.max(1, parseInt(String(r.day ?? day), 10) || 1),
         difficulty: normalizeWordDifficulty(r.difficulty),
         image_url: r.image_url ? String(r.image_url) : null,
@@ -407,6 +426,8 @@ export default function BulkImport({
                 onRowsChange={setPreviewRows}
                 selectedIds={selectedIds}
                 onSelectedIdsChange={setSelectedIds}
+                showDeleteColumn
+                onRowDelete={handlePreviewRowDelete}
               />
               <AutoFillPanel
                 rows={selectedIds.size > 0 ? previewRows.filter((r) => selectedIds.has(String(r.id))) : previewRows}

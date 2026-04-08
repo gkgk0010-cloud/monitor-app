@@ -15,6 +15,8 @@ export default function WordsManagePage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [setFilter, setSetFilter] = useState('')
+  /** 세트 선택 후 day만 보기 (null = 전체 day) */
+  const [dayFilter, setDayFilter] = useState(null)
   const [emptyOnly, setEmptyOnly] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkOpen, setBulkOpen] = useState(false)
@@ -65,9 +67,53 @@ export default function WordsManagePage() {
   }, [words])
 
   const filtered = useMemo(
-    () => filterWordRows(words, { search, setFilter, emptyOnly }),
-    [words, search, setFilter, emptyOnly],
+    () => filterWordRows(words, { search, setFilter, dayFilter, emptyOnly }),
+    [words, search, setFilter, dayFilter, emptyOnly],
   )
+
+  const daysInSelectedSet = useMemo(() => {
+    if (!setFilter.trim()) return []
+    const s = new Set()
+    for (const w of words) {
+      if (String(w.set_name || '') !== setFilter) continue
+      if (w.day != null) s.add(Number(w.day))
+    }
+    return [...s].sort((a, b) => a - b)
+  }, [words, setFilter])
+
+  const changeSetFilter = (v) => {
+    setSetFilter(v)
+    setDayFilter(null)
+  }
+
+  const handleRowDelete = async (row) => {
+    const w = String(row.word || '').trim()
+    if (!confirm(w ? `「${w}」행을 삭제할까요?` : '이 행을 삭제할까요?')) return
+    const id = String(row.id)
+    if (id.startsWith('temp-')) {
+      setWords((prev) => prev.filter((r) => String(r.id) !== id))
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      return
+    }
+    const { error } = await supabase.from('words').delete().eq('id', id)
+    if (error) {
+      alert(`삭제 실패: ${error.message}`)
+      return
+    }
+    setWords((prev) => prev.filter((r) => String(r.id) !== id))
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+    setSaveHint('삭제했습니다.')
+    if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
+    saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2000)
+  }
 
   const handleRowCommit = async (row) => {
     const id = String(row.id)
@@ -124,7 +170,7 @@ export default function WordsManagePage() {
         word: '',
         meaning: '',
         example_sentence: '',
-        set_name: '토익 기본 단어',
+        set_name: setFilter.trim() || '토익 기본 단어',
         day: 1,
         image_url: null,
         image_source: 'none',
@@ -229,7 +275,126 @@ export default function WordsManagePage() {
         </div>
       </header>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+      <div
+        style={{
+          maxWidth: 1280,
+          margin: '0 auto',
+          display: 'flex',
+          gap: 16,
+          alignItems: 'flex-start',
+        }}
+      >
+        <aside
+          style={{
+            width: 260,
+            flexShrink: 0,
+            padding: 14,
+            borderRadius: RADIUS.lg,
+            border: `1px solid ${COLORS.border}`,
+            background: COLORS.surface,
+            boxShadow: SHADOW.card,
+            maxHeight: 'calc(100vh - 140px)',
+            overflow: 'auto',
+          }}
+        >
+          <div style={{ fontWeight: 800, color: COLORS.accentText, marginBottom: 10, fontSize: 15 }}>
+            나의 세트 ({setNames.length})
+          </div>
+          <button
+            type="button"
+            onClick={() => changeSetFilter('')}
+            style={{
+              width: '100%',
+              textAlign: 'left',
+              padding: '8px 10px',
+              marginBottom: 6,
+              borderRadius: RADIUS.sm,
+              border: `1px solid ${!setFilter.trim() ? COLORS.primary : COLORS.border}`,
+              background: !setFilter.trim() ? COLORS.primarySoft : COLORS.bg,
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: !setFilter.trim() ? 700 : 400,
+            }}
+          >
+            전체 보기
+          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {setNames.map((n) => {
+              const cnt = words.filter((w) => String(w.set_name || '') === n).length
+              const active = setFilter === n
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => changeSetFilter(n)}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '8px 10px',
+                    borderRadius: RADIUS.sm,
+                    border: `1px solid ${active ? COLORS.primary : COLORS.border}`,
+                    background: active ? COLORS.primarySoft : COLORS.bg,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: active ? 700 : 400,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={n}
+                >
+                  {n} ({cnt})
+                </button>
+              )
+            })}
+          </div>
+          {setFilter.trim() ? (
+            <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${COLORS.border}` }}>
+              <div style={{ fontWeight: 700, color: COLORS.accentText, marginBottom: 8, fontSize: 13 }}>
+                Day
+              </div>
+              <button
+                type="button"
+                onClick={() => setDayFilter(null)}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '6px 10px',
+                  marginBottom: 4,
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${dayFilter == null ? COLORS.primary : COLORS.border}`,
+                  background: dayFilter == null ? COLORS.primarySoft : COLORS.bg,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                }}
+              >
+                전체 Day
+              </button>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {daysInSelectedSet.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setDayFilter(d)}
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: RADIUS.sm,
+                      border: `1px solid ${dayFilter === d ? COLORS.primary : COLORS.border}`,
+                      background: dayFilter === d ? COLORS.primarySoft : COLORS.bg,
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      fontWeight: dayFilter === d ? 700 : 400,
+                    }}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </aside>
+
+        <div style={{ flex: 1, minWidth: 0, maxWidth: 900 }}>
         <div
           style={{
             display: 'grid',
@@ -288,7 +453,7 @@ export default function WordsManagePage() {
             <span style={{ color: COLORS.textSecondary, fontSize: 14 }}>set_name</span>
             <select
               value={setFilter}
-              onChange={(e) => setSetFilter(e.target.value)}
+              onChange={(e) => changeSetFilter(e.target.value)}
               style={{
                 padding: '10px 12px',
                 borderRadius: RADIUS.sm,
@@ -349,7 +514,12 @@ export default function WordsManagePage() {
               rows={filtered}
               onRowsChange={(next) => {
                 setWords((prev) => {
-                  const prevFiltered = filterWordRows(prev, { search, setFilter, emptyOnly })
+                  const prevFiltered = filterWordRows(prev, {
+                    search,
+                    setFilter,
+                    dayFilter,
+                    emptyOnly,
+                  })
                   const merged =
                     typeof next === 'function' ? next(prevFiltered) : next
                   const nextById = new Map(merged.map((r) => [String(r.id), r]))
@@ -359,10 +529,13 @@ export default function WordsManagePage() {
               selectedIds={selectedIds}
               onSelectedIdsChange={setSelectedIds}
               onRowCommit={handleRowCommit}
+              showDeleteColumn
+              onRowDelete={handleRowDelete}
             />
             <AutoFillPanel rows={autoFillRows} onFilled={handleAutoFilled} />
           </>
         )}
+        </div>
       </div>
 
       <BulkImport
@@ -370,6 +543,7 @@ export default function WordsManagePage() {
         onClose={() => setBulkOpen(false)}
         onSaved={() => void loadWords()}
         existingSetNames={setNames}
+        initialSetName={setFilter}
       />
     </div>
   )

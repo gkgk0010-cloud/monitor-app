@@ -16,6 +16,8 @@ import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
  *   showDayColumn?: boolean
  *   dayReadOnly?: boolean
  *   showImageColumn?: boolean
+ *   showDeleteColumn?: boolean
+ *   onRowDelete?: (row: Record<string, unknown>) => void | Promise<void>
  * }} props
  */
 export default function WordTable({
@@ -28,6 +30,8 @@ export default function WordTable({
   showDayColumn = true,
   dayReadOnly = false,
   showImageColumn = true,
+  showDeleteColumn = false,
+  onRowDelete,
 }) {
   const [busyExampleId, setBusyExampleId] = useState(null)
   const [imagePicker, setImagePicker] = useState(null)
@@ -140,6 +144,44 @@ export default function WordTable({
     setImagePicker(null)
   }
 
+  const MAX_IMG_DATA_URL = 1_400_000
+
+  const applyImageUrl = (id, url, source) => {
+    const s = String(url || '').trim()
+    if (!s) return
+    if (s.startsWith('data:') && s.length > MAX_IMG_DATA_URL) {
+      alert('이미지가 너무 큽니다. 더 작은 파일이나 URL을 사용해 주세요.')
+      return
+    }
+    patchRow(id, { image_url: s, image_source: source })
+    commitRow(id, { image_url: s, image_source: source })
+  }
+
+  const onImageDrop = (id, e) => {
+    e.preventDefault()
+    const f = e.dataTransfer?.files?.[0]
+    if (!f || !f.type.startsWith('image/')) return
+    const reader = new FileReader()
+    reader.onload = () => applyImageUrl(id, reader.result, 'upload')
+    reader.readAsDataURL(f)
+  }
+
+  const onImagePaste = (id, e) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    for (const it of items) {
+      if (it.type.startsWith('image/')) {
+        e.preventDefault()
+        const f = it.getAsFile()
+        if (!f) continue
+        const reader = new FileReader()
+        reader.onload = () => applyImageUrl(id, reader.result, 'paste')
+        reader.readAsDataURL(f)
+        return
+      }
+    }
+  }
+
   return (
     <div
       style={{
@@ -172,6 +214,9 @@ export default function WordTable({
             ) : null}
             {showDayColumn ? (
               <th style={{ padding: '10px 8px', width: 72, color: COLORS.accentText }}>day</th>
+            ) : null}
+            {showDeleteColumn ? (
+              <th style={{ padding: '10px 8px', width: 56, color: COLORS.accentText }} />
             ) : null}
           </tr>
         </thead>
@@ -230,42 +275,85 @@ export default function WordTable({
                   />
                 </td>
                 {showImageColumn ? (
-                  <td style={{ padding: 8, verticalAlign: 'middle' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      {img ? (
-                        <img
-                          src={img}
-                          alt=""
+                  <td style={{ padding: 8, verticalAlign: 'top' }}>
+                    <div
+                      onDragOver={(e) => {
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'copy'
+                      }}
+                      onDrop={(e) => onImageDrop(id, e)}
+                      onPaste={(e) => onImagePaste(id, e)}
+                      tabIndex={0}
+                      title="이미지 파일 드롭 또는 클립보드에서 이미지 붙여넣기"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 6,
+                        padding: 6,
+                        borderRadius: RADIUS.sm,
+                        border: `1px dashed ${COLORS.border}`,
+                        background: COLORS.bg,
+                        minWidth: 132,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {img ? (
+                          <img
+                            src={img}
+                            alt=""
+                            style={{
+                              width: 40,
+                              height: 40,
+                              objectFit: 'cover',
+                              borderRadius: RADIUS.sm,
+                              border: `1px solid ${COLORS.border}`,
+                            }}
+                          />
+                        ) : (
+                          <span style={{ fontSize: 12, color: COLORS.textHint }}>—</span>
+                        )}
+                        <button
+                          type="button"
+                          title="Unsplash에서 이미지 찾기"
+                          onClick={() => void openImagePicker(id)}
+                          disabled={imageLoadingId === id}
                           style={{
-                            width: 40,
-                            height: 40,
-                            objectFit: 'cover',
+                            padding: '4px 8px',
+                            fontSize: 12,
                             borderRadius: RADIUS.sm,
-                            border: `1px solid ${COLORS.border}`,
+                            border: `1px solid ${COLORS.primary}`,
+                            background: COLORS.primarySoft,
+                            color: COLORS.accentText,
+                            cursor: imageLoadingId === id ? 'wait' : 'pointer',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
                           }}
-                        />
-                      ) : (
-                        <span style={{ fontSize: 12, color: COLORS.textHint }}>—</span>
-                      )}
-                      <button
-                        type="button"
-                        title="Unsplash에서 이미지 찾기"
-                        onClick={() => void openImagePicker(id)}
-                        disabled={imageLoadingId === id}
-                        style={{
-                          padding: '4px 8px',
-                          fontSize: 12,
-                          borderRadius: RADIUS.sm,
-                          border: `1px solid ${COLORS.primary}`,
-                          background: COLORS.primarySoft,
-                          color: COLORS.accentText,
-                          cursor: imageLoadingId === id ? 'wait' : 'pointer',
-                          fontWeight: 600,
-                          whiteSpace: 'nowrap',
+                        >
+                          {imageLoadingId === id ? '검색…' : '검색'}
+                        </button>
+                      </div>
+                      <input
+                        type="url"
+                        name={`imgurl-${id}`}
+                        placeholder="https://… URL"
+                        defaultValue=""
+                        onBlur={(e) => {
+                          const v = e.target.value.trim()
+                          if (v) applyImageUrl(id, v, 'link')
+                          e.target.value = ''
                         }}
-                      >
-                        {imageLoadingId === id ? '검색…' : '이미지'}
-                      </button>
+                        style={{
+                          fontSize: 11,
+                          padding: '4px 6px',
+                          borderRadius: RADIUS.sm,
+                          border: `1px solid ${COLORS.border}`,
+                          width: '100%',
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                      <span style={{ fontSize: 10, color: COLORS.textHint }}>
+                        드롭·붙여넣기·URL
+                      </span>
                     </div>
                   </td>
                 ) : null}
@@ -383,6 +471,27 @@ export default function WordTable({
                         }}
                       />
                     )}
+                  </td>
+                ) : null}
+                {showDeleteColumn && onRowDelete ? (
+                  <td style={{ padding: 8, verticalAlign: 'middle' }}>
+                    <button
+                      type="button"
+                      title="이 행 삭제"
+                      onClick={() => void onRowDelete(row)}
+                      style={{
+                        padding: '6px 10px',
+                        fontSize: 12,
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.danger}`,
+                        background: COLORS.dangerBg,
+                        color: COLORS.danger,
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                      }}
+                    >
+                      삭제
+                    </button>
                   </td>
                 ) : null}
               </tr>
