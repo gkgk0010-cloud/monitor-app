@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 
 /**
@@ -305,6 +306,31 @@ function WordTable({
     setCollapsedSections(new Set())
   }, [rowGroupMode])
 
+  /** 섹션 헤더 + 데이터 행을 한 줄로 펼쳐 가상 스크롤 */
+  const flatItems = useMemo(() => {
+    const out = []
+    for (const sec of sections) {
+      if (sec.label) {
+        out.push({ type: 'section', sec })
+      }
+      const hideBody = Boolean(sec.label) && collapsedSections.has(sec.key)
+      if (hideBody) continue
+      for (const row of sec.rows) {
+        out.push({ type: 'row', row })
+      }
+    }
+    return out
+  }, [sections, collapsedSections])
+
+  const scrollParentRef = useRef(null)
+
+  const rowVirtualizer = useVirtualizer({
+    count: flatItems.length,
+    getScrollElement: () => scrollParentRef.current,
+    estimateSize: (index) => (flatItems[index]?.type === 'section' ? 46 : 96),
+    overscan: 20,
+  })
+
   const suggestExample = useCallback(
     async (id) => {
       const row = getEffectiveRow(id)
@@ -446,8 +472,33 @@ function WordTable({
         paddingBottom: 4,
       }}
     >
-      <table style={{ width: '100%', minWidth: 1120, borderCollapse: 'collapse', fontSize: 14 }}>
-        <thead>
+      <div
+        ref={scrollParentRef}
+        style={{
+          maxHeight: 'min(72vh, calc(100vh - 240px))',
+          overflow: 'auto',
+        }}
+      >
+        <table
+          style={{
+            width: '100%',
+            minWidth: 1120,
+            borderCollapse: 'collapse',
+            fontSize: 14,
+            tableLayout: 'fixed',
+          }}
+        >
+          <thead
+            style={{
+              display: 'table',
+              width: '100%',
+              tableLayout: 'fixed',
+              position: 'sticky',
+              top: 0,
+              zIndex: 8,
+              background: COLORS.primarySoft,
+            }}
+          >
           <tr style={{ background: COLORS.primarySoft, textAlign: 'left' }}>
             <th style={{ padding: '10px 8px', width: 40 }}>
               <input
@@ -493,17 +544,41 @@ function WordTable({
             ) : null}
           </tr>
         </thead>
-        {sections.map((sec) => {
-          const showBody = !sec.label || !collapsedSections.has(sec.key)
-          return (
-            <tbody key={sec.key}>
-              {sec.label ? (
-                <tr style={{ background: COLORS.bg }}>
+        <tbody
+          style={{
+            display: 'block',
+            position: 'relative',
+            width: '100%',
+            height: rowVirtualizer.getTotalSize(),
+          }}
+        >
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const item = flatItems[virtualRow.index]
+            if (!item) return null
+            const trBase = {
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${virtualRow.start}px)`,
+              display: 'table',
+              tableLayout: 'fixed',
+            }
+            if (item.type === 'section') {
+              const sec = item.sec
+              return (
+                <tr
+                  key={`sec-${sec.key}`}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={trBase}
+                >
                   <td
                     colSpan={columnCount}
                     style={{
                       padding: '8px 10px',
                       borderTop: `1px solid ${COLORS.border}`,
+                      background: COLORS.bg,
                     }}
                   >
                     <button
@@ -524,9 +599,9 @@ function WordTable({
                     </button>
                   </td>
                 </tr>
-              ) : null}
-              {showBody
-                ? sec.rows.map((row) => {
+              )
+            }
+            const row = item.row
             const id = String(row.id)
             const meaning = row.meaning != null ? String(row.meaning) : ''
             const example = row.example_sentence != null ? String(row.example_sentence) : ''
@@ -537,12 +612,13 @@ function WordTable({
 
             return (
               <tr
-                key={id}
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={rowVirtualizer.measureElement}
                 style={{
+                  ...trBase,
                   borderTop: `1px solid ${COLORS.border}`,
                   background: selectedIds.has(id) ? COLORS.successBg : COLORS.surface,
-                  contentVisibility: 'auto',
-                  containIntrinsicSize: 'auto 52px',
                 }}
               >
                 <td style={{ padding: 8 }}>
@@ -831,12 +907,11 @@ function WordTable({
                 ) : null}
               </tr>
             )
-          })
-                : null}
-            </tbody>
-          )
-        })}
+          })}
+        </tbody>
       </table>
+      </div>
+
       {rows.length === 0 ? (
         <p style={{ padding: 24, textAlign: 'center', color: COLORS.textSecondary }}>행이 없습니다</p>
       ) : null}

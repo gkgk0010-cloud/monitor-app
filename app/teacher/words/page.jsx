@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
@@ -112,12 +112,9 @@ export default function WordsManagePage() {
     return { total, noImage, noExample }
   }, [words])
 
-  /** 검색창은 즉시 반응, 필터 적용은 지연 → 테이블 리렌더 폭주 완화 */
-  const deferredSearch = useDeferredValue(search)
-
   const filterOpts = useMemo(
-    () => ({ search: deferredSearch, setFilter, dayFilter, emptyOnly }),
-    [deferredSearch, setFilter, dayFilter, emptyOnly],
+    () => ({ search, setFilter, dayFilter, emptyOnly }),
+    [search, setFilter, dayFilter, emptyOnly],
   )
 
   const filtered = useMemo(() => filterWordRows(words, filterOpts), [words, filterOpts])
