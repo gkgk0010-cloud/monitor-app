@@ -916,55 +916,79 @@ function WordTable({
         <p style={{ padding: 24, textAlign: 'center', color: COLORS.textSecondary }}>행이 없습니다</p>
       ) : null}
 
-      {imagePicker && imagePicker.photos?.length > 0 ? (
+      {imagePicker ? (
         <div
+          role="dialog"
+          aria-label="Unsplash 이미지 선택"
           style={{
-            position: 'sticky',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            padding: 12,
-            marginTop: 8,
-            borderTop: `1px solid ${COLORS.border}`,
+            position: 'fixed',
+            left: 12,
+            right: 12,
+            bottom: 12,
+            zIndex: 1000,
+            maxWidth: 720,
+            margin: '0 auto',
+            padding: 14,
+            borderRadius: RADIUS.md,
+            border: `1px solid ${COLORS.border}`,
             background: COLORS.surface,
-            boxShadow: '0 -4px 12px rgba(0,0,0,0.08)',
+            boxShadow: SHADOW.card,
+            maxHeight: 'min(48vh, 360px)',
+            overflow: 'auto',
           }}
         >
-          <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 8 }}>
-            이미지 선택 (Unsplash)
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            {imagePicker.photos.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => pickImage(imagePicker.id, p)}
-                style={{
-                  padding: 0,
-                  border: `2px solid ${COLORS.border}`,
-                  borderRadius: RADIUS.sm,
-                  cursor: 'pointer',
-                  overflow: 'hidden',
-                  background: 'none',
-                }}
-              >
-                <img src={p.thumb} alt="" style={{ width: 80, height: 80, objectFit: 'cover', display: 'block' }} />
-              </button>
-            ))}
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: COLORS.accentText,
+              marginBottom: 10,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            <span>이미지 선택 (Unsplash)</span>
             <button
               type="button"
               onClick={() => setImagePicker(null)}
               style={{
-                padding: '8px 12px',
+                padding: '4px 10px',
                 borderRadius: RADIUS.sm,
                 border: `1px solid ${COLORS.border}`,
                 background: COLORS.bg,
                 cursor: 'pointer',
+                fontSize: 12,
               }}
             >
               닫기
             </button>
           </div>
+          {imageLoadingId === imagePicker.id &&
+          (!imagePicker.photos || imagePicker.photos.length === 0) ? (
+            <p style={{ margin: 0, fontSize: 14, color: COLORS.textSecondary }}>이미지 검색 중…</p>
+          ) : imagePicker.photos && imagePicker.photos.length > 0 ? (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              {imagePicker.photos.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => pickImage(imagePicker.id, p)}
+                  style={{
+                    padding: 0,
+                    border: `2px solid ${COLORS.border}`,
+                    borderRadius: RADIUS.sm,
+                    cursor: 'pointer',
+                    overflow: 'hidden',
+                    background: 'none',
+                  }}
+                >
+                  <img src={p.thumb} alt="" style={{ width: 80, height: 80, objectFit: 'cover', display: 'block' }} />
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

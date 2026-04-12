@@ -36,7 +36,7 @@ export default function CreateWordSetPage() {
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState(null)
   /** none | day | chunk10 | day_chunk */
-  const [tableGroupMode, setTableGroupMode] = useState('none')
+  const [tableGroupMode, setTableGroupMode] = useState('chunk10')
 
   const effectiveGroupMode = useMemo(() => {
     if (!hasDayPreview && (tableGroupMode === 'day' || tableGroupMode === 'day_chunk')) return 'none'

@@ -24,7 +24,7 @@ export default function WordsManagePage() {
   const [bulkOpen, setBulkOpen] = useState(false)
   const [saveHint, setSaveHint] = useState(null)
   /** 테이블 접기: 10개 단위 (Day는 사이드바에서 이미 필터) */
-  const [tableGroupMode, setTableGroupMode] = useState('none')
+  const [tableGroupMode, setTableGroupMode] = useState('chunk10')
   const saveHintTimerRef = useRef(null)
 
   useEffect(() => {
