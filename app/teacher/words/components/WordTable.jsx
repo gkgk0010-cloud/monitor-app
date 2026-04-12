@@ -4,8 +4,8 @@ import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 
 /**
- * 타이핑마다 부모 setState 하지 않음 → 로컬만 갱신, blur 시 반영.
- * AI/검색 시 아직 blur 안 한 글자는 cellDraftsRef 로 읽음.
+ * 완전 비제어 입력: 타이핑 시 setState 없음 → 자식 리렌더·리컨실 비용 없음.
+ * 외부에서 값이 바뀌면(저장·AI 등) 포커스 없을 때만 DOM에 반영.
  */
 function DraftTextInput({
   rowId,
@@ -18,35 +18,34 @@ function DraftTextInput({
   type = 'text',
   onKeyDown,
   title,
+  dataRowId,
   'aria-label': ariaLabel,
 }) {
+  const inputRef = useRef(null)
   const key = String(rowId)
-  const [local, setLocal] = useState(() => String(value ?? ''))
-  const latestRef = useRef(local)
   const focusedRef = useRef(false)
 
   useEffect(() => {
-    if (!focusedRef.current) {
-      const next = String(value ?? '')
-      setLocal(next)
-      latestRef.current = next
-    }
-  }, [rowId, value])
+    const el = inputRef.current
+    if (!el || focusedRef.current) return
+    const next = String(value ?? '')
+    if (el.value !== next) el.value = next
+  }, [value, rowId, field])
 
   return (
     <input
+      ref={inputRef}
       type={type}
-      value={local}
+      data-row-id={dataRowId != null ? String(dataRowId) : undefined}
+      defaultValue={String(value ?? '')}
       placeholder={placeholder}
       title={title}
       aria-label={ariaLabel}
       onFocus={() => {
         focusedRef.current = true
       }}
-      onChange={(e) => {
+      onInput={(e) => {
         const x = e.target.value
-        setLocal(x)
-        latestRef.current = x
         const d = cellDraftsRef.current[key] || {}
         cellDraftsRef.current[key] = { ...d, [field]: x }
       }}
@@ -58,7 +57,8 @@ function DraftTextInput({
           delete d[field]
           if (Object.keys(d).length === 0) delete cellDraftsRef.current[key]
         }
-        onCommit(key, field, latestRef.current)
+        const el = inputRef.current
+        onCommit(key, field, el ? el.value : '')
       }}
       style={style}
     />
@@ -66,31 +66,28 @@ function DraftTextInput({
 }
 
 function DraftDayInput({ rowId, value, cellDraftsRef, onCommit, style }) {
+  const inputRef = useRef(null)
   const key = String(rowId)
-  const [local, setLocal] = useState(() => String(value ?? 1))
-  const latestRef = useRef(local)
   const focusedRef = useRef(false)
 
   useEffect(() => {
-    if (!focusedRef.current) {
-      const next = String(value ?? 1)
-      setLocal(next)
-      latestRef.current = next
-    }
-  }, [rowId, value])
+    const el = inputRef.current
+    if (!el || focusedRef.current) return
+    const next = String(value ?? 1)
+    if (el.value !== next) el.value = next
+  }, [value, rowId])
 
   return (
     <input
+      ref={inputRef}
       type="number"
       min={1}
-      value={local}
+      defaultValue={String(value ?? 1)}
       onFocus={() => {
         focusedRef.current = true
       }}
-      onChange={(e) => {
+      onInput={(e) => {
         const x = e.target.value
-        setLocal(x)
-        latestRef.current = x
         const d = cellDraftsRef.current[key] || {}
         cellDraftsRef.current[key] = { ...d, day: x }
       }}
@@ -101,7 +98,8 @@ function DraftDayInput({ rowId, value, cellDraftsRef, onCommit, style }) {
           delete d.day
           if (Object.keys(d).length === 0) delete cellDraftsRef.current[key]
         }
-        const n = parseInt(latestRef.current, 10) || 1
+        const el = inputRef.current
+        const n = parseInt(el?.value ?? '1', 10) || 1
         onCommit(key, 'day', n)
       }}
       style={style}
@@ -156,7 +154,7 @@ function WordTable({
   /** blur 전 입력 중인 칸 — 예문 AI·이미지 검색이 최신 타이핑을 보도록 */
   const cellDraftsRef = useRef({})
 
-  const getEffectiveRow = (id) => {
+  const getEffectiveRow = useCallback((id) => {
     const sid = String(id)
     const base = rowsRef.current.find((r) => String(r.id) === sid)
     if (!base) return null
@@ -168,7 +166,7 @@ function WordTable({
       if (!Number.isNaN(p)) o.day = p
     }
     return o
-  }
+  }, [])
 
   const allIds = rows.map((r) => String(r.id))
   const allSelected = rows.length > 0 && allIds.every((id) => selectedIds.has(id))
@@ -307,34 +305,60 @@ function WordTable({
     setCollapsedSections(new Set())
   }, [rowGroupMode])
 
-  const suggestExample = async (id) => {
-    const row = getEffectiveRow(id)
-    if (!row) return
-    const word = String(row.word || '').trim()
-    const meaning = String(row.meaning || '').trim()
-    if (!word) {
-      alert('영단어를 먼저 입력하세요.')
-      return
-    }
-    setBusyExampleId(String(id))
-    try {
-      const res = await fetch('/api/suggest-example', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ word, meaning: meaning || undefined }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || '예문 요청 실패')
-      const ex = String(json.example_sentence || '').trim()
-      if (!ex) throw new Error('예문을 받지 못했습니다.')
-      updateField(id, 'example_sentence', ex)
-      commitRow(id, { example_sentence: ex })
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusyExampleId(null)
-    }
-  }
+  const suggestExample = useCallback(
+    async (id) => {
+      const row = getEffectiveRow(id)
+      if (!row) return
+      const word = String(row.word || '').trim()
+      const meaning = String(row.meaning || '').trim()
+      if (!word) {
+        alert('영단어를 먼저 입력하세요.')
+        return
+      }
+      setBusyExampleId(String(id))
+      try {
+        const res = await fetch('/api/suggest-example', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ word, meaning: meaning || undefined }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || '예문 요청 실패')
+        const ex = String(json.example_sentence || '').trim()
+        if (!ex) throw new Error('예문을 받지 못했습니다.')
+        const sid = String(id)
+        const dr = cellDraftsRef.current[sid]
+        if (dr) {
+          delete dr.example_sentence
+          if (Object.keys(dr).length === 0) delete cellDraftsRef.current[sid]
+        }
+        updateField(id, 'example_sentence', ex)
+        commitRow(id, { example_sentence: ex })
+        requestAnimationFrame(() => {
+          try {
+            const el = document.querySelector(`input[data-row-id="${sid}"]`)
+            if (el) el.value = ex
+          } catch (_) {}
+        })
+      } catch (e) {
+        alert(e instanceof Error ? e.message : String(e))
+      } finally {
+        setBusyExampleId(null)
+      }
+    },
+    [getEffectiveRow, updateField, commitRow],
+  )
+
+  const handleExampleKeyDown = useCallback(
+    (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        const tid = e.currentTarget.getAttribute('data-row-id')
+        if (tid) void suggestExample(tid)
+      }
+    },
+    [suggestExample],
+  )
 
   const openImagePicker = async (id) => {
     const row = getEffectiveRow(id)
@@ -517,6 +541,8 @@ function WordTable({
                 style={{
                   borderTop: `1px solid ${COLORS.border}`,
                   background: selectedIds.has(id) ? COLORS.successBg : COLORS.surface,
+                  contentVisibility: 'auto',
+                  containIntrinsicSize: 'auto 52px',
                 }}
               >
                 <td style={{ padding: 8 }}>
@@ -672,12 +698,8 @@ function WordTable({
                       value={example}
                       cellDraftsRef={cellDraftsRef}
                       onCommit={commitDraftField}
-                      onKeyDown={(e) => {
-                        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-                          e.preventDefault()
-                          void suggestExample(id)
-                        }
-                      }}
+                      dataRowId={id}
+                      onKeyDown={handleExampleKeyDown}
                       placeholder="예문 (선택) — 오른쪽 돋보기로 AI 생성"
                       style={{
                         boxSizing: 'border-box',
