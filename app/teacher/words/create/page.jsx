@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
@@ -35,6 +35,19 @@ export default function CreateWordSetPage() {
   const [hasDayPreview, setHasDayPreview] = useState(false)
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState(null)
+  /** none | day | chunk10 | day_chunk */
+  const [tableGroupMode, setTableGroupMode] = useState('none')
+
+  const effectiveGroupMode = useMemo(() => {
+    if (!hasDayPreview && (tableGroupMode === 'day' || tableGroupMode === 'day_chunk')) return 'none'
+    return tableGroupMode
+  }, [hasDayPreview, tableGroupMode])
+
+  useEffect(() => {
+    if (!hasDayPreview) {
+      setTableGroupMode((m) => (m === 'day' || m === 'day_chunk' ? 'none' : m))
+    }
+  }, [hasDayPreview])
 
   const syncSetName = (name) => {
     const v = String(name)
@@ -340,6 +353,44 @@ export default function CreateWordSetPage() {
           ) : null}
         </div>
 
+        <div
+          style={{
+            marginBottom: 12,
+            padding: '12px 14px',
+            borderRadius: RADIUS.md,
+            border: `1px solid ${COLORS.border}`,
+            background: COLORS.surface,
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 12,
+          }}
+        >
+          <span style={{ fontWeight: 700, color: COLORS.accentText, fontSize: 14 }}>단어 목록 접기</span>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <select
+              value={tableGroupMode}
+              onChange={(e) => setTableGroupMode(e.target.value)}
+              style={{
+                padding: '8px 10px',
+                borderRadius: RADIUS.sm,
+                border: `1px solid ${COLORS.border}`,
+                fontSize: 14,
+                minWidth: 200,
+              }}
+            >
+              <option value="none">접지 않음 (한 목록)</option>
+              <option value="chunk10">10개씩</option>
+              <option value="day" disabled={!hasDayPreview}>
+                Day별 {!hasDayPreview ? '(Day 미리보기 후)' : ''}
+              </option>
+              <option value="day_chunk" disabled={!hasDayPreview}>
+                Day 안에서 10개씩 {!hasDayPreview ? '(Day 미리보기 후)' : ''}
+              </option>
+            </select>
+          </label>
+        </div>
+
         <WordTable
           rows={rows}
           onRowsChange={onRowsChange}
@@ -351,6 +402,7 @@ export default function CreateWordSetPage() {
           showImageColumn
           showDeleteColumn
           onRowDelete={handleRowDelete}
+          rowGroupMode={effectiveGroupMode}
         />
 
         <AutoFillPanel rows={autoFillRows} onFilled={handleAutoFilled} />

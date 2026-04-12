@@ -21,6 +21,8 @@ export default function WordsManagePage() {
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkOpen, setBulkOpen] = useState(false)
   const [saveHint, setSaveHint] = useState(null)
+  /** 테이블 접기: 10개 단위 (Day는 사이드바에서 이미 필터) */
+  const [tableGroupMode, setTableGroupMode] = useState('none')
   const saveHintTimerRef = useRef(null)
 
   useEffect(() => {
@@ -57,6 +59,17 @@ export default function WordsManagePage() {
       if (w.set_name) s.add(String(w.set_name))
     }
     return [...s].sort()
+  }, [words])
+
+  /** 세트명별 개수 — 사이드바에서 set마다 words.filter 반복하지 않도록 한 번에 집계 */
+  const setNameCounts = useMemo(() => {
+    const m = new Map()
+    for (const w of words) {
+      const n = String(w.set_name || '')
+      if (!n) continue
+      m.set(n, (m.get(n) || 0) + 1)
+    }
+    return m
   }, [words])
 
   const stats = useMemo(() => {
@@ -328,7 +341,7 @@ export default function WordsManagePage() {
           </button>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {setNames.map((n) => {
-              const cnt = words.filter((w) => String(w.set_name || '') === n).length
+              const cnt = setNameCounts.get(n) || 0
               const active = setFilter === n
               return (
                 <button
@@ -481,6 +494,23 @@ export default function WordsManagePage() {
             <input type="checkbox" checked={emptyOnly} onChange={(e) => setEmptyOnly(e.target.checked)} />
             <span style={{ fontSize: 14, color: COLORS.textPrimary }}>빈 필드만 보기</span>
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: COLORS.textSecondary, fontSize: 14 }}>목록</span>
+            <select
+              value={tableGroupMode}
+              onChange={(e) => setTableGroupMode(e.target.value)}
+              style={{
+                padding: '8px 10px',
+                borderRadius: RADIUS.sm,
+                border: `1px solid ${COLORS.border}`,
+                fontSize: 14,
+                minWidth: 140,
+              }}
+            >
+              <option value="none">전체 펼침</option>
+              <option value="chunk10">10개씩 접기</option>
+            </select>
+          </label>
         </div>
 
         {saveHint ? (
@@ -520,6 +550,7 @@ export default function WordsManagePage() {
             </p>
             <WordTable
               rows={filtered}
+              rowGroupMode={tableGroupMode}
               onRowsChange={(next) => {
                 setWords((prev) => {
                   const prevFiltered = Object.is(prev, wordsRef.current)

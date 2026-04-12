@@ -1,7 +1,113 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
+
+/**
+ * 타이핑마다 부모 setState 하지 않음 → 로컬만 갱신, blur 시 반영.
+ * AI/검색 시 아직 blur 안 한 글자는 cellDraftsRef 로 읽음.
+ */
+function DraftTextInput({
+  rowId,
+  field,
+  value,
+  cellDraftsRef,
+  onCommit,
+  style,
+  placeholder,
+  type = 'text',
+  onKeyDown,
+  title,
+  'aria-label': ariaLabel,
+}) {
+  const key = String(rowId)
+  const [local, setLocal] = useState(() => String(value ?? ''))
+  const latestRef = useRef(local)
+  const focusedRef = useRef(false)
+
+  useEffect(() => {
+    if (!focusedRef.current) {
+      const next = String(value ?? '')
+      setLocal(next)
+      latestRef.current = next
+    }
+  }, [rowId, value])
+
+  return (
+    <input
+      type={type}
+      value={local}
+      placeholder={placeholder}
+      title={title}
+      aria-label={ariaLabel}
+      onFocus={() => {
+        focusedRef.current = true
+      }}
+      onChange={(e) => {
+        const x = e.target.value
+        setLocal(x)
+        latestRef.current = x
+        const d = cellDraftsRef.current[key] || {}
+        cellDraftsRef.current[key] = { ...d, [field]: x }
+      }}
+      onKeyDown={onKeyDown}
+      onBlur={() => {
+        focusedRef.current = false
+        const d = cellDraftsRef.current[key]
+        if (d) {
+          delete d[field]
+          if (Object.keys(d).length === 0) delete cellDraftsRef.current[key]
+        }
+        onCommit(key, field, latestRef.current)
+      }}
+      style={style}
+    />
+  )
+}
+
+function DraftDayInput({ rowId, value, cellDraftsRef, onCommit, style }) {
+  const key = String(rowId)
+  const [local, setLocal] = useState(() => String(value ?? 1))
+  const latestRef = useRef(local)
+  const focusedRef = useRef(false)
+
+  useEffect(() => {
+    if (!focusedRef.current) {
+      const next = String(value ?? 1)
+      setLocal(next)
+      latestRef.current = next
+    }
+  }, [rowId, value])
+
+  return (
+    <input
+      type="number"
+      min={1}
+      value={local}
+      onFocus={() => {
+        focusedRef.current = true
+      }}
+      onChange={(e) => {
+        const x = e.target.value
+        setLocal(x)
+        latestRef.current = x
+        const d = cellDraftsRef.current[key] || {}
+        cellDraftsRef.current[key] = { ...d, day: x }
+      }}
+      onBlur={() => {
+        focusedRef.current = false
+        const d = cellDraftsRef.current[key]
+        if (d) {
+          delete d.day
+          if (Object.keys(d).length === 0) delete cellDraftsRef.current[key]
+        }
+        const n = parseInt(latestRef.current, 10) || 1
+        onCommit(key, 'day', n)
+      }}
+      style={style}
+    />
+  )
+}
 
 /**
  * @param {{
@@ -18,6 +124,9 @@ import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
  *   showImageColumn?: boolean
  *   showDeleteColumn?: boolean
  *   onRowDelete?: (row: Record<string, unknown>) => void | Promise<void>
+ *   showRowNumbers?: boolean
+ *   rowGroupMode?: 'none' | 'day' | 'chunk10' | 'day_chunk'
+ *   chunkSize?: number
  * }} props
  */
 export default function WordTable({
@@ -32,6 +141,9 @@ export default function WordTable({
   showImageColumn = true,
   showDeleteColumn = false,
   onRowDelete,
+  showRowNumbers = true,
+  rowGroupMode = 'none',
+  chunkSize = 10,
 }) {
   const [busyExampleId, setBusyExampleId] = useState(null)
   const [imagePicker, setImagePicker] = useState(null)
@@ -40,6 +152,23 @@ export default function WordTable({
   /** 비동기(이미지 검색 등) 직후 클로저의 rows 가 옛값일 수 있어, 렌더마다 동기화 */
   const rowsRef = useRef(rows)
   rowsRef.current = rows
+
+  /** blur 전 입력 중인 칸 — 예문 AI·이미지 검색이 최신 타이핑을 보도록 */
+  const cellDraftsRef = useRef({})
+
+  const getEffectiveRow = (id) => {
+    const sid = String(id)
+    const base = rowsRef.current.find((r) => String(r.id) === sid)
+    if (!base) return null
+    const d = cellDraftsRef.current[sid]
+    if (!d) return base
+    const o = { ...base, ...d }
+    if (d.day != null && d.day !== '') {
+      const p = parseInt(String(d.day), 10)
+      if (!Number.isNaN(p)) o.day = p
+    }
+    return o
+  }
 
   const allIds = rows.map((r) => String(r.id))
   const allSelected = rows.length > 0 && allIds.every((id) => selectedIds.has(id))
@@ -79,8 +208,101 @@ export default function WordTable({
     void onRowCommit(merged)
   }
 
+  const commitDraftField = (id, field, val) => {
+    updateField(id, field, val)
+    commitRow(id, { [field]: val })
+  }
+
+  const [collapsedSections, setCollapsedSections] = useState(() => new Set())
+
+  const indexById = useMemo(() => {
+    const m = new Map()
+    rows.forEach((row, i) => m.set(String(row.id), i + 1))
+    return m
+  }, [rows])
+
+  const sections = useMemo(() => {
+    const r = rows
+    if (r.length === 0) return []
+    const cs = Math.max(1, chunkSize)
+    if (rowGroupMode === 'none') return [{ key: 'all', label: '', rows: r }]
+    if (rowGroupMode === 'chunk10') {
+      const out = []
+      for (let i = 0; i < r.length; i += cs) {
+        const slice = r.slice(i, i + cs)
+        out.push({
+          key: `c-${i}`,
+          label: `${i + 1}–${i + slice.length}번`,
+          rows: slice,
+        })
+      }
+      return out
+    }
+    if (rowGroupMode === 'day') {
+      const byDay = new Map()
+      for (const row of r) {
+        const d = row.day != null ? Number(row.day) : 0
+        if (!byDay.has(d)) byDay.set(d, [])
+        byDay.get(d).push(row)
+      }
+      const sortedDays = [...byDay.keys()].sort((a, b) => a - b)
+      return sortedDays.map((d) => ({
+        key: `day-${d}`,
+        label: `Day ${d}`,
+        rows: byDay.get(d),
+      }))
+    }
+    if (rowGroupMode === 'day_chunk') {
+      const byDay = new Map()
+      for (const row of r) {
+        const d = row.day != null ? Number(row.day) : 0
+        if (!byDay.has(d)) byDay.set(d, [])
+        byDay.get(d).push(row)
+      }
+      const sortedDays = [...byDay.keys()].sort((a, b) => a - b)
+      const out = []
+      for (const d of sortedDays) {
+        const list = byDay.get(d)
+        for (let i = 0; i < list.length; i += cs) {
+          const slice = list.slice(i, i + cs)
+          out.push({
+            key: `d${d}-c${i}`,
+            label: `Day ${d} · ${i + 1}–${i + slice.length}번`,
+            rows: slice,
+          })
+        }
+      }
+      return out
+    }
+    return [{ key: 'all', label: '', rows: r }]
+  }, [rows, rowGroupMode, chunkSize])
+
+  const columnCount = useMemo(
+    () =>
+      4 +
+      (showRowNumbers ? 1 : 0) +
+      (showImageColumn ? 1 : 0) +
+      (showSetNameColumn ? 1 : 0) +
+      (showDayColumn ? 1 : 0) +
+      (showDeleteColumn && onRowDelete ? 1 : 0),
+    [showRowNumbers, showImageColumn, showSetNameColumn, showDayColumn, showDeleteColumn, onRowDelete],
+  )
+
+  const toggleSection = (key) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  useEffect(() => {
+    setCollapsedSections(new Set())
+  }, [rowGroupMode])
+
   const suggestExample = async (id) => {
-    const row = rows.find((r) => String(r.id) === String(id))
+    const row = getEffectiveRow(id)
     if (!row) return
     const word = String(row.word || '').trim()
     const meaning = String(row.meaning || '').trim()
@@ -109,7 +331,7 @@ export default function WordTable({
   }
 
   const openImagePicker = async (id) => {
-    const row = rows.find((r) => String(r.id) === String(id))
+    const row = getEffectiveRow(id)
     if (!row) return
     const q = String(row.word || '').trim()
     if (!q) {
@@ -203,6 +425,11 @@ export default function WordTable({
                 aria-label="전체 선택"
               />
             </th>
+            {showRowNumbers ? (
+              <th style={{ padding: '10px 6px', width: 44, color: COLORS.accentText, textAlign: 'right' }}>
+                #
+              </th>
+            ) : null}
             <th style={{ padding: '10px 8px', color: COLORS.accentText }}>word</th>
             <th style={{ padding: '10px 8px', color: COLORS.accentText }}>meaning</th>
             {showImageColumn ? (
@@ -220,14 +447,47 @@ export default function WordTable({
             ) : null}
           </tr>
         </thead>
-        <tbody>
-          {rows.map((row) => {
+        {sections.map((sec) => {
+          const showBody = !sec.label || !collapsedSections.has(sec.key)
+          return (
+            <tbody key={sec.key}>
+              {sec.label ? (
+                <tr style={{ background: COLORS.bg }}>
+                  <td
+                    colSpan={columnCount}
+                    style={{
+                      padding: '8px 10px',
+                      borderTop: `1px solid ${COLORS.border}`,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleSection(sec.key)}
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: COLORS.accentText,
+                        padding: '2px 0',
+                      }}
+                    >
+                      {collapsedSections.has(sec.key) ? '▶' : '▼'} {sec.label}{' '}
+                      <span style={{ fontWeight: 500, color: COLORS.textSecondary }}>({sec.rows.length}개)</span>
+                    </button>
+                  </td>
+                </tr>
+              ) : null}
+              {showBody
+                ? sec.rows.map((row) => {
             const id = String(row.id)
             const meaning = row.meaning != null ? String(row.meaning) : ''
             const example = row.example_sentence != null ? String(row.example_sentence) : ''
             const meaningEmpty = !meaning.trim()
             const exampleEmpty = !example.trim()
             const img = row.image_url ? String(row.image_url).trim() : ''
+            const rowNum = indexById.get(id) ?? 0
 
             return (
               <tr
@@ -245,11 +505,27 @@ export default function WordTable({
                     aria-label={`선택 ${row.word}`}
                   />
                 </td>
+                {showRowNumbers ? (
+                  <td
+                    style={{
+                      padding: '8px 6px',
+                      textAlign: 'right',
+                      color: COLORS.textSecondary,
+                      fontSize: 13,
+                      width: 44,
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {rowNum}
+                  </td>
+                ) : null}
                 <td style={{ padding: 8 }}>
-                  <input
+                  <DraftTextInput
+                    rowId={id}
+                    field="word"
                     value={row.word != null ? String(row.word) : ''}
-                    onChange={(e) => updateField(id, 'word', e.target.value)}
-                    onBlur={(e) => commitRow(id, { word: e.target.value })}
+                    cellDraftsRef={cellDraftsRef}
+                    onCommit={commitDraftField}
                     style={{
                       width: '100%',
                       minWidth: 100,
@@ -260,10 +536,12 @@ export default function WordTable({
                   />
                 </td>
                 <td style={{ padding: 8, background: meaningEmpty ? COLORS.warningBg : undefined }}>
-                  <input
+                  <DraftTextInput
+                    rowId={id}
+                    field="meaning"
                     value={meaning}
-                    onChange={(e) => updateField(id, 'meaning', e.target.value)}
-                    onBlur={(e) => commitRow(id, { meaning: e.target.value })}
+                    cellDraftsRef={cellDraftsRef}
+                    onCommit={commitDraftField}
                     placeholder={meaningEmpty ? '뜻 입력' : ''}
                     style={{
                       width: '100%',
@@ -366,10 +644,12 @@ export default function WordTable({
                   }}
                 >
                   <div style={{ position: 'relative', width: '100%', minWidth: 200 }}>
-                    <input
+                    <DraftTextInput
+                      rowId={id}
+                      field="example_sentence"
                       value={example}
-                      onChange={(e) => updateField(id, 'example_sentence', e.target.value)}
-                      onBlur={(e) => commitRow(id, { example_sentence: e.target.value })}
+                      cellDraftsRef={cellDraftsRef}
+                      onCommit={commitDraftField}
                       onKeyDown={(e) => {
                         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
                           e.preventDefault()
@@ -377,7 +657,6 @@ export default function WordTable({
                         }
                       }}
                       placeholder="예문 (선택) — 오른쪽 돋보기로 AI 생성"
-                      title="Ctrl+S: 예문 AI 제안"
                       style={{
                         boxSizing: 'border-box',
                         width: '100%',
@@ -386,6 +665,7 @@ export default function WordTable({
                         border: `1px solid ${COLORS.border}`,
                         fontStyle: exampleEmpty ? 'italic' : 'normal',
                       }}
+                      title="Ctrl+S: 예문 AI 제안"
                     />
                     <button
                       type="button"
@@ -434,10 +714,12 @@ export default function WordTable({
                 </td>
                 {showSetNameColumn ? (
                   <td style={{ padding: 8 }}>
-                    <input
+                    <DraftTextInput
+                      rowId={id}
+                      field="set_name"
                       value={row.set_name != null ? String(row.set_name) : ''}
-                      onChange={(e) => updateField(id, 'set_name', e.target.value)}
-                      onBlur={(e) => commitRow(id, { set_name: e.target.value })}
+                      cellDraftsRef={cellDraftsRef}
+                      onCommit={commitDraftField}
                       style={{
                         width: '100%',
                         minWidth: 100,
@@ -455,14 +737,11 @@ export default function WordTable({
                         {row.day != null ? Number(row.day) : '—'}
                       </span>
                     ) : (
-                      <input
-                        type="number"
-                        min={1}
+                      <DraftDayInput
+                        rowId={id}
                         value={row.day != null ? Number(row.day) : 1}
-                        onChange={(e) => updateField(id, 'day', parseInt(e.target.value, 10) || 1)}
-                        onBlur={(e) =>
-                          commitRow(id, { day: parseInt(e.target.value, 10) || 1 })
-                        }
+                        cellDraftsRef={cellDraftsRef}
+                        onCommit={commitDraftField}
                         style={{
                           width: 64,
                           padding: '6px 8px',
@@ -496,8 +775,11 @@ export default function WordTable({
                 ) : null}
               </tr>
             )
-          })}
-        </tbody>
+          })
+                : null}
+            </tbody>
+          )
+        })}
       </table>
       {rows.length === 0 ? (
         <p style={{ padding: 24, textAlign: 'center', color: COLORS.textSecondary }}>행이 없습니다</p>
