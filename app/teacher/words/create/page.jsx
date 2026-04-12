@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
@@ -55,10 +55,10 @@ export default function CreateWordSetPage() {
     setRows((prev) => prev.map((r) => ({ ...r, set_name: v })))
   }
 
-  /** 세트 이름은 syncSetName에서만 전 행에 반영. 여기서 매번 map 하면 타이핑마다 전체 행이 갱신되어 느려짐 */
-  const onRowsChange = (next) => {
+  /** 세트 이름은 syncSetName에서만 전 행에 반영. 참조 안정화로 WordTable 불필요 리렌더 감소 */
+  const onRowsChange = useCallback((next) => {
     setRows((prev) => (typeof next === 'function' ? next(prev) : next))
-  }
+  }, [])
 
   const addEmptyRow = () => {
     setRows((prev) => [emptyRow(setName), ...prev])

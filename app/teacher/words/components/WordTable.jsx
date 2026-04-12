@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 
 /**
@@ -129,7 +129,7 @@ function DraftDayInput({ rowId, value, cellDraftsRef, onCommit, style }) {
  *   chunkSize?: number
  * }} props
  */
-export default function WordTable({
+function WordTable({
   rows,
   onRowsChange,
   selectedIds,
@@ -188,30 +188,36 @@ export default function WordTable({
     onSelectedIdsChange(next)
   }
 
-  const updateField = (id, field, value) => {
+  const updateField = useCallback((id, field, value) => {
     onRowsChange((prev) =>
       prev.map((r) => (String(r.id) === String(id) ? { ...r, [field]: value } : r)),
     )
-  }
+  }, [onRowsChange])
 
   /** 연속 updateField 는 stale rows 로 서로 덮어쓸 수 있음 → 한 번에 병합 */
-  const patchRow = (id, patch) => {
+  const patchRow = useCallback((id, patch) => {
     onRowsChange((prev) =>
       prev.map((r) => (String(r.id) === String(id) ? { ...r, ...patch } : r)),
     )
-  }
+  }, [onRowsChange])
 
-  const commitRow = (id, patch) => {
-    const row = rowsRef.current.find((r) => String(r.id) === String(id))
-    if (!row || !onRowCommit) return
-    const merged = patch ? { ...row, ...patch } : row
-    void onRowCommit(merged)
-  }
+  const commitRow = useCallback(
+    (id, patch) => {
+      const row = rowsRef.current.find((r) => String(r.id) === String(id))
+      if (!row || !onRowCommit) return
+      const merged = patch ? { ...row, ...patch } : row
+      void onRowCommit(merged)
+    },
+    [onRowCommit],
+  )
 
-  const commitDraftField = (id, field, val) => {
-    updateField(id, field, val)
-    commitRow(id, { [field]: val })
-  }
+  const commitDraftField = useCallback(
+    (id, field, val) => {
+      updateField(id, field, val)
+      commitRow(id, { [field]: val })
+    },
+    [updateField, commitRow],
+  )
 
   const [collapsedSections, setCollapsedSections] = useState(() => new Set())
 
@@ -408,13 +414,15 @@ export default function WordTable({
     <div
       style={{
         overflowX: 'auto',
+        WebkitOverflowScrolling: 'touch',
         borderRadius: RADIUS.md,
         border: `1px solid ${COLORS.border}`,
         background: COLORS.surface,
         boxShadow: SHADOW.card,
+        paddingBottom: 4,
       }}
     >
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+      <table style={{ width: '100%', minWidth: 1120, borderCollapse: 'collapse', fontSize: 14 }}>
         <thead>
           <tr style={{ background: COLORS.primarySoft, textAlign: 'left' }}>
             <th style={{ padding: '10px 8px', width: 40 }}>
@@ -442,8 +450,22 @@ export default function WordTable({
             {showDayColumn ? (
               <th style={{ padding: '10px 8px', width: 72, color: COLORS.accentText }}>day</th>
             ) : null}
-            {showDeleteColumn ? (
-              <th style={{ padding: '10px 8px', width: 56, color: COLORS.accentText }} />
+            {showDeleteColumn && onRowDelete ? (
+              <th
+                style={{
+                  padding: '10px 8px',
+                  minWidth: 72,
+                  width: 72,
+                  color: COLORS.accentText,
+                  position: 'sticky',
+                  right: 0,
+                  zIndex: 4,
+                  background: COLORS.primarySoft,
+                  boxShadow: '-8px 0 14px -6px rgba(0, 0, 0, 0.12)',
+                }}
+              >
+                삭제
+              </th>
             ) : null}
           </tr>
         </thead>
@@ -753,7 +775,19 @@ export default function WordTable({
                   </td>
                 ) : null}
                 {showDeleteColumn && onRowDelete ? (
-                  <td style={{ padding: 8, verticalAlign: 'middle' }}>
+                  <td
+                    style={{
+                      padding: 8,
+                      verticalAlign: 'middle',
+                      position: 'sticky',
+                      right: 0,
+                      zIndex: 2,
+                      background: selectedIds.has(id) ? COLORS.successBg : COLORS.surface,
+                      boxShadow: '-8px 0 14px -6px rgba(0, 0, 0, 0.1)',
+                      minWidth: 72,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     <button
                       type="button"
                       title="이 행 삭제"
@@ -839,3 +873,5 @@ export default function WordTable({
     </div>
   )
 }
+
+export default memo(WordTable)

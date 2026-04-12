@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
@@ -13,6 +13,8 @@ import { filterWordRows } from './utils/wordFilters'
 export default function WordsManagePage() {
   const [words, setWords] = useState([])
   const [loading, setLoading] = useState(true)
+  /** 나머지 청크 백그라운드 로드 중 */
+  const [loadingMore, setLoadingMore] = useState(false)
   const [search, setSearch] = useState('')
   const [setFilter, setSetFilter] = useState('')
   /** 세트 선택 후 day만 보기 (null = 전체 day) */
@@ -31,22 +33,53 @@ export default function WordsManagePage() {
     }
   }, [])
 
+  const WORDS_CHUNK = 2500
+
   const loadWords = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('words')
-      .select('id, word, meaning, example_sentence, image_url, image_source, set_name, day, difficulty')
-      .order('set_name', { ascending: true })
-      .order('day', { ascending: true })
+    setLoadingMore(false)
+
+    const q = () =>
+      supabase
+        .from('words')
+        .select('id, word, meaning, example_sentence, image_url, image_source, set_name, day, difficulty')
+        .order('set_name', { ascending: true })
+        .order('day', { ascending: true })
+
+    const { data: first, error } = await q().range(0, WORDS_CHUNK - 1)
 
     if (error) {
       console.warn(error)
       alert(`단어 로드 실패: ${error.message}`)
       setWords([])
-    } else {
-      setWords(data || [])
+      setLoading(false)
+      return
     }
+
+    const batch0 = first || []
+    setWords(batch0)
     setLoading(false)
+
+    if (batch0.length < WORDS_CHUNK) return
+
+    setLoadingMore(true)
+    let from = WORDS_CHUNK
+    try {
+      while (true) {
+        const { data, error: err2 } = await q().range(from, from + WORDS_CHUNK - 1)
+        if (err2) {
+          console.warn(err2)
+          break
+        }
+        const next = data || []
+        if (next.length === 0) break
+        setWords((prev) => [...prev, ...next])
+        if (next.length < WORDS_CHUNK) break
+        from += WORDS_CHUNK
+      }
+    } finally {
+      setLoadingMore(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -79,9 +112,12 @@ export default function WordsManagePage() {
     return { total, noImage, noExample }
   }, [words])
 
+  /** 검색창은 즉시 반응, 필터 적용은 지연 → 테이블 리렌더 폭주 완화 */
+  const deferredSearch = useDeferredValue(search)
+
   const filterOpts = useMemo(
-    () => ({ search, setFilter, dayFilter, emptyOnly }),
-    [search, setFilter, dayFilter, emptyOnly],
+    () => ({ search: deferredSearch, setFilter, dayFilter, emptyOnly }),
+    [deferredSearch, setFilter, dayFilter, emptyOnly],
   )
 
   const filtered = useMemo(() => filterWordRows(words, filterOpts), [words, filterOpts])
@@ -89,8 +125,22 @@ export default function WordsManagePage() {
   /** 타이핑 시 setWords 업데이터 안에서 매번 전체 words를 다시 필터하지 않도록 캐시 */
   const wordsRef = useRef(words)
   const filteredRef = useRef(filtered)
+  const filterOptsRef = useRef(filterOpts)
   wordsRef.current = words
   filteredRef.current = filtered
+  filterOptsRef.current = filterOpts
+
+  const handleRowsChange = useCallback((next) => {
+    setWords((prev) => {
+      const opts = filterOptsRef.current
+      const prevFiltered = Object.is(prev, wordsRef.current)
+        ? filteredRef.current
+        : filterWordRows(prev, opts)
+      const merged = typeof next === 'function' ? next(prevFiltered) : next
+      const nextById = new Map(merged.map((r) => [String(r.id), r]))
+      return prev.map((r) => nextById.get(String(r.id)) ?? r)
+    })
+  }, [])
 
   const daysInSelectedSet = useMemo(() => {
     if (!setFilter.trim()) return []
@@ -107,7 +157,7 @@ export default function WordsManagePage() {
     setDayFilter(null)
   }
 
-  const handleRowDelete = async (row) => {
+  const handleRowDelete = useCallback(async (row) => {
     const w = String(row.word || '').trim()
     if (!confirm(w ? `「${w}」행을 삭제할까요?` : '이 행을 삭제할까요?')) return
     const id = String(row.id)
@@ -134,9 +184,9 @@ export default function WordsManagePage() {
     setSaveHint('삭제했습니다.')
     if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
     saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2000)
-  }
+  }, [])
 
-  const handleRowCommit = async (row) => {
+  const handleRowCommit = useCallback(async (row) => {
     const id = String(row.id)
     const word = String(row.word || '').trim()
     const meaning = String(row.meaning || '').trim()
@@ -182,7 +232,7 @@ export default function WordsManagePage() {
       setSaveHint('저장했습니다.')
       saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2500)
     }
-  }
+  }, [])
 
   const addEmptyRow = () => {
     setWords((prev) => [
@@ -415,7 +465,7 @@ export default function WordsManagePage() {
           ) : null}
         </aside>
 
-        <div style={{ flex: 1, minWidth: 0, maxWidth: 900 }}>
+        <div style={{ flex: 1, minWidth: 0, maxWidth: 1320 }}>
         <div
           style={{
             display: 'grid',
@@ -551,23 +601,18 @@ export default function WordsManagePage() {
             <WordTable
               rows={filtered}
               rowGroupMode={tableGroupMode}
-              onRowsChange={(next) => {
-                setWords((prev) => {
-                  const prevFiltered = Object.is(prev, wordsRef.current)
-                    ? filteredRef.current
-                    : filterWordRows(prev, filterOpts)
-                  const merged =
-                    typeof next === 'function' ? next(prevFiltered) : next
-                  const nextById = new Map(merged.map((r) => [String(r.id), r]))
-                  return prev.map((r) => nextById.get(String(r.id)) ?? r)
-                })
-              }}
+              onRowsChange={handleRowsChange}
               selectedIds={selectedIds}
               onSelectedIdsChange={setSelectedIds}
               onRowCommit={handleRowCommit}
               showDeleteColumn
               onRowDelete={handleRowDelete}
             />
+            {loadingMore ? (
+              <p style={{ margin: '10px 0 0', fontSize: 13, color: COLORS.textSecondary }}>
+                나머지 단어를 불러오는 중… ({words.length}개까지 로드됨)
+              </p>
+            ) : null}
             <AutoFillPanel rows={autoFillRows} onFilled={handleAutoFilled} />
           </>
         )}
