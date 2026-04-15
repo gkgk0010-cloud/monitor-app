@@ -6,7 +6,8 @@ import { supabase } from '@/utils/supabaseClient';
 
 /**
  * 클라이언트 세션 기준 라우팅 (기존 supabase 단일 클라이언트 유지).
- * /teacher/* 비로그인 → /login, /login 로그인됨 → /teacher/monitor
+ * /teacher/* 또는 / 비로그인 → /login
+ * /login 로그인됨 → /teacher/monitor
  */
 export default function AuthRouteGuard({ children }) {
   const pathname = usePathname();
@@ -14,7 +15,8 @@ export default function AuthRouteGuard({ children }) {
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
-    const needCheck = pathname?.startsWith('/teacher') || pathname === '/login';
+    const needCheck =
+      pathname?.startsWith('/teacher') || pathname === '/login' || pathname === '/';
     if (!needCheck) return undefined;
 
     let alive = true;
@@ -28,11 +30,14 @@ export default function AuthRouteGuard({ children }) {
 
       const isTeacher = pathname?.startsWith('/teacher');
       const isLogin = pathname === '/login';
+      const isHome = pathname === '/';
 
       if (isTeacher && !session) {
         router.replace('/login');
       } else if (isLogin && session) {
         router.replace('/teacher/monitor');
+      } else if (isHome && !session) {
+        router.replace('/login');
       }
       if (alive) setChecking(false);
     })();
@@ -48,16 +53,20 @@ export default function AuthRouteGuard({ children }) {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       const isTeacher = pathname?.startsWith('/teacher');
       const isLogin = pathname === '/login';
+      const isHome = pathname === '/';
       if (isTeacher && !session) {
         router.replace('/login');
       } else if (isLogin && session) {
         router.replace('/teacher/monitor');
+      } else if (isHome && !session) {
+        router.replace('/login');
       }
     });
     return () => subscription.unsubscribe();
   }, [pathname, router]);
 
-  const needCheck = pathname?.startsWith('/teacher') || pathname === '/login';
+  const needCheck =
+    pathname?.startsWith('/teacher') || pathname === '/login' || pathname === '/';
   if (checking && needCheck) {
     return (
       <div
