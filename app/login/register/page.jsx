@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabaseClient';
@@ -16,6 +16,15 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendBusy, setResendBusy] = useState(false);
+  const resendTickRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (resendTickRef.current) window.clearInterval(resendTickRef.current);
+    };
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -64,12 +73,53 @@ export default function RegisterPage() {
       }
 
       setInfo(
-        '가입 메일을 보냈습니다. 메일함에서 링크를 확인한 뒤 로그인해 주세요. (인증 후 로그인 시 선생님 정보가 자동으로 연결됩니다.)',
+        '가입 확인 메일을 보냈습니다. 받은편지함·스팸함을 확인해 주세요. 몇 분 걸릴 수 있습니다. 이미 가입된 주소면 보안상 메일이 가지 않을 수 있으니 로그인을 시도해 보세요.',
       );
     } catch (err) {
       setError(err?.message || '회원가입 중 오류가 발생했습니다.');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleResendSignupEmail() {
+    const trimmed = email.trim();
+    if (!trimmed) {
+      setError('이메일을 입력한 뒤 다시 시도해 주세요.');
+      return;
+    }
+    setError('');
+    setResendBusy(true);
+    try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const { error: resendErr } = await supabase.auth.resend({
+        type: 'signup',
+        email: trimmed,
+        options: origin ? { emailRedirectTo: `${origin}/auth/callback` } : undefined,
+      });
+      if (resendErr) {
+        setError(resendErr.message || '재전송에 실패했습니다.');
+        return;
+      }
+      setInfo(
+        '인증 메일을 다시 보냈습니다. 스팸함도 확인해 주세요. (Supabase 대시보드에서 이메일 발송·SMTP 설정을 확인할 수 있습니다.)',
+      );
+      if (resendTickRef.current) window.clearInterval(resendTickRef.current);
+      setResendCooldown(60);
+      resendTickRef.current = window.setInterval(() => {
+        setResendCooldown((c) => {
+          if (c <= 1) {
+            if (resendTickRef.current) window.clearInterval(resendTickRef.current);
+            resendTickRef.current = null;
+            return 0;
+          }
+          return c - 1;
+        });
+      }, 1000);
+    } catch (err) {
+      setError(err?.message || '재전송 중 오류가 발생했습니다.');
+    } finally {
+      setResendBusy(false);
     }
   }
 
@@ -235,6 +285,31 @@ export default function RegisterPage() {
             <p style={{ fontSize: 13, color: COLORS.textSecondary, margin: 0, lineHeight: 1.5 }} role="status">
               {info}
             </p>
+          ) : null}
+
+          {info ? (
+            <button
+              type="button"
+              onClick={handleResendSignupEmail}
+              disabled={resendBusy || resendCooldown > 0}
+              style={{
+                padding: '10px 14px',
+                fontSize: 13,
+                fontWeight: 600,
+                color: COLORS.primary,
+                background: COLORS.primarySoft,
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: RADIUS.md,
+                cursor: resendBusy || resendCooldown > 0 ? 'not-allowed' : 'pointer',
+                opacity: resendBusy || resendCooldown > 0 ? 0.7 : 1,
+              }}
+            >
+              {resendBusy
+                ? '보내는 중…'
+                : resendCooldown > 0
+                  ? `인증 메일 다시 보내기 (${resendCooldown}초 후 가능)`
+                  : '인증 메일 다시 보내기'}
+            </button>
           ) : null}
 
           <button
