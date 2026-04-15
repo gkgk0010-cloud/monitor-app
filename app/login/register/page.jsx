@@ -32,6 +32,7 @@ export default function RegisterPage() {
 
     setSubmitting(true);
     try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
       const { data, error: signErr } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -39,6 +40,8 @@ export default function RegisterPage() {
           data: {
             full_name: name.trim() || undefined,
           },
+          /** 메일 링크가 배포 도메인(또는 로컬)의 /auth/callback 으로 오도록 함 */
+          emailRedirectTo: origin ? `${origin}/auth/callback` : undefined,
         },
       });
       if (signErr) {
