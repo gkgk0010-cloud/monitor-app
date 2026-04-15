@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/utils/supabaseClient'
+import { DEFAULT_ACADEMY_ID, DEFAULT_TEACHER_ID } from '@/utils/defaults'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import { parseWordText, normalizeWordDifficulty } from '../utils/parsers'
 import WordTable from './WordTable'
@@ -151,6 +152,8 @@ export default function BulkImport({
         difficulty: normalizeWordDifficulty(r.difficulty),
         image_url: r.image_url ? String(r.image_url) : null,
         image_source: r.image_url ? (r.image_source || 'upload') : 'none',
+        academy_id: DEFAULT_ACADEMY_ID,
+        teacher_id: DEFAULT_TEACHER_ID,
       }))
 
       if (localOnly && onLocalImported) {

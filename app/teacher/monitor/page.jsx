@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/utils/supabaseClient';
+import { DEFAULT_TEACHER_ID } from '@/utils/defaults';
 
 const COLOR_ORDER = { gold: 0, red: 1, orange: 2, blue: 3, green: 4, purple: 5, white: 6 };
 const MAIN_ZONE_MAX = 30;
@@ -482,7 +483,10 @@ export default function TeacherMonitorPage() {
     let channel;
     const fetchStudents = async () => {
       setFetchError(null);
-      const { data, error } = await supabase.from('student_status').select('*');
+      const { data, error } = await supabase
+        .from('student_status')
+        .select('*')
+        .eq('teacher_id', DEFAULT_TEACHER_ID);
       if (error) {
         setFetchError(error.message || 'Supabase 연결 실패');
         return;
@@ -494,7 +498,11 @@ export default function TeacherMonitorPage() {
     channel = supabase
       .channel('student_status_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'student_status' }, () => {
-        supabase.from('student_status').select('*').then(({ data }) => setStudents(sortStudents(data ?? [])));
+        supabase
+          .from('student_status')
+          .select('*')
+          .eq('teacher_id', DEFAULT_TEACHER_ID)
+          .then(({ data }) => setStudents(sortStudents(data ?? [])));
       })
       .subscribe();
     // 폰/모바일: 탭 복귀 시 재조회 (WebSocket 끊김 시 빨간불/파란불 복구)
@@ -556,7 +564,10 @@ export default function TeacherMonitorPage() {
   };
 
   const handleCopyTodayStatus = async () => {
-    const { data: list, error } = await supabase.from('student_status').select('student_name, last_active');
+    const { data: list, error } = await supabase
+      .from('student_status')
+      .select('student_name, last_active')
+      .eq('teacher_id', DEFAULT_TEACHER_ID);
     if (error) {
       setCopyToast('조회 실패. 다시 눌러주세요.');
       setTimeout(() => setCopyToast(null), 3000);
@@ -588,7 +599,10 @@ export default function TeacherMonitorPage() {
   const handleCopyTodayAttendanceOnly = async () => {
     const ref = attendanceCopyRef.current;
     if (ref.names === null || ref.chunk * COPY_CHUNK_SIZE >= ref.names.length) {
-      const { data: list, error } = await supabase.from('student_status').select('student_name, last_active');
+      const { data: list, error } = await supabase
+        .from('student_status')
+        .select('student_name, last_active')
+        .eq('teacher_id', DEFAULT_TEACHER_ID);
       if (error) {
         setCopyToast('조회 실패. 다시 눌러주세요.');
         setTimeout(() => setCopyToast(null), 3000);
@@ -636,7 +650,10 @@ export default function TeacherMonitorPage() {
   const handleCopyTodayAbsentOnly = async () => {
     const ref = absentCopyRef.current;
     if (ref.initials === null || ref.chunk * COPY_CHUNK_SIZE >= ref.initials.length) {
-      const { data: list, error } = await supabase.from('student_status').select('student_name, last_active');
+      const { data: list, error } = await supabase
+        .from('student_status')
+        .select('student_name, last_active')
+        .eq('teacher_id', DEFAULT_TEACHER_ID);
       if (error) {
         setCopyToast('조회 실패. 다시 눌러주세요.');
         setTimeout(() => setCopyToast(null), 3000);

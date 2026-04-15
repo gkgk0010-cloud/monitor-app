@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/utils/supabaseClient'
+import { DEFAULT_ACADEMY_ID, DEFAULT_TEACHER_ID } from '@/utils/defaults'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import WordTable from './components/WordTable'
 import BulkImport from './components/BulkImport'
@@ -43,6 +44,7 @@ export default function WordsManagePage() {
       supabase
         .from('words')
         .select('id, word, meaning, example_sentence, image_url, image_source, set_name, day, difficulty')
+        .eq('teacher_id', DEFAULT_TEACHER_ID)
         .order('set_name', { ascending: true })
         .order('day', { ascending: true })
 
@@ -203,10 +205,17 @@ export default function WordsManagePage() {
     if (id.startsWith('temp-')) {
       const { data, error } = await supabase
         .from('words')
-        .upsert(payload, {
-          onConflict: 'set_name,word',
-          defaultToNull: false,
-        })
+        .upsert(
+          {
+            ...payload,
+            academy_id: DEFAULT_ACADEMY_ID,
+            teacher_id: DEFAULT_TEACHER_ID,
+          },
+          {
+            onConflict: 'set_name,word',
+            defaultToNull: false,
+          },
+        )
         .select()
         .single()
       if (error) {

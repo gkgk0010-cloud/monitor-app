@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/utils/supabaseClient'
+import { DEFAULT_ACADEMY_ID, DEFAULT_TEACHER_ID } from '@/utils/defaults'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import WordTable from '../components/WordTable'
 import BulkImport from '../components/BulkImport'
@@ -124,6 +125,8 @@ export default function CreateWordSetPage() {
         difficulty: normalizeWordDifficulty(r.difficulty),
         image_url: r.image_url ? String(r.image_url).trim() : null,
         image_source: r.image_url ? String(r.image_source || 'none') : 'none',
+        academy_id: DEFAULT_ACADEMY_ID,
+        teacher_id: DEFAULT_TEACHER_ID,
       }))
       const { error } = await supabase.from('words').upsert(payload, {
         onConflict: 'set_name,word',
