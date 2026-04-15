@@ -113,3 +113,20 @@ html, body {
   transform: translateY(-3px);
   box-shadow: 0 8px 24px rgba(102, 126, 234, 0.25);
 }
+
+/* 인쇄 / PDF: 상단 선생님 네비게이션 숨김 */
+@media print {
+  .teacher-app-nav {
+    display: none !important;
+  }
+  .test-sheet-actions {
+    display: none !important;
+  }
+  .test-sheet-print-area {
+    box-shadow: none !important;
+    border: none !important;
+  }
+  .teacher-test-form-no-print {
+    display: none !important;
+  }
+}

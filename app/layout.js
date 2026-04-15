@@ -1,4 +1,5 @@
 import './globals.css';
+import AuthRouteGuard from '@/components/AuthRouteGuard';
 
 export default function RootLayout({ children }) {
   return (
@@ -6,7 +7,9 @@ export default function RootLayout({ children }) {
       <head>
         <link rel="stylesheet" as="style" crossOrigin="anonymous" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
       </head>
-      <body>{children}</body>
+      <body>
+        <AuthRouteGuard>{children}</AuthRouteGuard>
+      </body>
     </html>
   );
 }

@@ -3,6 +3,14 @@
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/utils/supabaseClient';
+import { useTeacher } from '@/utils/useTeacher';
+import {
+  fetchStudentStatusForTeacher,
+  fetchStatusLogsForTeacher,
+  fetchStudentStatusNamesForTeacher,
+  fetchStudentRoutineSummariesForTeacher,
+  routineLastStudyParts,
+} from '@/utils/teacherQueries';
 
 const COLOR_ORDER = { gold: 0, red: 1, orange: 2, blue: 3, green: 4, purple: 5, white: 6 };
 const MAIN_ZONE_MAX = 30;
@@ -275,6 +283,23 @@ function getKakaoMent(row, style) {
 }
 
 /** 실시간 사건 기록 한 행 → 그 로그에 맞는 카톡 개별멘트 (학생명 자동 반영) */
+/** student_id → 루틴 요약 (카드용) */
+function MonitorRoutineLines({ studentId, map, compact }) {
+  const s = map[String(studentId)] ?? { line1: null, lastParts: routineLastStudyParts(null) };
+  const { line1, lastParts } = s;
+  const color = lastParts.muted ? '#94a3b8' : lastParts.urgent ? '#dc2626' : '#6b7280';
+  return (
+    <div style={{ marginTop: compact ? 4 : 6, marginBottom: compact ? 2 : 4 }}>
+      {line1 ? (
+        <div style={{ fontSize: compact ? 10 : 11, color: '#4b5563', fontWeight: 600, lineHeight: 1.35 }}>{line1}</div>
+      ) : null}
+      <div style={{ fontSize: compact ? 10 : 11, color, marginTop: line1 ? 3 : 0, fontWeight: 500 }}>
+        마지막 학습(루틴): {lastParts.text}
+      </div>
+    </div>
+  );
+}
+
 function getKakaoMentForLog(logRow) {
   if (!logRow) return '';
   const name = (logRow.student_name || '').trim() || '이름없음';
@@ -313,6 +338,11 @@ export default function TeacherMonitorPage() {
   /** 출석/미접속 N차 복사용 캐시 (인원 많을 때 나눠 붙여넣기) */
   const attendanceCopyRef = useRef({ names: null, chunk: 0 });
   const absentCopyRef = useRef({ initials: null, chunk: 0 });
+
+  /** student_id → { line1, lastParts } */
+  const [routineSummaries, setRoutineSummaries] = useState({});
+
+  const { teacher, loading: teacherLoading } = useTeacher();
 
   useEffect(() => {
     studentsRef.current = students;
@@ -479,25 +509,48 @@ export default function TeacherMonitorPage() {
   };
 
   useEffect(() => {
+    if (teacherLoading) return undefined;
+    if (!teacher?.id) {
+      setStudents([]);
+      setFetchError(null);
+      return undefined;
+    }
+
+    const teacherId = teacher.id;
     let channel;
+
     const fetchStudents = async () => {
       setFetchError(null);
-      const { data, error } = await supabase.from('student_status').select('*');
+      const { data, error } = await fetchStudentStatusForTeacher(teacherId);
       if (error) {
         setFetchError(error.message || 'Supabase 연결 실패');
         return;
       }
       setStudents(sortStudents(data ?? []));
+      try {
+        const map = await fetchStudentRoutineSummariesForTeacher(teacherId);
+        setRoutineSummaries(map);
+      } catch (e) {
+        console.warn('[monitor] 루틴 요약 실패:', e);
+        setRoutineSummaries({});
+      }
     };
     refetchStudentsRef.current = fetchStudents;
     fetchStudents();
     channel = supabase
-      .channel('student_status_changes')
+      .channel(`student_status_changes_${teacherId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'student_status' }, () => {
-        supabase.from('student_status').select('*').then(({ data }) => setStudents(sortStudents(data ?? [])));
+        fetchStudentStatusForTeacher(teacherId).then(async ({ data }) => {
+          setStudents(sortStudents(data ?? []));
+          try {
+            const map = await fetchStudentRoutineSummariesForTeacher(teacherId);
+            setRoutineSummaries(map);
+          } catch {
+            setRoutineSummaries({});
+          }
+        });
       })
       .subscribe();
-    // 폰/모바일: 탭 복귀 시 재조회 (WebSocket 끊김 시 빨간불/파란불 복구)
     const onVisible = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') fetchStudents();
     };
@@ -506,16 +559,16 @@ export default function TeacherMonitorPage() {
       document.removeEventListener('visibilitychange', onVisible);
       if (channel) supabase.removeChannel(channel);
     };
-  }, []);
+  }, [teacher?.id, teacherLoading]);
 
   useEffect(() => {
+    if (teacherLoading || !teacher?.id) return undefined;
+
+    const teacherId = teacher.id;
+
     const fetchLogs = async () => {
       setStatusLogsError(null);
-      const { data, error } = await supabase
-        .from('status_logs')
-        .select('id, student_name, event_type, message, created_at')
-        .order('created_at', { ascending: false })
-        .limit(LOG_LIMIT);
+      const { data, error } = await fetchStatusLogsForTeacher(teacherId, LOG_LIMIT);
       if (error) {
         const msg = error.message || '알 수 없는 오류';
         console.warn('실시간 사건 기록 조회 실패:', msg);
@@ -527,10 +580,9 @@ export default function TeacherMonitorPage() {
     refetchLogsRef.current = fetchLogs;
     fetchLogs();
     const ch = supabase
-      .channel('status_logs_changes')
+      .channel(`status_logs_changes_${teacherId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'status_logs' }, fetchLogs)
       .subscribe();
-    // 탭 복귀 시 사건 기록 재조회 (3연속 오답·복습 완료 등 최신 반영)
     const onVisible = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') fetchLogs();
     };
@@ -539,7 +591,7 @@ export default function TeacherMonitorPage() {
       document.removeEventListener('visibilitychange', onVisible);
       supabase.removeChannel(ch);
     };
-  }, []);
+  }, [teacher?.id, teacherLoading]);
 
   const { main, safe } = splitZones(students);
   const absent2Days = students.filter((r) => isAbsent2Days(r.last_active));
@@ -556,7 +608,8 @@ export default function TeacherMonitorPage() {
   };
 
   const handleCopyTodayStatus = async () => {
-    const { data: list, error } = await supabase.from('student_status').select('student_name, last_active');
+    if (!teacher?.id) return;
+    const { data: list, error } = await fetchStudentStatusNamesForTeacher(teacher.id);
     if (error) {
       setCopyToast('조회 실패. 다시 눌러주세요.');
       setTimeout(() => setCopyToast(null), 3000);
@@ -586,9 +639,10 @@ export default function TeacherMonitorPage() {
 
   /** 오늘 출석만 복사 (40명 초과 시 N차로 나눠 복사, 다시 클릭 시 다음 차수) */
   const handleCopyTodayAttendanceOnly = async () => {
+    if (!teacher?.id) return;
     const ref = attendanceCopyRef.current;
     if (ref.names === null || ref.chunk * COPY_CHUNK_SIZE >= ref.names.length) {
-      const { data: list, error } = await supabase.from('student_status').select('student_name, last_active');
+      const { data: list, error } = await fetchStudentStatusNamesForTeacher(teacher.id);
       if (error) {
         setCopyToast('조회 실패. 다시 눌러주세요.');
         setTimeout(() => setCopyToast(null), 3000);
@@ -634,9 +688,10 @@ export default function TeacherMonitorPage() {
 
   /** 오늘 미접속만 복사 (40명 초과 시 N차로 나눠 복사) */
   const handleCopyTodayAbsentOnly = async () => {
+    if (!teacher?.id) return;
     const ref = absentCopyRef.current;
     if (ref.initials === null || ref.chunk * COPY_CHUNK_SIZE >= ref.initials.length) {
-      const { data: list, error } = await supabase.from('student_status').select('student_name, last_active');
+      const { data: list, error } = await fetchStudentStatusNamesForTeacher(teacher.id);
       if (error) {
         setCopyToast('조회 실패. 다시 눌러주세요.');
         setTimeout(() => setCopyToast(null), 3000);
@@ -698,6 +753,30 @@ export default function TeacherMonitorPage() {
     ];
     copyToClipboard(ment.join('\n'));
   };
+
+  if (teacherLoading) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.container}>
+          <h1 style={styles.title}>실시간 학생 모니터링</h1>
+          <p style={{ color: '#64748b' }}>선생님 정보를 확인하는 중…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!teacher?.id) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.container}>
+          <h1 style={styles.title}>실시간 학생 모니터링</h1>
+          <div style={styles.errorBox}>
+            로그인한 이메일에 해당하는 선생님(teachers 테이블) 정보가 없습니다. Supabase에서 이메일을 등록했는지 확인해 주세요.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (fetchError) {
     return (
@@ -800,6 +879,7 @@ export default function TeacherMonitorPage() {
                       <span className="monitor-badge" style={{ ...styles.badge, background: light.badge }}>{light.label}</span>
                     </div>
                   </div>
+                  <MonitorRoutineLines studentId={row.student_id} map={routineSummaries} />
                   {row.last_active != null && <div className="monitor-card-time" style={styles.cardTime} title="마지막 활동 시각 (한국시간)">{formatActive(row.last_active)}</div>}
                   <div className="monitor-card-info" style={styles.cardInfo}>
                     {light.label === '정답' && (row.last_answer_tag ? `✅ 정답 · ${row.last_answer_tag}` : '✅ 정답')}
@@ -844,10 +924,13 @@ export default function TeacherMonitorPage() {
               {absent2Days.map((row) => {
                 const s = style[row.student_color] || style.white;
                 return (
-                  <div key={row.id} style={styles.safeItem}>
-                    <span style={styles.safeItemName}>{row.student_name ?? '-'}</span>
-                    <span style={{ ...styles.badgeSmall, background: s.badge }}>{s.label}</span>
-                    {row.last_active != null && <span style={styles.safeItemTime}>{formatActive(row.last_active)}</span>}
+                  <div key={row.id} style={{ ...styles.safeItem, flexDirection: 'column', alignItems: 'stretch' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: '100%' }}>
+                      <span style={styles.safeItemName}>{row.student_name ?? '-'}</span>
+                      <span style={{ ...styles.badgeSmall, background: s.badge }}>{s.label}</span>
+                      {row.last_active != null && <span style={styles.safeItemTime}>{formatActive(row.last_active)}</span>}
+                    </div>
+                    <MonitorRoutineLines studentId={row.student_id} map={routineSummaries} compact />
                   </div>
                 );
               })}
@@ -867,11 +950,14 @@ export default function TeacherMonitorPage() {
               {safe.map((row) => {
                 const s = style[row.student_color] || style.white;
                 return (
-                  <div key={row.id} style={styles.safeItem}>
-                    <span style={styles.safeItemName}>{row.student_name ?? '-'}</span>
-                    {isAbsent2Days(row.last_active) && <span style={styles.badgeAbsent2Small}>이틀 미접속</span>}
-                    <span style={{ ...styles.badgeSmall, background: s.badge }}>{s.label}</span>
-                    {row.last_active != null && <span style={styles.safeItemTime}>{formatActive(row.last_active)}</span>}
+                  <div key={row.id} style={{ ...styles.safeItem, flexDirection: 'column', alignItems: 'stretch' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: '100%' }}>
+                      <span style={styles.safeItemName}>{row.student_name ?? '-'}</span>
+                      {isAbsent2Days(row.last_active) && <span style={styles.badgeAbsent2Small}>이틀 미접속</span>}
+                      <span style={{ ...styles.badgeSmall, background: s.badge }}>{s.label}</span>
+                      {row.last_active != null && <span style={styles.safeItemTime}>{formatActive(row.last_active)}</span>}
+                    </div>
+                    <MonitorRoutineLines studentId={row.student_id} map={routineSummaries} compact />
                   </div>
                 );
               })}

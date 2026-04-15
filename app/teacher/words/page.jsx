@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/utils/supabaseClient'
-import { DEFAULT_ACADEMY_ID, DEFAULT_TEACHER_ID } from '@/utils/defaults'
+import { DEFAULT_ACADEMY_ID } from '@/utils/defaults'
+import { useTeacher } from '@/utils/useTeacher'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import WordTable from './components/WordTable'
 import BulkImport from './components/BulkImport'
 import AutoFillPanel from './components/AutoFillPanel'
+import RoutineSettingsSection from './components/RoutineSettingsSection'
 import { normalizeWordDifficulty } from './utils/parsers'
 import { filterWordRows } from './utils/wordFilters'
 
@@ -26,17 +28,50 @@ export default function WordsManagePage() {
   const [saveHint, setSaveHint] = useState(null)
   /** 테이블 접기: 10개 단위 (Day는 사이드바에서 이미 필터) */
   const [tableGroupMode, setTableGroupMode] = useState('chunk10')
+  const [inviteCopyMsg, setInviteCopyMsg] = useState(null)
   const saveHintTimerRef = useRef(null)
+  const inviteCopyMsgTimerRef = useRef(null)
+
+  const { teacher, loading: teacherLoading } = useTeacher()
+  const teacherId = teacher?.id
+  const academyId = teacher?.academy_id ?? DEFAULT_ACADEMY_ID
 
   useEffect(() => {
     return () => {
       if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
+      if (inviteCopyMsgTimerRef.current) clearTimeout(inviteCopyMsgTimerRef.current)
     }
   }, [])
+
+  const handleCopyInviteCode = async () => {
+    const code = String(teacher?.invite_code ?? '').trim()
+    if (inviteCopyMsgTimerRef.current) clearTimeout(inviteCopyMsgTimerRef.current)
+    if (!code) {
+      setInviteCopyMsg('등록된 초대 코드가 없습니다.')
+      inviteCopyMsgTimerRef.current = setTimeout(() => setInviteCopyMsg(null), 2500)
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(code)
+      setInviteCopyMsg('클립보드에 복사했습니다.')
+      inviteCopyMsgTimerRef.current = setTimeout(() => setInviteCopyMsg(null), 2000)
+    } catch {
+      setInviteCopyMsg('복사에 실패했습니다. 코드를 직접 선택해 복사해 주세요.')
+      inviteCopyMsgTimerRef.current = setTimeout(() => setInviteCopyMsg(null), 3000)
+    }
+  }
 
   const WORDS_CHUNK = 2500
 
   const loadWords = useCallback(async () => {
+    if (teacherLoading) return
+    if (!teacherId) {
+      setWords([])
+      setLoading(false)
+      setLoadingMore(false)
+      return
+    }
+
     setLoading(true)
     setLoadingMore(false)
 
@@ -44,7 +79,7 @@ export default function WordsManagePage() {
       supabase
         .from('words')
         .select('id, word, meaning, example_sentence, image_url, image_source, set_name, day, difficulty')
-        .eq('teacher_id', DEFAULT_TEACHER_ID)
+        .eq('teacher_id', teacherId)
         .order('set_name', { ascending: true })
         .order('day', { ascending: true })
 
@@ -82,7 +117,7 @@ export default function WordsManagePage() {
     } finally {
       setLoadingMore(false)
     }
-  }, [])
+  }, [teacherLoading, teacherId])
 
   useEffect(() => {
     void loadWords()
@@ -157,6 +192,7 @@ export default function WordsManagePage() {
   }
 
   const handleRowDelete = useCallback(async (row) => {
+    if (!teacherId) return
     const w = String(row.word || '').trim()
     if (!confirm(w ? `「${w}」행을 삭제할까요?` : '이 행을 삭제할까요?')) return
     const id = String(row.id)
@@ -169,7 +205,7 @@ export default function WordsManagePage() {
       })
       return
     }
-    const { error } = await supabase.from('words').delete().eq('id', id)
+    const { error } = await supabase.from('words').delete().eq('id', id).eq('teacher_id', teacherId)
     if (error) {
       alert(`삭제 실패: ${error.message}`)
       return
@@ -183,9 +219,10 @@ export default function WordsManagePage() {
     setSaveHint('삭제했습니다.')
     if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
     saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2000)
-  }, [])
+  }, [teacherId])
 
   const handleRowCommit = useCallback(async (row) => {
+    if (!teacherId) return
     const id = String(row.id)
     const word = String(row.word || '').trim()
     const meaning = String(row.meaning || '').trim()
@@ -208,8 +245,8 @@ export default function WordsManagePage() {
         .upsert(
           {
             ...payload,
-            academy_id: DEFAULT_ACADEMY_ID,
-            teacher_id: DEFAULT_TEACHER_ID,
+            academy_id: academyId,
+            teacher_id: teacherId,
           },
           {
             onConflict: 'set_name,word',
@@ -228,7 +265,7 @@ export default function WordsManagePage() {
       setSaveHint('저장했습니다. (같은 세트에 같은 영단어가 이미 있으면 그 행을 덮어씁니다)')
       saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 3000)
     } else {
-      const { error } = await supabase.from('words').update(payload).eq('id', id)
+      const { error } = await supabase.from('words').update(payload).eq('id', id).eq('teacher_id', teacherId)
       if (error) {
         console.warn(error)
         alert(`저장 실패: ${error.message}`)
@@ -238,7 +275,7 @@ export default function WordsManagePage() {
       setSaveHint('저장했습니다.')
       saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2500)
     }
-  }, [])
+  }, [teacherId, academyId])
 
   const addEmptyRow = () => {
     setWords((prev) => [
@@ -261,6 +298,7 @@ export default function WordsManagePage() {
     selectedIds.size > 0 ? filtered.filter((r) => selectedIds.has(String(r.id))) : filtered
 
   const handleAutoFilled = async (updated) => {
+    if (!teacherId) return
     const map = new Map(updated.map((r) => [String(r.id), r]))
     setWords((prev) => prev.map((r) => map.get(String(r.id)) || r))
 
@@ -276,8 +314,30 @@ export default function WordsManagePage() {
           image_source: r.image_url ? String(r.image_source || 'unsplash') : 'none',
         })
         .eq('id', id)
+        .eq('teacher_id', teacherId)
       if (error) console.warn('[words] autofill save', error.message)
     }
+  }
+
+  if (teacherLoading) {
+    return (
+      <div style={{ minHeight: '100vh', background: COLORS.bg, padding: '20px 16px 40px' }}>
+        <p style={{ color: COLORS.textSecondary }}>선생님 정보를 확인하는 중…</p>
+      </div>
+    )
+  }
+
+  if (!teacherId) {
+    return (
+      <div style={{ minHeight: '100vh', background: COLORS.bg, padding: '20px 16px 40px' }}>
+        <p style={{ color: COLORS.textSecondary }}>
+          로그인한 이메일에 해당하는 선생님(teachers 테이블) 정보가 없습니다. Supabase에서 이메일을 등록했는지 확인해 주세요.
+        </p>
+        <Link href="/teacher/monitor" style={{ color: COLORS.primary, fontSize: 14 }}>
+          ← 모니터
+        </Link>
+      </div>
+    )
   }
 
   return (
@@ -351,6 +411,64 @@ export default function WordsManagePage() {
           </button>
         </div>
       </header>
+
+      <section
+        aria-label="학생 초대 코드"
+        style={{
+          maxWidth: 1280,
+          margin: '0 auto 20px',
+          padding: '22px 24px',
+          borderRadius: RADIUS.lg,
+          border: `1px solid ${COLORS.border}`,
+          boxShadow: SHADOW.card,
+          background: `linear-gradient(135deg, ${COLORS.primarySoft} 0%, #ffffff 48%, ${COLORS.primaryLight} 100%)`,
+        }}
+      >
+        <div style={{ fontSize: 15, fontWeight: 800, color: COLORS.accentText, marginBottom: 10, letterSpacing: '-0.02em' }}>
+          학생 초대 코드
+        </div>
+        <div
+          style={{
+            fontSize: 'clamp(28px, 5vw, 40px)',
+            fontWeight: 800,
+            letterSpacing: '0.08em',
+            color: COLORS.textPrimary,
+            fontFamily: 'ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace',
+            lineHeight: 1.2,
+            marginBottom: 10,
+            wordBreak: 'break-all',
+          }}
+        >
+          {String(teacher?.invite_code ?? '').trim() || '—'}
+        </div>
+        <p style={{ margin: '0 0 14px', fontSize: 15, color: COLORS.textSecondary, lineHeight: 1.5 }}>
+          이 코드를 학생들에게 알려주세요
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
+          <button
+            type="button"
+            onClick={() => void handleCopyInviteCode()}
+            style={{
+              padding: '12px 22px',
+              borderRadius: RADIUS.md,
+              border: 'none',
+              background: COLORS.headerGradient,
+              color: COLORS.textOnGreen,
+              fontWeight: 700,
+              fontSize: 16,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(102, 126, 234, 0.35)',
+            }}
+          >
+            복사하기
+          </button>
+          {inviteCopyMsg ? (
+            <span role="status" style={{ fontSize: 14, fontWeight: 600, color: COLORS.accentText }}>
+              {inviteCopyMsg}
+            </span>
+          ) : null}
+        </div>
+      </section>
 
       <div
         style={{
@@ -625,12 +743,16 @@ export default function WordsManagePage() {
         </div>
       </div>
 
+      <RoutineSettingsSection teacherId={teacherId} setNames={setNames} />
+
       <BulkImport
         open={bulkOpen}
         onClose={() => setBulkOpen(false)}
         onSaved={() => void loadWords()}
         existingSetNames={setNames}
         initialSetName={setFilter}
+        teacherId={teacherId}
+        academyId={academyId}
       />
     </div>
   )

@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/utils/supabaseClient'
-import { DEFAULT_ACADEMY_ID, DEFAULT_TEACHER_ID } from '@/utils/defaults'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import { parseWordText, normalizeWordDifficulty } from '../utils/parsers'
 import WordTable from './WordTable'
@@ -23,6 +22,8 @@ const TABS = [
  *   localOnly?: boolean
  *   onLocalImported?: (rows: Array<Record<string, unknown>>) => void
  *   initialSetName?: string
+ *   teacherId?: string
+ *   academyId?: string
  * }} props
  */
 export default function BulkImport({
@@ -33,6 +34,8 @@ export default function BulkImport({
   localOnly = false,
   onLocalImported,
   initialSetName,
+  teacherId,
+  academyId,
 }) {
   const [tab, setTab] = useState('ai')
   const [aiPassage, setAiPassage] = useState('')
@@ -141,6 +144,10 @@ export default function BulkImport({
       alert('세트 이름을 입력하세요.')
       return
     }
+    if (!localOnly && (!teacherId || !academyId)) {
+      alert('선생님 정보를 불러올 수 없습니다. 다시 로그인하거나 페이지를 새로고침해 주세요.')
+      return
+    }
     setSaving(true)
     try {
       const payload = valid.map((r) => ({
@@ -152,8 +159,8 @@ export default function BulkImport({
         difficulty: normalizeWordDifficulty(r.difficulty),
         image_url: r.image_url ? String(r.image_url) : null,
         image_source: r.image_url ? (r.image_source || 'upload') : 'none',
-        academy_id: DEFAULT_ACADEMY_ID,
-        teacher_id: DEFAULT_TEACHER_ID,
+        academy_id: academyId,
+        teacher_id: teacherId,
       }))
 
       if (localOnly && onLocalImported) {

@@ -3,7 +3,8 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/utils/supabaseClient'
-import { DEFAULT_ACADEMY_ID, DEFAULT_TEACHER_ID } from '@/utils/defaults'
+import { DEFAULT_ACADEMY_ID } from '@/utils/defaults'
+import { useTeacher } from '@/utils/useTeacher'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import WordTable from '../components/WordTable'
 import BulkImport from '../components/BulkImport'
@@ -38,6 +39,10 @@ export default function CreateWordSetPage() {
   const [hint, setHint] = useState(null)
   /** none | day | chunk10 | day_chunk */
   const [tableGroupMode, setTableGroupMode] = useState('chunk10')
+
+  const { teacher, loading: teacherLoading } = useTeacher()
+  const teacherId = teacher?.id
+  const academyId = teacher?.academy_id ?? DEFAULT_ACADEMY_ID
 
   const effectiveGroupMode = useMemo(() => {
     if (!hasDayPreview && (tableGroupMode === 'day' || tableGroupMode === 'day_chunk')) return 'none'
@@ -99,6 +104,10 @@ export default function CreateWordSetPage() {
   }
 
   const saveAll = async () => {
+    if (!teacherId) {
+      alert('선생님 정보를 불러올 수 없습니다. 다시 로그인하거나 페이지를 새로고침해 주세요.')
+      return
+    }
     const sn = String(setName).trim()
     if (!sn) {
       alert('세트 이름을 입력하세요.')
@@ -125,8 +134,8 @@ export default function CreateWordSetPage() {
         difficulty: normalizeWordDifficulty(r.difficulty),
         image_url: r.image_url ? String(r.image_url).trim() : null,
         image_source: r.image_url ? String(r.image_source || 'none') : 'none',
-        academy_id: DEFAULT_ACADEMY_ID,
-        teacher_id: DEFAULT_TEACHER_ID,
+        academy_id: academyId,
+        teacher_id: teacherId,
       }))
       const { error } = await supabase.from('words').upsert(payload, {
         onConflict: 'set_name,word',
@@ -164,6 +173,27 @@ export default function CreateWordSetPage() {
       next.delete(id)
       return next
     })
+  }
+
+  if (teacherLoading) {
+    return (
+      <div style={{ minHeight: '100vh', background: COLORS.bg, padding: '20px 16px 40px' }}>
+        <p style={{ color: COLORS.textSecondary }}>선생님 정보를 확인하는 중…</p>
+      </div>
+    )
+  }
+
+  if (!teacherId) {
+    return (
+      <div style={{ minHeight: '100vh', background: COLORS.bg, padding: '20px 16px 40px' }}>
+        <p style={{ color: COLORS.textSecondary }}>
+          로그인한 이메일에 해당하는 선생님(teachers 테이블) 정보가 없습니다. Supabase에서 이메일을 등록했는지 확인해 주세요.
+        </p>
+        <Link href="/teacher/words" style={{ color: COLORS.primary, fontSize: 14 }}>
+          ← 단어 관리
+        </Link>
+      </div>
+    )
   }
 
   return (
@@ -417,6 +447,8 @@ export default function CreateWordSetPage() {
           existingSetNames={[]}
           localOnly
           initialSetName={setName}
+          teacherId={teacherId}
+          academyId={academyId}
           onLocalImported={(imported) => {
             setHasDayPreview(false)
             setRows((prev) => [...imported.map((r) => ({ ...r, set_name: setName })), ...prev])
