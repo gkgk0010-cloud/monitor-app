@@ -177,7 +177,7 @@ export default function CreateWordSetPage() {
 
   if (teacherLoading) {
     return (
-      <div style={{ minHeight: '100vh', background: COLORS.bg, padding: '20px 16px 40px' }}>
+      <div style={{ padding: '8px 0 24px' }}>
         <p style={{ color: COLORS.textSecondary }}>선생님 정보를 확인하는 중…</p>
       </div>
     )
@@ -185,7 +185,7 @@ export default function CreateWordSetPage() {
 
   if (!teacherId) {
     return (
-      <div style={{ minHeight: '100vh', background: COLORS.bg, padding: '20px 16px 40px' }}>
+      <div style={{ padding: '8px 0 24px' }}>
         <p style={{ color: COLORS.textSecondary }}>
           로그인한 이메일에 해당하는 선생님(teachers 테이블) 정보가 없습니다. Supabase에서 이메일을 등록했는지 확인해 주세요.
         </p>
@@ -197,12 +197,12 @@ export default function CreateWordSetPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: COLORS.bg, padding: '20px 16px 40px' }}>
+    <div style={{ width: '100%', maxWidth: '100%', minHeight: '100%' }}>
       <header
+        className="teacher-page-header-bleed"
         style={{
-          maxWidth: 1100,
-          margin: '0 auto 20px',
-          padding: '16px 20px',
+          marginBottom: 16,
+          padding: '14px 18px',
           borderRadius: RADIUS.lg,
           background: COLORS.headerGradient,
           color: COLORS.textOnGreen,
@@ -212,6 +212,7 @@ export default function CreateWordSetPage() {
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 12,
+          boxSizing: 'border-box',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
@@ -254,7 +255,7 @@ export default function CreateWordSetPage() {
         </div>
       </header>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+      <div style={{ width: '100%', maxWidth: '100%' }}>
         <div
           style={{
             marginBottom: 16,

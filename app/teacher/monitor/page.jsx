@@ -581,7 +581,16 @@ export default function TeacherMonitorPage() {
     fetchLogs();
     const ch = supabase
       .channel(`status_logs_changes_${teacherId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'status_logs' }, fetchLogs)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'status_logs',
+          filter: `teacher_id=eq.${teacherId}`,
+        },
+        fetchLogs,
+      )
       .subscribe();
     const onVisible = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') fetchLogs();
@@ -1117,10 +1126,19 @@ const styles = {
   page: {
     minHeight: '100vh',
     background: 'linear-gradient(180deg, #f3e7ff 0%, #eef2ff 100%)',
-    padding: '24px 20px 48px',
+    padding: '0 0 32px',
     fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
   },
-  container: { maxWidth: 720, margin: '0 auto', background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(12px)', borderRadius: 24, padding: '20px 24px 32px', boxShadow: '0 8px 32px rgba(31,38,135,0.05)' },
+  container: {
+    width: '100%',
+    maxWidth: 'min(1680px, 100%)',
+    margin: '0 auto',
+    background: 'rgba(255,255,255,0.7)',
+    backdropFilter: 'blur(12px)',
+    borderRadius: 24,
+    padding: '20px 20px 32px',
+    boxShadow: '0 8px 32px rgba(31,38,135,0.05)',
+  },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 24, paddingBottom: 20, borderBottom: '1px solid rgba(255,255,255,0.5)' },
   title: { margin: 0, fontSize: '1.35rem', fontWeight: 700, color: '#374151' },
   headerRight: { display: 'flex', alignItems: 'center', gap: 12 },

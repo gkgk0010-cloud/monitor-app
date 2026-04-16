@@ -69,8 +69,9 @@ export default function MenuSettingsSection({ teacherId, visibleMenus, onSaved }
     <section
       aria-label="학생 앱 메뉴 설정"
       style={{
-        maxWidth: 1280,
-        margin: '0 auto 20px',
+        width: '100%',
+        maxWidth: '100%',
+        margin: '0 0 16px',
         padding: '22px 24px',
         borderRadius: RADIUS.xl,
         border: `1px solid ${COLORS.border}`,

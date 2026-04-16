@@ -29,19 +29,26 @@ export async function fetchStudentStatusForTeacher(teacherId) {
 }
 
 /**
- * status_logs — student_id 로 선생님 소속 학생만
+ * status_logs — teacher_id 일치 + KST 기준 이번 달 1일 0시 이후만
  * @param {string} teacherId
  * @param {number} limit
  */
 export async function fetchStatusLogsForTeacher(teacherId, limit) {
-  const ids = await fetchStudentIdsForTeacher(teacherId);
-  if (ids.length === 0) {
+  if (!teacherId) {
     return { data: [], error: null };
   }
+  const now = new Date();
+  const kstOffset = 9 * 60 * 60 * 1000;
+  const kstNow = new Date(now.getTime() + kstOffset);
+  const firstDay = new Date(
+    Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), 1) - kstOffset,
+  ).toISOString();
+
   return supabase
     .from('status_logs')
     .select('id, student_name, event_type, message, created_at')
-    .in('student_id', ids)
+    .eq('teacher_id', teacherId)
+    .gte('created_at', firstDay)
     .order('created_at', { ascending: false })
     .limit(limit);
 }

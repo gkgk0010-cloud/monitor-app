@@ -120,7 +120,9 @@ export default function TeacherLayout({ children }) {
         </div>
       </header>
 
-      <main style={{ flex: 1, minHeight: 0 }}>{children}</main>
+      <main className="teacher-main-shell" style={{ flex: 1, minHeight: 0, width: '100%', maxWidth: '100%' }}>
+        {children}
+      </main>
     </div>
   );
 }

@@ -120,8 +120,9 @@ export default function RoutineSettingsSection({ teacherId, setNames }) {
     <section
       aria-label="루틴 설정"
       style={{
-        maxWidth: 1280,
-        margin: '28px auto 0',
+        width: '100%',
+        maxWidth: '100%',
+        margin: '24px 0 0',
         padding: '22px 24px 24px',
         borderRadius: RADIUS.xl,
         border: `1px solid ${COLORS.border}`,

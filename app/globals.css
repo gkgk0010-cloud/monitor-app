@@ -28,6 +28,38 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* 선생님 영역: 좌우 여백 최소화·가로 전체 사용 */
+.teacher-main-shell {
+  --teacher-shell-px: clamp(8px, 1.2vw, 20px);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 12px var(--teacher-shell-px) 32px;
+}
+
+@media (min-width: 1280px) {
+  .teacher-main-shell {
+    --teacher-shell-px: clamp(12px, 2vw, 28px);
+  }
+}
+
+/* 상단 그라데이션 헤더를 레이아웃 네비와 동일하게 풀블리드 */
+.teacher-page-header-bleed {
+  margin-left: calc(-1 * var(--teacher-shell-px, 12px));
+  margin-right: calc(-1 * var(--teacher-shell-px, 12px));
+  width: calc(100% + 2 * var(--teacher-shell-px, 12px));
+  max-width: none;
+  box-sizing: border-box;
+}
+
+/* 단어 테이블: 가로 스크롤·전체 너비 */
+.word-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* gold 카드 테두리 반짝임 (오늘의 MVP) */
 @keyframes gold-shimmer {
   0%, 100% {

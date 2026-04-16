@@ -322,7 +322,7 @@ export default function WordsManagePage() {
 
   if (teacherLoading) {
     return (
-      <div style={{ minHeight: '100vh', background: COLORS.bg, padding: '20px 16px 40px' }}>
+      <div style={{ minHeight: '40vh', padding: '8px 0 24px' }}>
         <p style={{ color: COLORS.textSecondary }}>선생님 정보를 확인하는 중…</p>
       </div>
     )
@@ -330,7 +330,7 @@ export default function WordsManagePage() {
 
   if (!teacherId) {
     return (
-      <div style={{ minHeight: '100vh', background: COLORS.bg, padding: '20px 16px 40px' }}>
+      <div style={{ minHeight: '40vh', padding: '8px 0 24px' }}>
         <p style={{ color: COLORS.textSecondary }}>
           로그인한 이메일에 해당하는 선생님(teachers 테이블) 정보가 없습니다. Supabase에서 이메일을 등록했는지 확인해 주세요.
         </p>
@@ -344,17 +344,17 @@ export default function WordsManagePage() {
   return (
     <div
       style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(180deg, #f3e7ff 0%, #eef2ff 100%)',
-        padding: '20px 16px 40px',
+        width: '100%',
+        maxWidth: '100%',
+        minHeight: '100%',
         fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
       }}
     >
       <header
+        className="teacher-page-header-bleed"
         style={{
-          maxWidth: 1100,
-          margin: '0 auto 20px',
-          padding: '16px 20px',
+          marginBottom: 16,
+          padding: '14px 18px',
           borderRadius: RADIUS.lg,
           background: COLORS.headerGradient,
           color: COLORS.textOnGreen,
@@ -364,6 +364,7 @@ export default function WordsManagePage() {
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 12,
+          boxSizing: 'border-box',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -423,70 +424,89 @@ export default function WordsManagePage() {
       <section
         aria-label="학생 초대 코드"
         style={{
-          maxWidth: 1280,
-          margin: '0 auto 20px',
-          padding: '22px 24px',
-          borderRadius: RADIUS.xl,
+          width: '100%',
+          maxWidth: '100%',
+          margin: '0 0 16px',
+          padding: '10px 14px',
+          borderRadius: RADIUS.md,
           border: `1px solid ${COLORS.border}`,
           borderLeft: `4px solid #667eea`,
-          boxShadow: '0 8px 32px rgba(31, 38, 135, 0.06)',
+          boxShadow: '0 4px 20px rgba(31, 38, 135, 0.06)',
           background: 'rgba(255,255,255,0.95)',
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
+          boxSizing: 'border-box',
         }}
       >
         <div
           style={{
-            margin: '0 0 12px',
-            paddingLeft: 2,
-            fontSize: '1rem',
-            fontWeight: 700,
-            color: '#374151',
-            letterSpacing: '-0.02em',
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 12,
+            justifyContent: 'space-between',
+            rowGap: 8,
           }}
         >
-          학생 초대 코드
-        </div>
-        <div
-          style={{
-            fontSize: 'clamp(28px, 5vw, 40px)',
-            fontWeight: 800,
-            letterSpacing: '0.08em',
-            color: COLORS.textPrimary,
-            fontFamily: 'ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace',
-            lineHeight: 1.2,
-            marginBottom: 10,
-            wordBreak: 'break-all',
-          }}
-        >
-          {String(teacher?.invite_code ?? '').trim() || '—'}
-        </div>
-        <p style={{ margin: '0 0 14px', fontSize: 14, color: COLORS.textSecondary, lineHeight: 1.55, fontWeight: 500 }}>
-          이 코드를 학생들에게 알려주세요
-        </p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
-          <button
-            type="button"
-            onClick={() => void handleCopyInviteCode()}
+          <div
             style={{
-              padding: '12px 22px',
-              borderRadius: RADIUS.md,
-              border: 'none',
-              background: COLORS.headerGradient,
-              color: COLORS.textOnGreen,
-              fontWeight: 700,
-              fontSize: 15,
-              cursor: 'pointer',
-              boxShadow: '0 4px 16px rgba(102, 126, 234, 0.28)',
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 10,
+              minWidth: 0,
+              flex: '1 1 240px',
             }}
           >
-            복사하기
-          </button>
-          {inviteCopyMsg ? (
-            <span role="status" style={{ fontSize: 14, fontWeight: 600, color: COLORS.accentText }}>
-              {inviteCopyMsg}
+            <span
+              style={{
+                fontSize: 14,
+                fontWeight: 700,
+                color: '#374151',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              학생 초대 코드
             </span>
-          ) : null}
+            <span
+              style={{
+                fontSize: 17,
+                fontWeight: 800,
+                letterSpacing: '0.06em',
+                color: COLORS.textPrimary,
+                fontFamily: 'ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace',
+                lineHeight: 1.2,
+                wordBreak: 'break-all',
+              }}
+            >
+              {String(teacher?.invite_code ?? '').trim() || '—'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => void handleCopyInviteCode()}
+              style={{
+                padding: '8px 16px',
+                borderRadius: RADIUS.md,
+                border: 'none',
+                background: COLORS.headerGradient,
+                color: COLORS.textOnGreen,
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: 'pointer',
+                boxShadow: '0 2px 10px rgba(102, 126, 234, 0.25)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              복사
+            </button>
+            {inviteCopyMsg ? (
+              <span role="status" style={{ fontSize: 13, fontWeight: 600, color: COLORS.accentText }}>
+                {inviteCopyMsg}
+              </span>
+            ) : null}
+          </div>
         </div>
       </section>
 
@@ -498,8 +518,9 @@ export default function WordsManagePage() {
 
       <div
         style={{
-          maxWidth: 1280,
-          margin: '0 auto',
+          width: '100%',
+          maxWidth: '100%',
+          margin: 0,
           display: 'flex',
           gap: 16,
           alignItems: 'flex-start',
@@ -615,7 +636,7 @@ export default function WordsManagePage() {
           ) : null}
         </aside>
 
-        <div style={{ flex: 1, minWidth: 0, maxWidth: 1320 }}>
+        <div style={{ flex: 1, minWidth: 0, width: '100%', maxWidth: '100%' }}>
         <div
           style={{
             display: 'grid',

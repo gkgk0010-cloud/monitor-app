@@ -308,15 +308,7 @@ ${parts.join('\n')}
 
   if (teacherLoading) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          padding: 24,
-          color: COLORS.textSecondary,
-          background: 'linear-gradient(180deg, #f3e7ff 0%, #eef2ff 100%)',
-          fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
-        }}
-      >
+      <div style={{ padding: '8px 0 24px', color: COLORS.textSecondary }}>
         선생님 정보 확인 중…
       </div>
     );
@@ -324,15 +316,7 @@ ${parts.join('\n')}
 
   if (!teacherId) {
     return (
-      <div
-        style={{
-          minHeight: '100vh',
-          padding: 24,
-          color: COLORS.textSecondary,
-          background: 'linear-gradient(180deg, #f3e7ff 0%, #eef2ff 100%)',
-          fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
-        }}
-      >
+      <div style={{ padding: '8px 0 24px', color: COLORS.textSecondary }}>
         로그인한 선생님 정보가 없습니다.
       </div>
     );
@@ -341,21 +325,22 @@ ${parts.join('\n')}
   return (
     <div
       style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(180deg, #f3e7ff 0%, #eef2ff 100%)',
-        padding: '20px 16px 40px',
+        width: '100%',
+        maxWidth: '100%',
+        minHeight: '100%',
         fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
       }}
     >
       <header
+        className="teacher-page-header-bleed"
         style={{
-          maxWidth: 1100,
-          margin: '0 auto 20px',
-          padding: '16px 20px',
+          marginBottom: 16,
+          padding: '14px 18px',
           borderRadius: RADIUS.lg,
           background: COLORS.headerGradient,
           color: COLORS.textOnGreen,
           boxShadow: SHADOW.card,
+          boxSizing: 'border-box',
         }}
       >
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>테스트지 생성</h1>
@@ -364,7 +349,7 @@ ${parts.join('\n')}
         </p>
       </header>
 
-      <div className="teacher-test-form-no-print" style={{ maxWidth: 1100, margin: '0 auto' }}>
+      <div className="teacher-test-form-no-print" style={{ width: '100%', maxWidth: '100%' }}>
       <div
         style={{
           padding: 22,
@@ -556,7 +541,8 @@ ${parts.join('\n')}
         <div
           className="test-sheet-print-area"
           style={{
-            maxWidth: 1100,
+            width: '100%',
+            maxWidth: '100%',
             margin: '0 auto',
             padding: 24,
             borderRadius: RADIUS.xl,

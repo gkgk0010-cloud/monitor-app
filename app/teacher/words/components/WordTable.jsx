@@ -462,9 +462,8 @@ function WordTable({
 
   return (
     <div
+      className="word-table-wrap"
       style={{
-        overflowX: 'auto',
-        WebkitOverflowScrolling: 'touch',
         borderRadius: RADIUS.md,
         border: `1px solid ${COLORS.border}`,
         background: COLORS.surface,
@@ -477,12 +476,13 @@ function WordTable({
         style={{
           maxHeight: 'min(72vh, calc(100vh - 240px))',
           overflow: 'auto',
+          width: '100%',
         }}
       >
         <table
           style={{
             width: '100%',
-            minWidth: 1120,
+            minWidth: 'max(100%, 1120px)',
             borderCollapse: 'collapse',
             fontSize: 14,
             tableLayout: 'fixed',
@@ -513,14 +513,14 @@ function WordTable({
                 #
               </th>
             ) : null}
-            <th style={{ padding: '10px 8px', color: COLORS.accentText }}>word</th>
-            <th style={{ padding: '10px 8px', color: COLORS.accentText }}>meaning</th>
+            <th style={{ padding: '10px 8px', color: COLORS.accentText, width: '16%' }}>word</th>
+            <th style={{ padding: '10px 8px', color: COLORS.accentText, width: '16%' }}>meaning</th>
             {showImageColumn ? (
               <th style={{ padding: '10px 8px', color: COLORS.accentText, width: 120 }}>image</th>
             ) : null}
-            <th style={{ padding: '10px 8px', color: COLORS.accentText }}>example_sentence</th>
+            <th style={{ padding: '10px 8px', color: COLORS.accentText, width: '28%' }}>example_sentence</th>
             {showSetNameColumn ? (
-              <th style={{ padding: '10px 8px', color: COLORS.accentText }}>set_name</th>
+              <th style={{ padding: '10px 8px', color: COLORS.accentText, width: '12%' }}>set_name</th>
             ) : null}
             {showDayColumn ? (
               <th style={{ padding: '10px 8px', width: 72, color: COLORS.accentText }}>day</th>
