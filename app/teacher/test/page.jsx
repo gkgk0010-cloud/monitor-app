@@ -158,33 +158,210 @@ function validateQuestions(questions, wordPool, expectedLen) {
   return { ok: true };
 }
 
-function buildBatchPrompt(wordPoolJson, startNum, batchTypes, hintFirstTwo) {
-  const lines = batchTypes.map((ty, i) => `${i + 1}. 문항 번호 ${startNum + i}: 유형 "${ty}"`);
+/** 빈칸 채우기만 Claude — jobs: { row }[] */
+function buildFillBlankOnlyPrompt(wordPoolJson, jobs) {
+  const lines = jobs
+    .map((job, k) => {
+      const w = String(job.row.word ?? '').trim();
+      const ex = job.row.example_sentence != null ? String(job.row.example_sentence).trim() : '';
+      const exHint = ex ? ` 참고 예문(활용 가능): ${ex}` : '';
+      return `${k + 1}. 문항 ${k + 1}: 단어는 반드시 "${w}". example 은 이 단어가 들어가는 영문 한 문장이며, 해당 영단어 자리만 ____ 또는 ______ 로 표시. answer 는 "${w}" 와 동일.${exHint}`;
+    })
+    .join('\n');
 
-  const typeGuide = `
-유형별 필수 필드 (반드시 아래 키 이름 사용):
-- word_to_meaning: word, question, options(뜻 문자열 4개), answer(1~4)
-- meaning_to_word: meaning, question, options(영단어 4개), answer(1~4) — 뜻은 목록의 meaning과 동일한 문장 사용
-- fill_blank: word, example(예문에서 해당 단어만 ____ 또는 ______ 로 표시), answer(영단어, word와 동일)
-- subjective_word: word, question, answer(뜻 텍스트)
-- subjective_meaning: meaning, question, answer(영단어), ${hintFirstTwo ? 'hint(첫 두 글자+언더스코어, 예: me__)' : 'hint는 생략 가능'}`;
+  return `아래 단어 목록에 있는 데이터만 사용한다.
 
-  return `아래 JSON 단어 목록에서만 문제를 만든다. 목록에 없는 영단어·뜻은 절대 쓰지 마라.
-4지선다 오답 보기도 반드시 같은 목록에 있는 항목만 사용한다 (단어 보기는 다른 단어들에서, 뜻 보기는 다른 뜻들에서).
-
-단어 목록:
+단어 목록(JSON):
 ${wordPoolJson}
 
-이번 요청으로 문항 ${startNum}번부터 ${startNum + batchTypes.length - 1}번까지, 총 ${batchTypes.length}문항만 생성한다.
+빈칸 채우기(fill_blank) ${jobs.length}문항만 생성한다.
+${lines}
 
-${lines.join('\n')}
-${typeGuide}
+응답: JSON 배열만. 각 객체는 { "number": 번호, "type": "fill_blank", "word", "example", "answer" }.
+number 는 1부터 순서대로. 마크다운·설명 금지.`;
+}
 
-응답은 JSON 배열만 출력한다. 각 객체에 number(문항 번호), type, 그리고 유형별 필드를 포함한다. 마크다운·설명 금지.`;
+function pickThreeWrongMeanings(wordPool, excludeRow, correctMeaning, seed) {
+  const excludeId = String(excludeRow.id);
+  const correctN = normMeaning(correctMeaning);
+  const pool = wordPool.filter((r) => String(r.id) !== excludeId);
+  const candidates = [];
+  const seen = new Set([correctN]);
+  for (const r of shuffleSeeded(pool, seed ^ 0x9e3779b9)) {
+    const m = String(r.meaning ?? '').trim();
+    if (!m) continue;
+    const mn = normMeaning(m);
+    if (seen.has(mn)) continue;
+    seen.add(mn);
+    candidates.push(m);
+    if (candidates.length >= 3) break;
+  }
+  return candidates.slice(0, 3);
+}
+
+function pickThreeWrongWords(wordPool, excludeRow, correctWord, seed) {
+  const excludeId = String(excludeRow.id);
+  const correctN = normWord(correctWord);
+  const pool = wordPool.filter((r) => String(r.id) !== excludeId);
+  const candidates = [];
+  const seen = new Set([correctN]);
+  for (const r of shuffleSeeded(pool, seed ^ 0x85ebca6b)) {
+    const w = String(r.word ?? '').trim();
+    if (!w) continue;
+    const wn = normWord(w);
+    if (seen.has(wn)) continue;
+    seen.add(wn);
+    candidates.push(w);
+    if (candidates.length >= 3) break;
+  }
+  return candidates.slice(0, 3);
+}
+
+function buildWordToMeaningQuestion(row, wordPool, seed) {
+  const w = String(row.word ?? '').trim();
+  const correctM = String(row.meaning ?? '').trim();
+  const wrongs = pickThreeWrongMeanings(wordPool, row, correctM, seed);
+  if (wrongs.length < 3) {
+    throw new Error('4지선다(단어→뜻) 오답을 만들 뜻이 부족합니다. DAY 범위를 넓히거나 단어를 늘려 주세요.');
+  }
+  const opts = shuffleSeeded([correctM, ...wrongs], seed + 17);
+  const answer = opts.findIndex((o) => normMeaning(o) === normMeaning(correctM)) + 1;
+  return {
+    type: 'word_to_meaning',
+    word: w,
+    question: '다음 단어의 뜻으로 올바른 것은?',
+    options: opts,
+    answer,
+  };
+}
+
+function buildMeaningToWordQuestion(row, wordPool, seed) {
+  const meaning = String(row.meaning ?? '').trim();
+  const correctW = String(row.word ?? '').trim();
+  const wrongs = pickThreeWrongWords(wordPool, row, correctW, seed);
+  if (wrongs.length < 3) {
+    throw new Error('4지선다(뜻→단어) 오답을 만들 단어가 부족합니다. DAY 범위를 넓히거나 단어를 늘려 주세요.');
+  }
+  const opts = shuffleSeeded([correctW, ...wrongs], seed + 29);
+  const answer = opts.findIndex((o) => normWord(o) === normWord(correctW)) + 1;
+  return {
+    type: 'meaning_to_word',
+    meaning,
+    question: '다음 뜻에 해당하는 단어는?',
+    options: opts,
+    answer,
+  };
+}
+
+function buildSubjectiveWordQuestion(row) {
+  const w = String(row.word ?? '').trim();
+  const answer = String(row.meaning ?? '').trim();
+  return {
+    type: 'subjective_word',
+    word: w,
+    question: '다음 단어의 뜻을 쓰시오.',
+    answer,
+  };
+}
+
+function buildSubjectiveMeaningQuestion(row, hintFirstTwo) {
+  const meaning = String(row.meaning ?? '').trim();
+  const answer = String(row.word ?? '').trim();
+  const w = answer.trim();
+  const hint =
+    hintFirstTwo && w.length >= 2
+      ? `${w.slice(0, 2)}__________`
+      : undefined;
+  const q = {
+    type: 'subjective_meaning',
+    meaning,
+    question: '다음 뜻에 해당하는 단어를 쓰시오.',
+    answer,
+  };
+  if (hint) q.hint = hint;
+  return q;
+}
+
+function buildLocalQuestion(slot, row, wordPool, seed, hintFirstTwo) {
+  switch (slot) {
+    case 'word_to_meaning':
+      return buildWordToMeaningQuestion(row, wordPool, seed);
+    case 'meaning_to_word':
+      return buildMeaningToWordQuestion(row, wordPool, seed);
+    case 'subjective_word':
+      return buildSubjectiveWordQuestion(row);
+    case 'subjective_meaning':
+      return buildSubjectiveMeaningQuestion(row, hintFirstTwo);
+    default:
+      throw new Error(`로컬 생성 미지원 유형: ${slot}`);
+  }
 }
 
 const MAX_GENERATION_RETRIES = 2;
 const CLAUDE_MAX_TOKENS = 8000;
+
+async function runClaudeFillBlanksOnly(wordPoolJson, jobs, wordPool) {
+  if (!jobs.length) return [];
+  const prompt = buildFillBlankOnlyPrompt(wordPoolJson, jobs);
+  const system =
+    '너는 교육용 영어 단어 시험 문제를 만든다. 반드시 JSON 배열만 출력한다. 마크다운·코드펜스·설명 금지.';
+
+  let lastErr = '';
+  let lastRaw = '';
+  for (let attempt = 0; attempt <= MAX_GENERATION_RETRIES; attempt++) {
+    const extra = attempt > 0 ? `\n\n[재시도 ${attempt}] ${lastErr}` : '';
+
+    const res = await fetch('/api/claude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: prompt + extra,
+        system,
+        max_tokens: CLAUDE_MAX_TOKENS,
+      }),
+    });
+    const data = await res.json();
+    const raw = data.text || '';
+    lastRaw = raw;
+    const parsed = parseClaudeJson(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      lastErr = 'JSON 배열 파싱 실패';
+      continue;
+    }
+    if (parsed.length !== jobs.length) {
+      lastErr = `JSON 배열 개수 불일치 (기대 ${jobs.length}개)`;
+      continue;
+    }
+
+    const normalized = parsed.map((q) => ({
+      ...q,
+      type: 'fill_blank',
+    }));
+
+    let rowOk = true;
+    for (let k = 0; k < jobs.length; k++) {
+      if (normWord(normalized[k].word) !== normWord(jobs[k].row.word)) {
+        lastErr = `${k + 1}번째 빈칸 문항의 단어가 배정과 다릅니다.`;
+        rowOk = false;
+        break;
+      }
+    }
+    if (!rowOk) continue;
+
+    const v = validateQuestions(normalized, wordPool, jobs.length);
+    if (v.ok) {
+      return normalized;
+    }
+    lastErr = v.reason || '검증 실패';
+  }
+
+  const preview = String(lastRaw || '').slice(0, 200);
+  throw new Error(
+    lastErr === 'JSON 배열 파싱 실패'
+      ? `JSON 파싱 실패: ${preview}${lastRaw.length > 200 ? '…' : ''}`
+      : lastErr || '빈칸 문제 생성 실패',
+  );
+}
 
 export default function TeacherTestPage() {
   const { teacher, loading: teacherLoading } = useTeacher();
@@ -293,72 +470,6 @@ export default function TeacherTestPage() {
     }
   }, [questionCountOptions, questionCount]);
 
-  /** 전체 단어 풀 + 문항 수(slots)만큼 한 번의 API 호출로 생성 */
-  const runFullGeneration = async (wordPoolJson, slots, hint) => {
-    const prompt = buildBatchPrompt(wordPoolJson, 1, slots, hint);
-    const system =
-      '너는 교육용 영어 단어 시험 문제를 만든다. 반드시 JSON 배열만 출력한다. 마크다운·코드펜스·설명 금지.';
-
-    let lastErr = '';
-    let lastRaw = '';
-    for (let attempt = 0; attempt <= MAX_GENERATION_RETRIES; attempt++) {
-      const extra =
-        attempt > 0
-          ? `\n\n[재시도 ${attempt}] 이전 응답이 규칙 위반이었음: ${lastErr}. 목록 밖 단어·뜻 금지, 4지선다 보기 4개 서로 다름.`
-          : '';
-
-      const res = await fetch('/api/claude', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: prompt + extra,
-          system,
-          max_tokens: CLAUDE_MAX_TOKENS,
-        }),
-      });
-      const data = await res.json();
-      const raw = data.text || '';
-      lastRaw = raw;
-      const parsed = parseClaudeJson(raw);
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        lastErr = 'JSON 배열 파싱 실패';
-        continue;
-      }
-
-      const normalized = parsed.map((q) => ({
-        ...q,
-        type: normalizeType(q.type),
-      }));
-
-      let typeOrderOk = true;
-      for (let ti = 0; ti < normalized.length; ti++) {
-        if (normalizeType(normalized[ti].type) !== slots[ti]) {
-          lastErr = `유형 순서 오류 (${ti + 1}번째: 기대 "${slots[ti]}", 응답 "${normalized[ti].type}")`;
-          typeOrderOk = false;
-          break;
-        }
-      }
-      if (!typeOrderOk) continue;
-
-      const v = validateQuestions(normalized, wordPool, slots.length);
-      if (v.ok) {
-        return normalized.map((q, i) => ({
-          ...q,
-          number: i + 1,
-          type: normalizeType(q.type),
-        }));
-      }
-      lastErr = v.reason || '검증 실패';
-    }
-
-    const preview = String(lastRaw || '').slice(0, 200);
-    throw new Error(
-      lastErr === 'JSON 배열 파싱 실패'
-        ? `JSON 파싱 실패: ${preview}${lastRaw.length > 200 ? '…' : ''}`
-        : lastErr || '문제 생성 실패',
-    );
-  };
-
   const handleGenerate = async () => {
     setGenError(null);
     if (!teacherId) {
@@ -401,6 +512,17 @@ export default function TeacherTestPage() {
     const counts = distributeCounts(n, typesList.length);
     const slots = buildSlots(typesList, counts);
 
+    const assignmentSeed =
+      (9001 +
+        n * 733 +
+        String(selectedSet)
+          .split('')
+          .reduce((a, c) => a + c.charCodeAt(0), 0) +
+        (Number(startDay) || 1) * 13 +
+        (Number(endDay) || 1) * 17) >>>
+      0;
+    const assignRows = shuffleSeeded([...wordPool], assignmentSeed).slice(0, n);
+
     const wordsJson = JSON.stringify(
       wordPool.map((w) => ({
         word: String(w.word ?? '').trim(),
@@ -412,19 +534,49 @@ export default function TeacherTestPage() {
       0,
     );
 
+    const fillBlankJobs = [];
+    const built = new Array(n);
+
     setGenerating(true);
-    setGenProgress({ done: 0, total: 1 });
+    const needClaude = slots.some((s) => s === 'fill_blank');
+    setGenProgress({ done: 0, total: needClaude ? 1 : 1 });
 
     try {
-      const flat = await runFullGeneration(
-        wordsJson,
-        slots,
-        typeSubjectiveMeaning && hintFirstTwo,
-      );
+      for (let i = 0; i < n; i++) {
+        const slot = slots[i];
+        const row = assignRows[i];
+        const qSeed = (assignmentSeed + i * 1103515245) >>> 0;
+        if (slot === 'fill_blank') {
+          fillBlankJobs.push({ index: i, row });
+          built[i] = null;
+        } else {
+          built[i] = buildLocalQuestion(
+            slot,
+            row,
+            wordPool,
+            qSeed,
+            typeSubjectiveMeaning && hintFirstTwo,
+          );
+        }
+      }
+
+      if (fillBlankJobs.length > 0) {
+        const claudeQs = await runClaudeFillBlanksOnly(wordsJson, fillBlankJobs, wordPool);
+        fillBlankJobs.forEach((job, k) => {
+          built[job.index] = { ...claudeQs[k], type: 'fill_blank' };
+        });
+      }
+
+      let flat = built.map((q, idx) => ({
+        ...q,
+        number: idx + 1,
+        type: normalizeType(q.type),
+      }));
+
       setGenProgress({ done: 1, total: 1 });
 
-      const seed = (VERSION_SEED[version] || 1) + n * 17;
-      const shuffled = shuffleSeeded(flat, seed);
+      const orderSeed = (VERSION_SEED[version] || 1) + n * 17;
+      const shuffled = shuffleSeeded(flat, orderSeed);
       const renumbered = shuffled.map((q, i) => ({ ...q, type: normalizeType(q.type), number: i + 1 }));
 
       const lo = Math.min(Number(startDay) || 1, Number(endDay) || 1);
@@ -597,7 +749,7 @@ export default function TeacherTestPage() {
       >
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>테스트지 생성</h1>
         <p style={{ margin: '8px 0 0', fontSize: 14, opacity: 0.95, lineHeight: 1.5, fontWeight: 500 }}>
-          세트·DAY·유형을 고른 뒤 생성하면 Claude로 문제를 만들고, 미리보기 후 인쇄할 수 있습니다.
+          세트·DAY·유형을 고른 뒤 생성하면 4지선다·주관식은 즉시 만들어지고, 빈칸 채우기만 Claude로 생성합니다. 미리보기 후 인쇄할 수 있습니다.
         </p>
       </header>
 
