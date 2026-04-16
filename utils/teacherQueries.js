@@ -16,17 +16,40 @@ export async function fetchStudentIdsForTeacher(teacherId) {
 }
 
 /**
- * student_status는 teacher_id가 없을 수 있어, students 로 걸러진 id 로만 조회
+ * 선생님 소속 학생 표시 이름 목록 (student_status.student_name 과 맞추기 위함)
+ * students.id 와 student_status.student_id 가 다른 타입/값일 수 있어 이름으로 연결
  * @param {string} teacherId
- * @returns {Promise<{ data: object[] | null, error: Error | null, studentIds: string[] }>}
+ * @returns {Promise<string[]>}
+ */
+export async function fetchStudentNamesForTeacher(teacherId) {
+  if (!teacherId) return [];
+  const { data, error } = await supabase.from('students').select('*').eq('teacher_id', teacherId);
+  if (error) {
+    console.warn('[teacherQueries] students 이름 조회 실패:', error.message);
+    return [];
+  }
+  const names = new Set();
+  for (const r of data || []) {
+    const n = String(r?.name ?? r?.student_name ?? r?.Name ?? '')
+      .trim();
+    if (n) names.add(n);
+  }
+  return [...names];
+}
+
+/**
+ * student_status: students 에서 같은 선생님 반 학생 이름만 조회 후 student_name IN (…)
+ * (student_status.student_id 는 students.id 와 직접 대응하지 않을 수 있음)
+ * @param {string} teacherId
+ * @returns {Promise<{ data: object[] | null, error: Error | null, studentNames: string[] }>}
  */
 export async function fetchStudentStatusForTeacher(teacherId) {
-  const ids = await fetchStudentIdsForTeacher(teacherId);
-  if (ids.length === 0) {
-    return { data: [], error: null, studentIds: [] };
+  const studentNames = await fetchStudentNamesForTeacher(teacherId);
+  if (studentNames.length === 0) {
+    return { data: [], error: null, studentNames: [] };
   }
-  const res = await supabase.from('student_status').select('*').in('student_id', ids);
-  return { ...res, studentIds: ids };
+  const res = await supabase.from('student_status').select('*').in('student_name', studentNames);
+  return { ...res, studentNames };
 }
 
 /**
@@ -58,11 +81,11 @@ export async function fetchStatusLogsForTeacher(teacherId, limit) {
  * 복사 기능용: student_name, last_active 만 필요할 때
  */
 export async function fetchStudentStatusNamesForTeacher(teacherId) {
-  const ids = await fetchStudentIdsForTeacher(teacherId);
-  if (ids.length === 0) {
+  const studentNames = await fetchStudentNamesForTeacher(teacherId);
+  if (studentNames.length === 0) {
     return { data: [], error: null };
   }
-  return supabase.from('student_status').select('student_name, last_active').in('student_id', ids);
+  return supabase.from('student_status').select('student_name, last_active').in('student_name', studentNames);
 }
 
 /**

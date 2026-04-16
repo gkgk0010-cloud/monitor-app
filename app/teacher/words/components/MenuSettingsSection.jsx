@@ -105,92 +105,136 @@ export default function MenuSettingsSection({ teacherId, visibleMenus, onSaved }
         }}
       />
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 18 }}>
-        <label
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 18 }}>
+        <div
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            cursor: 'pointer',
-            fontSize: 15,
-            color: COLORS.textPrimary,
-            fontWeight: 500,
-            padding: '2px 0',
+            padding: '14px 16px',
+            borderRadius: RADIUS.md,
+            border: `1px solid ${COLORS.border}`,
+            background: COLORS.bg,
           }}
         >
-          <span>{VOCAB_MENU.label}</span>
-          <input
-            type="checkbox"
-            checked={!!menus[VOCAB_MENU.key]}
-            onChange={() => toggle(VOCAB_MENU.key)}
-            disabled={!teacherId || saving}
-            style={{
-              width: 18,
-              height: 18,
-              flexShrink: 0,
-              accentColor: '#4CAF50',
-              cursor: !teacherId || saving ? 'not-allowed' : 'pointer',
-            }}
-          />
-        </label>
-
-        <div style={{ margin: '14px 0 12px' }}>
-          <span
-            style={{
-              display: 'inline-block',
-              fontSize: 12,
-              fontWeight: 600,
-              letterSpacing: '-0.01em',
-              color: '#64748b',
-              background: 'rgba(102, 126, 234, 0.1)',
-              border: '1px solid rgba(102, 126, 234, 0.22)',
-              borderRadius: 6,
-              padding: '5px 10px',
-              marginBottom: 8,
-            }}
-          >
-            토익 전용
-          </span>
           <div
             style={{
-              height: 1,
-              background: 'linear-gradient(90deg, rgba(102,126,234,0.35) 0%, rgba(229,231,235,0.95) 100%)',
+              fontSize: 13,
+              fontWeight: 800,
+              color: '#374151',
+              letterSpacing: '-0.02em',
+              marginBottom: 10,
             }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {TOEIC_MENU_KEYS.map(({ key, label }) => (
-            <label
-              key={key}
+          >
+            [기본 메뉴]
+          </div>
+          <label
+            style={{
+              display: 'block',
+              cursor: !teacherId || saving ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <div
               style={{
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-start',
                 justifyContent: 'space-between',
                 gap: 12,
-                cursor: 'pointer',
-                fontSize: 15,
-                color: COLORS.textPrimary,
-                fontWeight: 500,
               }}
             >
-              <span>{label}</span>
+              <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+                <div style={{ fontSize: 15, color: COLORS.textPrimary, fontWeight: 600 }}>
+                  {VOCAB_MENU.label}
+                </div>
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    color: COLORS.textSecondary,
+                    fontWeight: 500,
+                  }}
+                >
+                  [ 단어암기, 영문법, 회화, 라이팅, 매칭게임, 테스트 ]
+                </div>
+              </div>
               <input
                 type="checkbox"
-                checked={!!menus[key]}
-                onChange={() => toggle(key)}
+                checked={!!menus[VOCAB_MENU.key]}
+                onChange={() => toggle(VOCAB_MENU.key)}
                 disabled={!teacherId || saving}
                 style={{
                   width: 18,
                   height: 18,
                   flexShrink: 0,
+                  marginTop: 2,
                   accentColor: '#4CAF50',
                   cursor: !teacherId || saving ? 'not-allowed' : 'pointer',
                 }}
               />
-            </label>
-          ))}
+            </div>
+          </label>
+        </div>
+
+        <div
+          style={{
+            padding: '14px 16px',
+            borderRadius: RADIUS.md,
+            border: `1px solid rgba(102, 126, 234, 0.28)`,
+            background: 'rgba(102, 126, 234, 0.04)',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 800,
+              color: '#374151',
+              letterSpacing: '-0.02em',
+              marginBottom: 6,
+            }}
+          >
+            [토익 전용 메뉴]
+          </div>
+          <p
+            style={{
+              margin: '0 0 12px',
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: COLORS.textSecondary,
+              fontWeight: 500,
+            }}
+          >
+            토익 강의를 진행하시는 선생님은 추가 선택하세요
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {TOEIC_MENU_KEYS.map(({ key, label }) => (
+              <label
+                key={key}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  cursor: 'pointer',
+                  fontSize: 15,
+                  color: COLORS.textPrimary,
+                  fontWeight: 500,
+                }}
+              >
+                <span>{label}</span>
+                <input
+                  type="checkbox"
+                  checked={!!menus[key]}
+                  onChange={() => toggle(key)}
+                  disabled={!teacherId || saving}
+                  style={{
+                    width: 18,
+                    height: 18,
+                    flexShrink: 0,
+                    accentColor: '#4CAF50',
+                    cursor: !teacherId || saving ? 'not-allowed' : 'pointer',
+                  }}
+                />
+              </label>
+            ))}
+          </div>
         </div>
       </div>
 

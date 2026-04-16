@@ -144,6 +144,19 @@ function WordTable({
   rowGroupMode = 'none',
   chunkSize = 10,
 }) {
+  /** 체크 · (#) · word · meaning · (image) · example · (set_name) · (day) · (삭제) — 헤더/행 동일 */
+  const wordTableGrid = useMemo(() => {
+    const parts = ['48px']
+    if (showRowNumbers) parts.push('50px')
+    parts.push('150px', '200px')
+    if (showImageColumn) parts.push('150px')
+    parts.push('minmax(160px, 1fr)')
+    if (showSetNameColumn) parts.push('150px')
+    if (showDayColumn) parts.push('60px')
+    if (showDeleteColumn && onRowDelete) parts.push('70px')
+    return parts.join(' ')
+  }, [showRowNumbers, showImageColumn, showSetNameColumn, showDayColumn, showDeleteColumn, onRowDelete])
+
   const [busyExampleId, setBusyExampleId] = useState(null)
   const [imagePicker, setImagePicker] = useState(null)
   const [imageLoadingId, setImageLoadingId] = useState(null)
@@ -281,17 +294,6 @@ function WordTable({
     }
     return [{ key: 'all', label: '', rows: r }]
   }, [rows, rowGroupMode, chunkSize])
-
-  const columnCount = useMemo(
-    () =>
-      4 +
-      (showRowNumbers ? 1 : 0) +
-      (showImageColumn ? 1 : 0) +
-      (showSetNameColumn ? 1 : 0) +
-      (showDayColumn ? 1 : 0) +
-      (showDeleteColumn && onRowDelete ? 1 : 0),
-    [showRowNumbers, showImageColumn, showSetNameColumn, showDayColumn, showDeleteColumn, onRowDelete],
-  )
 
   const toggleSection = (key) => {
     setCollapsedSections((prev) => {
@@ -479,437 +481,452 @@ function WordTable({
           width: '100%',
         }}
       >
-        <table
+        <div
           style={{
             width: '100%',
-            minWidth: 'max(100%, 1120px)',
-            borderCollapse: 'collapse',
+            minWidth: 1180,
             fontSize: 14,
-            tableLayout: 'fixed',
+            boxSizing: 'border-box',
           }}
         >
-          <thead
+          <div
+            role="row"
             style={{
-              display: 'table',
-              width: '100%',
-              tableLayout: 'fixed',
+              display: 'grid',
+              gridTemplateColumns: wordTableGrid,
               position: 'sticky',
               top: 0,
               zIndex: 8,
               background: COLORS.primarySoft,
+              borderBottom: `1px solid ${COLORS.border}`,
+              textAlign: 'left',
+              alignItems: 'center',
             }}
           >
-          <tr style={{ background: COLORS.primarySoft, textAlign: 'left' }}>
-            <th style={{ padding: '10px 8px', width: 40 }}>
+            <div role="columnheader" style={{ padding: '10px 8px' }}>
               <input
                 type="checkbox"
                 checked={allSelected}
                 onChange={toggleAll}
                 aria-label="전체 선택"
               />
-            </th>
+            </div>
             {showRowNumbers ? (
-              <th style={{ padding: '10px 6px', width: 44, color: COLORS.accentText, textAlign: 'right' }}>
+              <div
+                role="columnheader"
+                style={{ padding: '10px 6px', color: COLORS.accentText, textAlign: 'right', fontWeight: 700 }}
+              >
                 #
-              </th>
+              </div>
             ) : null}
-            <th style={{ padding: '10px 8px', color: COLORS.accentText, width: '16%' }}>word</th>
-            <th style={{ padding: '10px 8px', color: COLORS.accentText, width: '16%' }}>meaning</th>
+            <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+              word
+            </div>
+            <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+              meaning
+            </div>
             {showImageColumn ? (
-              <th style={{ padding: '10px 8px', color: COLORS.accentText, width: 120 }}>image</th>
+              <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                image
+              </div>
             ) : null}
-            <th style={{ padding: '10px 8px', color: COLORS.accentText, width: '28%' }}>example_sentence</th>
+            <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+              example_sentence
+            </div>
             {showSetNameColumn ? (
-              <th style={{ padding: '10px 8px', color: COLORS.accentText, width: '12%' }}>set_name</th>
+              <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                set_name
+              </div>
             ) : null}
             {showDayColumn ? (
-              <th style={{ padding: '10px 8px', width: 72, color: COLORS.accentText }}>day</th>
+              <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                day
+              </div>
             ) : null}
             {showDeleteColumn && onRowDelete ? (
-              <th
-                style={{
-                  padding: '10px 8px',
-                  minWidth: 72,
-                  width: 72,
-                  color: COLORS.accentText,
-                  position: 'sticky',
-                  right: 0,
-                  zIndex: 4,
-                  background: COLORS.primarySoft,
-                  boxShadow: '-8px 0 14px -6px rgba(0, 0, 0, 0.12)',
-                }}
-              >
+              <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
                 삭제
-              </th>
+              </div>
             ) : null}
-          </tr>
-        </thead>
-        <tbody
-          style={{
-            display: 'block',
-            position: 'relative',
-            width: '100%',
-            height: rowVirtualizer.getTotalSize(),
-          }}
-        >
-          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-            const item = flatItems[virtualRow.index]
-            if (!item) return null
-            const trBase = {
-              position: 'absolute',
-              top: 0,
-              left: 0,
+          </div>
+
+          <div
+            style={{
+              position: 'relative',
               width: '100%',
-              transform: `translateY(${virtualRow.start}px)`,
-              display: 'table',
-              tableLayout: 'fixed',
-            }
-            if (item.type === 'section') {
-              const sec = item.sec
+              height: rowVirtualizer.getTotalSize(),
+            }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const item = flatItems[virtualRow.index]
+              if (!item) return null
+              const rowGridBase = {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`,
+                display: 'grid',
+                gridTemplateColumns: wordTableGrid,
+                boxSizing: 'border-box',
+              }
+              if (item.type === 'section') {
+                const sec = item.sec
+                return (
+                  <div
+                    key={`sec-${sec.key}`}
+                    data-index={virtualRow.index}
+                    ref={rowVirtualizer.measureElement}
+                    style={rowGridBase}
+                  >
+                    <div
+                      style={{
+                        gridColumn: '1 / -1',
+                        padding: '8px 10px',
+                        borderTop: `1px solid ${COLORS.border}`,
+                        background: COLORS.bg,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSection(sec.key)}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: 'pointer',
+                          fontSize: 14,
+                          fontWeight: 700,
+                          color: COLORS.accentText,
+                          padding: '2px 0',
+                        }}
+                      >
+                        {collapsedSections.has(sec.key) ? '▶' : '▼'} {sec.label}{' '}
+                        <span style={{ fontWeight: 500, color: COLORS.textSecondary }}>({sec.rows.length}개)</span>
+                      </button>
+                    </div>
+                  </div>
+                )
+              }
+              const row = item.row
+              const id = String(row.id)
+              const meaning = row.meaning != null ? String(row.meaning) : ''
+              const example = row.example_sentence != null ? String(row.example_sentence) : ''
+              const meaningEmpty = !meaning.trim()
+              const exampleEmpty = !example.trim()
+              const img = row.image_url ? String(row.image_url).trim() : ''
+              const rowNum = indexById.get(id) ?? 0
+
               return (
-                <tr
-                  key={`sec-${sec.key}`}
+                <div
+                  key={virtualRow.key}
                   data-index={virtualRow.index}
                   ref={rowVirtualizer.measureElement}
-                  style={trBase}
-                >
-                  <td
-                    colSpan={columnCount}
-                    style={{
-                      padding: '8px 10px',
-                      borderTop: `1px solid ${COLORS.border}`,
-                      background: COLORS.bg,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => toggleSection(sec.key)}
-                      style={{
-                        border: 'none',
-                        background: 'transparent',
-                        cursor: 'pointer',
-                        fontSize: 14,
-                        fontWeight: 700,
-                        color: COLORS.accentText,
-                        padding: '2px 0',
-                      }}
-                    >
-                      {collapsedSections.has(sec.key) ? '▶' : '▼'} {sec.label}{' '}
-                      <span style={{ fontWeight: 500, color: COLORS.textSecondary }}>({sec.rows.length}개)</span>
-                    </button>
-                  </td>
-                </tr>
-              )
-            }
-            const row = item.row
-            const id = String(row.id)
-            const meaning = row.meaning != null ? String(row.meaning) : ''
-            const example = row.example_sentence != null ? String(row.example_sentence) : ''
-            const meaningEmpty = !meaning.trim()
-            const exampleEmpty = !example.trim()
-            const img = row.image_url ? String(row.image_url).trim() : ''
-            const rowNum = indexById.get(id) ?? 0
-
-            return (
-              <tr
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={rowVirtualizer.measureElement}
-                style={{
-                  ...trBase,
-                  borderTop: `1px solid ${COLORS.border}`,
-                  background: selectedIds.has(id) ? COLORS.successBg : COLORS.surface,
-                }}
-              >
-                <td style={{ padding: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(id)}
-                    onChange={() => toggleOne(id)}
-                    aria-label={`선택 ${row.word}`}
-                  />
-                </td>
-                {showRowNumbers ? (
-                  <td
-                    style={{
-                      padding: '8px 6px',
-                      textAlign: 'right',
-                      color: COLORS.textSecondary,
-                      fontSize: 13,
-                      width: 44,
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    {rowNum}
-                  </td>
-                ) : null}
-                <td style={{ padding: 8 }}>
-                  <DraftTextInput
-                    rowId={id}
-                    field="word"
-                    value={row.word != null ? String(row.word) : ''}
-                    cellDraftsRef={cellDraftsRef}
-                    onCommit={commitDraftField}
-                    style={{
-                      width: '100%',
-                      minWidth: 100,
-                      padding: '6px 8px',
-                      borderRadius: RADIUS.sm,
-                      border: `1px solid ${COLORS.border}`,
-                    }}
-                  />
-                </td>
-                <td style={{ padding: 8, background: meaningEmpty ? COLORS.warningBg : undefined }}>
-                  <DraftTextInput
-                    rowId={id}
-                    field="meaning"
-                    value={meaning}
-                    cellDraftsRef={cellDraftsRef}
-                    onCommit={commitDraftField}
-                    placeholder={meaningEmpty ? '뜻 입력' : ''}
-                    style={{
-                      width: '100%',
-                      minWidth: 120,
-                      padding: '6px 8px',
-                      borderRadius: RADIUS.sm,
-                      border: `1px solid ${meaningEmpty ? COLORS.warning : COLORS.border}`,
-                    }}
-                  />
-                </td>
-                {showImageColumn ? (
-                  <td style={{ padding: 8, verticalAlign: 'top' }}>
-                    <div
-                      onDragOver={(e) => {
-                        e.preventDefault()
-                        e.dataTransfer.dropEffect = 'copy'
-                      }}
-                      onDrop={(e) => onImageDrop(id, e)}
-                      onPaste={(e) => onImagePaste(id, e)}
-                      tabIndex={0}
-                      title="이미지 파일 드롭 또는 클립보드에서 이미지 붙여넣기"
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 6,
-                        padding: 6,
-                        borderRadius: RADIUS.sm,
-                        border: `1px dashed ${COLORS.border}`,
-                        background: COLORS.bg,
-                        minWidth: 132,
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        {img ? (
-                          <img
-                            src={img}
-                            alt=""
-                            style={{
-                              width: 40,
-                              height: 40,
-                              objectFit: 'cover',
-                              borderRadius: RADIUS.sm,
-                              border: `1px solid ${COLORS.border}`,
-                            }}
-                          />
-                        ) : (
-                          <span style={{ fontSize: 12, color: COLORS.textHint }}>—</span>
-                        )}
-                        <button
-                          type="button"
-                          title="Unsplash에서 이미지 찾기"
-                          onClick={() => void openImagePicker(id)}
-                          disabled={imageLoadingId === id}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: 12,
-                            borderRadius: RADIUS.sm,
-                            border: `1px solid ${COLORS.primary}`,
-                            background: COLORS.primarySoft,
-                            color: COLORS.accentText,
-                            cursor: imageLoadingId === id ? 'wait' : 'pointer',
-                            fontWeight: 600,
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {imageLoadingId === id ? '검색…' : '검색'}
-                        </button>
-                      </div>
-                      <input
-                        type="url"
-                        name={`imgurl-${id}`}
-                        placeholder="https://… URL"
-                        defaultValue=""
-                        onBlur={(e) => {
-                          const v = e.target.value.trim()
-                          if (v) applyImageUrl(id, v, 'link')
-                          e.target.value = ''
-                        }}
-                        style={{
-                          fontSize: 11,
-                          padding: '4px 6px',
-                          borderRadius: RADIUS.sm,
-                          border: `1px solid ${COLORS.border}`,
-                          width: '100%',
-                          boxSizing: 'border-box',
-                        }}
-                      />
-                      <span style={{ fontSize: 10, color: COLORS.textHint }}>
-                        드롭·붙여넣기·URL
-                      </span>
-                    </div>
-                  </td>
-                ) : null}
-                <td
+                  role="row"
                   style={{
-                    padding: 8,
-                    color: exampleEmpty ? COLORS.textHint : COLORS.textPrimary,
-                    minWidth: 220,
-                    verticalAlign: 'middle',
+                    ...rowGridBase,
+                    borderTop: `1px solid ${COLORS.border}`,
+                    background: selectedIds.has(id) ? COLORS.successBg : COLORS.surface,
+                    alignItems: 'start',
                   }}
                 >
-                  <div style={{ position: 'relative', width: '100%', minWidth: 200 }}>
-                    <DraftTextInput
-                      rowId={id}
-                      field="example_sentence"
-                      value={example}
-                      cellDraftsRef={cellDraftsRef}
-                      onCommit={commitDraftField}
-                      dataRowId={id}
-                      onKeyDown={handleExampleKeyDown}
-                      placeholder="예문 (선택) — 오른쪽 돋보기로 AI 생성"
-                      style={{
-                        boxSizing: 'border-box',
-                        width: '100%',
-                        padding: '6px 40px 6px 8px',
-                        borderRadius: RADIUS.sm,
-                        border: `1px solid ${COLORS.border}`,
-                        fontStyle: exampleEmpty ? 'italic' : 'normal',
-                      }}
-                      title="Ctrl+S: 예문 AI 제안"
+                  <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(id)}
+                      onChange={() => toggleOne(id)}
+                      aria-label={`선택 ${row.word}`}
                     />
-                    <button
-                      type="button"
-                      title="예문 AI 제안 (Ctrl+S)"
-                      aria-label="예문 찾기"
-                      disabled={busyExampleId === id}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => void suggestExample(id)}
+                  </div>
+                  {showRowNumbers ? (
+                    <div
+                      role="gridcell"
                       style={{
-                        position: 'absolute',
-                        right: 4,
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        width: 32,
-                        height: 30,
-                        padding: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        border: 'none',
-                        borderRadius: RADIUS.sm,
-                        background: busyExampleId === id ? COLORS.border : COLORS.primarySoft,
-                        cursor: busyExampleId === id ? 'wait' : 'pointer',
+                        padding: '8px 6px',
+                        textAlign: 'right',
+                        color: COLORS.textSecondary,
+                        fontSize: 13,
+                        fontVariantNumeric: 'tabular-nums',
+                        minWidth: 0,
                       }}
                     >
-                      {busyExampleId === id ? (
-                        <span style={{ fontSize: 14, color: COLORS.textSecondary }}>…</span>
-                      ) : (
-                        <svg
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke={COLORS.accentText}
-                          strokeWidth="2.2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          aria-hidden
-                        >
-                          <circle cx="11" cy="11" r="7" />
-                          <path d="M20 20 16.65 16.65" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                </td>
-                {showSetNameColumn ? (
-                  <td style={{ padding: 8 }}>
+                      {rowNum}
+                    </div>
+                  ) : null}
+                  <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
                     <DraftTextInput
                       rowId={id}
-                      field="set_name"
-                      value={row.set_name != null ? String(row.set_name) : ''}
+                      field="word"
+                      value={row.word != null ? String(row.word) : ''}
                       cellDraftsRef={cellDraftsRef}
                       onCommit={commitDraftField}
                       style={{
                         width: '100%',
-                        minWidth: 100,
+                        minWidth: 0,
+                        maxWidth: '100%',
                         padding: '6px 8px',
                         borderRadius: RADIUS.sm,
                         border: `1px solid ${COLORS.border}`,
+                        boxSizing: 'border-box',
                       }}
                     />
-                  </td>
-                ) : null}
-                {showDayColumn ? (
-                  <td style={{ padding: 8 }}>
-                    {dayReadOnly ? (
-                      <span style={{ fontWeight: 600, color: COLORS.accentText }}>
-                        {row.day != null ? Number(row.day) : '—'}
-                      </span>
-                    ) : (
-                      <DraftDayInput
+                  </div>
+                  <div role="gridcell" style={{ padding: 8, background: meaningEmpty ? COLORS.warningBg : undefined, minWidth: 0 }}>
+                    <DraftTextInput
+                      rowId={id}
+                      field="meaning"
+                      value={meaning}
+                      cellDraftsRef={cellDraftsRef}
+                      onCommit={commitDraftField}
+                      placeholder={meaningEmpty ? '뜻 입력' : ''}
+                      style={{
+                        width: '100%',
+                        minWidth: 0,
+                        maxWidth: '100%',
+                        padding: '6px 8px',
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${meaningEmpty ? COLORS.warning : COLORS.border}`,
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                  {showImageColumn ? (
+                    <div role="gridcell" style={{ padding: 8, verticalAlign: 'top', minWidth: 0 }}>
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault()
+                          e.dataTransfer.dropEffect = 'copy'
+                        }}
+                        onDrop={(e) => onImageDrop(id, e)}
+                        onPaste={(e) => onImagePaste(id, e)}
+                        tabIndex={0}
+                        title="이미지 파일 드롭 또는 클립보드에서 이미지 붙여넣기"
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 6,
+                          padding: 6,
+                          borderRadius: RADIUS.sm,
+                          border: `1px dashed ${COLORS.border}`,
+                          background: COLORS.bg,
+                          maxWidth: '100%',
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          {img ? (
+                            <img
+                              src={img}
+                              alt=""
+                              style={{
+                                width: 40,
+                                height: 40,
+                                objectFit: 'cover',
+                                borderRadius: RADIUS.sm,
+                                border: `1px solid ${COLORS.border}`,
+                              }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: 12, color: COLORS.textHint }}>—</span>
+                          )}
+                          <button
+                            type="button"
+                            title="Unsplash에서 이미지 찾기"
+                            onClick={() => void openImagePicker(id)}
+                            disabled={imageLoadingId === id}
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: 12,
+                              borderRadius: RADIUS.sm,
+                              border: `1px solid ${COLORS.primary}`,
+                              background: COLORS.primarySoft,
+                              color: COLORS.accentText,
+                              cursor: imageLoadingId === id ? 'wait' : 'pointer',
+                              fontWeight: 600,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {imageLoadingId === id ? '검색…' : '검색'}
+                          </button>
+                        </div>
+                        <input
+                          type="url"
+                          name={`imgurl-${id}`}
+                          placeholder="https://… URL"
+                          defaultValue=""
+                          onBlur={(e) => {
+                            const v = e.target.value.trim()
+                            if (v) applyImageUrl(id, v, 'link')
+                            e.target.value = ''
+                          }}
+                          style={{
+                            fontSize: 11,
+                            padding: '4px 6px',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${COLORS.border}`,
+                            width: '100%',
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                        <span style={{ fontSize: 10, color: COLORS.textHint }}>
+                          드롭·붙여넣기·URL
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div
+                    role="gridcell"
+                    style={{
+                      padding: 8,
+                      color: exampleEmpty ? COLORS.textHint : COLORS.textPrimary,
+                      verticalAlign: 'middle',
+                      minWidth: 0,
+                    }}
+                  >
+                    <div style={{ position: 'relative', width: '100%', minWidth: 0 }}>
+                      <DraftTextInput
                         rowId={id}
-                        value={row.day != null ? Number(row.day) : 1}
+                        field="example_sentence"
+                        value={example}
+                        cellDraftsRef={cellDraftsRef}
+                        onCommit={commitDraftField}
+                        dataRowId={id}
+                        onKeyDown={handleExampleKeyDown}
+                        placeholder="예문 (선택) — 오른쪽 돋보기로 AI 생성"
+                        style={{
+                          boxSizing: 'border-box',
+                          width: '100%',
+                          minWidth: 0,
+                          padding: '6px 40px 6px 8px',
+                          borderRadius: RADIUS.sm,
+                          border: `1px solid ${COLORS.border}`,
+                          fontStyle: exampleEmpty ? 'italic' : 'normal',
+                        }}
+                        title="Ctrl+S: 예문 AI 제안"
+                      />
+                      <button
+                        type="button"
+                        title="예문 AI 제안 (Ctrl+S)"
+                        aria-label="예문 찾기"
+                        disabled={busyExampleId === id}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => void suggestExample(id)}
+                        style={{
+                          position: 'absolute',
+                          right: 4,
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          width: 32,
+                          height: 30,
+                          padding: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          border: 'none',
+                          borderRadius: RADIUS.sm,
+                          background: busyExampleId === id ? COLORS.border : COLORS.primarySoft,
+                          cursor: busyExampleId === id ? 'wait' : 'pointer',
+                        }}
+                      >
+                        {busyExampleId === id ? (
+                          <span style={{ fontSize: 14, color: COLORS.textSecondary }}>…</span>
+                        ) : (
+                          <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke={COLORS.accentText}
+                            strokeWidth="2.2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden
+                          >
+                            <circle cx="11" cy="11" r="7" />
+                            <path d="M20 20 16.65 16.65" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  {showSetNameColumn ? (
+                    <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
+                      <DraftTextInput
+                        rowId={id}
+                        field="set_name"
+                        value={row.set_name != null ? String(row.set_name) : ''}
                         cellDraftsRef={cellDraftsRef}
                         onCommit={commitDraftField}
                         style={{
-                          width: 64,
+                          width: '100%',
+                          minWidth: 0,
+                          maxWidth: '100%',
                           padding: '6px 8px',
                           borderRadius: RADIUS.sm,
                           border: `1px solid ${COLORS.border}`,
+                          boxSizing: 'border-box',
                         }}
                       />
-                    )}
-                  </td>
-                ) : null}
-                {showDeleteColumn && onRowDelete ? (
-                  <td
-                    style={{
-                      padding: 8,
-                      verticalAlign: 'middle',
-                      position: 'sticky',
-                      right: 0,
-                      zIndex: 2,
-                      background: selectedIds.has(id) ? COLORS.successBg : COLORS.surface,
-                      boxShadow: '-8px 0 14px -6px rgba(0, 0, 0, 0.1)',
-                      minWidth: 72,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    <button
-                      type="button"
-                      title="이 행 삭제"
-                      onClick={() => void onRowDelete(row)}
+                    </div>
+                  ) : null}
+                  {showDayColumn ? (
+                    <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
+                      {dayReadOnly ? (
+                        <span style={{ fontWeight: 600, color: COLORS.accentText }}>
+                          {row.day != null ? Number(row.day) : '—'}
+                        </span>
+                      ) : (
+                        <DraftDayInput
+                          rowId={id}
+                          value={row.day != null ? Number(row.day) : 1}
+                          cellDraftsRef={cellDraftsRef}
+                          onCommit={commitDraftField}
+                          style={{
+                            width: '100%',
+                            maxWidth: 60,
+                            padding: '6px 8px',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${COLORS.border}`,
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      )}
+                    </div>
+                  ) : null}
+                  {showDeleteColumn && onRowDelete ? (
+                    <div
+                      role="gridcell"
                       style={{
-                        padding: '6px 10px',
-                        fontSize: 12,
-                        borderRadius: RADIUS.sm,
-                        border: `1px solid ${COLORS.danger}`,
-                        background: COLORS.dangerBg,
-                        color: COLORS.danger,
-                        cursor: 'pointer',
-                        fontWeight: 600,
+                        padding: 8,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: 0,
                       }}
                     >
-                      삭제
-                    </button>
-                  </td>
-                ) : null}
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+                      <button
+                        type="button"
+                        title="이 행 삭제"
+                        onClick={() => void onRowDelete(row)}
+                        style={{
+                          padding: '6px 10px',
+                          fontSize: 12,
+                          borderRadius: RADIUS.sm,
+                          border: `1px solid ${COLORS.danger}`,
+                          background: COLORS.dangerBg,
+                          color: COLORS.danger,
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                        }}
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
       {rows.length === 0 ? (

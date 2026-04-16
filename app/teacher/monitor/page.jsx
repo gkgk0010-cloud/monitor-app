@@ -6,6 +6,7 @@ import { supabase } from '@/utils/supabaseClient';
 import { useTeacher } from '@/utils/useTeacher';
 import {
   fetchStudentStatusForTeacher,
+  fetchStudentIdsForTeacher,
   fetchStatusLogsForTeacher,
   fetchStudentStatusNamesForTeacher,
   fetchStudentRoutineSummariesForTeacher,
@@ -335,7 +336,9 @@ export default function TeacherMonitorPage() {
   const refetchStudentsRef = useRef(null);
   /** 실시간 사건 기록 수동 갱신용 (Realtime 끊김 시 3연속 오답·복습 완료 등 최신 반영) */
   const refetchLogsRef = useRef(null);
-  /** students.teacher_id 로 묶인 student_id 집합 — Realtime에서 타 선생님 반 행 무시용 */
+  /** students 에서 가져온 이름 집합 — student_status.student_name 과 동일해야 함 */
+  const allowedStudentNamesRef = useRef(new Set());
+  /** student_routines.student_id 집합 — 루틴 Realtime 필터용 */
   const allowedStudentIdsRef = useRef(new Set());
   /** 출석/미접속 N차 복사용 캐시 (인원 많을 때 나눠 붙여넣기) */
   const attendanceCopyRef = useRef({ names: null, chunk: 0 });
@@ -515,6 +518,7 @@ export default function TeacherMonitorPage() {
     if (!teacher?.id) {
       setStudents([]);
       setFetchError(null);
+      allowedStudentNamesRef.current = new Set();
       allowedStudentIdsRef.current = new Set();
       return undefined;
     }
@@ -526,8 +530,12 @@ export default function TeacherMonitorPage() {
 
     const fetchStudents = async () => {
       setFetchError(null);
-      const { data, error, studentIds } = await fetchStudentStatusForTeacher(teacherId);
-      allowedStudentIdsRef.current = new Set((studentIds || []).map(String));
+      const { data, error, studentNames } = await fetchStudentStatusForTeacher(teacherId);
+      allowedStudentNamesRef.current = new Set(
+        (studentNames || []).map((n) => String(n).trim()).filter(Boolean),
+      );
+      const ids = await fetchStudentIdsForTeacher(teacherId);
+      allowedStudentIdsRef.current = new Set(ids.map(String));
       if (error) {
         setFetchError(error.message || 'Supabase 연결 실패');
         return;
