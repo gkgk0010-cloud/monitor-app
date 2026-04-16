@@ -32,16 +32,25 @@ function distributeCounts(total, bucketCount) {
 }
 
 function parseClaudeJson(text) {
-  if (!text || typeof text !== 'string') return null;
-  let s = text.trim();
-  s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-  const start = s.indexOf('[');
-  const end = s.lastIndexOf(']');
-  if (start === -1 || end === -1 || end <= start) return null;
-  s = s.slice(start, end + 1);
+  console.log('Claude 응답 원문:', text);
+  if (!text || typeof text !== 'string') {
+    return null;
+  }
   try {
-    return JSON.parse(s);
-  } catch {
+    let cleaned = text
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .trim();
+
+    const start = cleaned.indexOf('[');
+    const end = cleaned.lastIndexOf(']');
+    if (start !== -1 && end !== -1 && end > start) {
+      cleaned = cleaned.slice(start, end + 1);
+    }
+
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.error('파싱 실패, 원문:', text);
     return null;
   }
 }
@@ -85,14 +94,6 @@ function buildSlots(typesList, counts) {
     for (let j = 0; j < c; j++) slots.push(typesList[i]);
   }
   return slots;
-}
-
-function chunkSlots(slots, size) {
-  const batches = [];
-  for (let i = 0; i < slots.length; i += size) {
-    batches.push(slots.slice(i, i + size));
-  }
-  return batches;
 }
 
 function validateQuestions(questions, wordPool, expectedLen) {
@@ -182,8 +183,8 @@ ${typeGuide}
 응답은 JSON 배열만 출력한다. 각 객체에 number(문항 번호), type, 그리고 유형별 필드를 포함한다. 마크다운·설명 금지.`;
 }
 
-const BATCH_SIZE = 10;
-const MAX_BATCH_RETRIES = 2;
+const MAX_GENERATION_RETRIES = 2;
+const CLAUDE_MAX_TOKENS = 8000;
 
 export default function TeacherTestPage() {
   const { teacher, loading: teacherLoading } = useTeacher();
@@ -292,13 +293,15 @@ export default function TeacherTestPage() {
     }
   }, [questionCountOptions, questionCount]);
 
-  const runOneBatch = async (wordPoolJson, startNum, batchTypes, hint) => {
-    const prompt = buildBatchPrompt(wordPoolJson, startNum, batchTypes, hint);
+  /** 전체 단어 풀 + 문항 수(slots)만큼 한 번의 API 호출로 생성 */
+  const runFullGeneration = async (wordPoolJson, slots, hint) => {
+    const prompt = buildBatchPrompt(wordPoolJson, 1, slots, hint);
     const system =
       '너는 교육용 영어 단어 시험 문제를 만든다. 반드시 JSON 배열만 출력한다. 마크다운·코드펜스·설명 금지.';
 
     let lastErr = '';
-    for (let attempt = 0; attempt <= MAX_BATCH_RETRIES; attempt++) {
+    let lastRaw = '';
+    for (let attempt = 0; attempt <= MAX_GENERATION_RETRIES; attempt++) {
       const extra =
         attempt > 0
           ? `\n\n[재시도 ${attempt}] 이전 응답이 규칙 위반이었음: ${lastErr}. 목록 밖 단어·뜻 금지, 4지선다 보기 4개 서로 다름.`
@@ -307,10 +310,15 @@ export default function TeacherTestPage() {
       const res = await fetch('/api/claude', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt + extra, system, max_tokens: 12000 }),
+        body: JSON.stringify({
+          prompt: prompt + extra,
+          system,
+          max_tokens: CLAUDE_MAX_TOKENS,
+        }),
       });
       const data = await res.json();
       const raw = data.text || '';
+      lastRaw = raw;
       const parsed = parseClaudeJson(raw);
       if (!Array.isArray(parsed) || parsed.length === 0) {
         lastErr = 'JSON 배열 파싱 실패';
@@ -324,26 +332,31 @@ export default function TeacherTestPage() {
 
       let typeOrderOk = true;
       for (let ti = 0; ti < normalized.length; ti++) {
-        if (normalizeType(normalized[ti].type) !== batchTypes[ti]) {
-          lastErr = `유형 순서 오류 (${ti + 1}번째: 기대 "${batchTypes[ti]}", 응답 "${normalized[ti].type}")`;
+        if (normalizeType(normalized[ti].type) !== slots[ti]) {
+          lastErr = `유형 순서 오류 (${ti + 1}번째: 기대 "${slots[ti]}", 응답 "${normalized[ti].type}")`;
           typeOrderOk = false;
           break;
         }
       }
       if (!typeOrderOk) continue;
 
-      const v = validateQuestions(normalized, wordPool, batchTypes.length);
+      const v = validateQuestions(normalized, wordPool, slots.length);
       if (v.ok) {
         return normalized.map((q, i) => ({
           ...q,
-          number: startNum + i,
+          number: i + 1,
           type: normalizeType(q.type),
         }));
       }
       lastErr = v.reason || '검증 실패';
     }
 
-    throw new Error(lastErr || '배치 생성 실패');
+    const preview = String(lastRaw || '').slice(0, 200);
+    throw new Error(
+      lastErr === 'JSON 배열 파싱 실패'
+        ? `JSON 파싱 실패: ${preview}${lastRaw.length > 200 ? '…' : ''}`
+        : lastErr || '문제 생성 실패',
+    );
   };
 
   const handleGenerate = async () => {
@@ -387,7 +400,6 @@ export default function TeacherTestPage() {
 
     const counts = distributeCounts(n, typesList.length);
     const slots = buildSlots(typesList, counts);
-    const batches = chunkSlots(slots, BATCH_SIZE);
 
     const wordsJson = JSON.stringify(
       wordPool.map((w) => ({
@@ -401,35 +413,19 @@ export default function TeacherTestPage() {
     );
 
     setGenerating(true);
-    setGenProgress({ done: 0, total: batches.length });
+    setGenProgress({ done: 0, total: 1 });
 
     try {
-      let offset = 1;
-      const batchSpecs = batches.map((batchTypes, bi) => {
-        const startNum = offset;
-        offset += batchTypes.length;
-        return { bi, startNum, batchTypes };
-      });
-
-      const allChunks = await Promise.all(
-        batchSpecs.map(async ({ bi, startNum, batchTypes }) => {
-          const chunk = await runOneBatch(
-            wordsJson,
-            startNum,
-            batchTypes,
-            typeSubjectiveMeaning && hintFirstTwo,
-          );
-          setGenProgress((p) => ({ ...p, done: Math.min(p.done + 1, p.total) }));
-          return { bi, chunk };
-        }),
+      const flat = await runFullGeneration(
+        wordsJson,
+        slots,
+        typeSubjectiveMeaning && hintFirstTwo,
       );
-
-      allChunks.sort((a, b) => a.bi - b.bi);
-      let flat = allChunks.flatMap((x) => x.chunk);
+      setGenProgress({ done: 1, total: 1 });
 
       const seed = (VERSION_SEED[version] || 1) + n * 17;
-      flat = shuffleSeeded(flat, seed);
-      const renumbered = flat.map((q, i) => ({ ...q, type: normalizeType(q.type), number: i + 1 }));
+      const shuffled = shuffleSeeded(flat, seed);
+      const renumbered = shuffled.map((q, i) => ({ ...q, type: normalizeType(q.type), number: i + 1 }));
 
       const lo = Math.min(Number(startDay) || 1, Number(endDay) || 1);
       const hi = Math.max(Number(startDay) || 1, Number(endDay) || 1);

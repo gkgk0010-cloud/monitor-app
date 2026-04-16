@@ -4,11 +4,7 @@ export async function POST(req) {
     return Response.json({ text: '', error: 'ANTHROPIC_API_KEY missing' }, { status: 500 })
   }
 
-  const { prompt, system, max_tokens: maxTokensRaw } = await req.json()
-  const maxTokens =
-    maxTokensRaw != null
-      ? Math.min(16000, Math.max(256, Number(maxTokensRaw) || 4096))
-      : 4096
+  const { prompt, system, max_tokens } = await req.json()
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -19,7 +15,7 @@ export async function POST(req) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: maxTokens,
+      max_tokens: max_tokens ?? 8000,
       system: system || '',
       messages: [{ role: 'user', content: prompt }],
     }),
