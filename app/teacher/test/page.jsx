@@ -308,7 +308,15 @@ ${parts.join('\n')}
 
   if (teacherLoading) {
     return (
-      <div style={{ padding: 24, color: COLORS.textSecondary }}>
+      <div
+        style={{
+          minHeight: '100vh',
+          padding: 24,
+          color: COLORS.textSecondary,
+          background: 'linear-gradient(180deg, #f3e7ff 0%, #eef2ff 100%)',
+          fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+        }}
+      >
         선생님 정보 확인 중…
       </div>
     );
@@ -316,42 +324,63 @@ ${parts.join('\n')}
 
   if (!teacherId) {
     return (
-      <div style={{ padding: 24, color: COLORS.textSecondary }}>
+      <div
+        style={{
+          minHeight: '100vh',
+          padding: 24,
+          color: COLORS.textSecondary,
+          background: 'linear-gradient(180deg, #f3e7ff 0%, #eef2ff 100%)',
+          fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+        }}
+      >
         로그인한 선생님 정보가 없습니다.
       </div>
     );
   }
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 16px 40px' }}>
-      <div className="teacher-test-form-no-print">
-      <h1
+    <div
+      style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(180deg, #f3e7ff 0%, #eef2ff 100%)',
+        padding: '20px 16px 40px',
+        fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+      }}
+    >
+      <header
         style={{
-          fontSize: 22,
-          fontWeight: 800,
-          color: COLORS.accentText,
-          marginBottom: 8,
+          maxWidth: 1100,
+          margin: '0 auto 20px',
+          padding: '16px 20px',
+          borderRadius: RADIUS.lg,
+          background: COLORS.headerGradient,
+          color: COLORS.textOnGreen,
+          boxShadow: SHADOW.card,
         }}
       >
-        테스트지 생성
-      </h1>
-      <p style={{ fontSize: 14, color: COLORS.textSecondary, marginBottom: 20 }}>
-        세트·DAY·유형을 고른 뒤 생성하면 Claude로 문제를 만들고, 미리보기 후 인쇄할 수 있습니다.
-      </p>
+        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>테스트지 생성</h1>
+        <p style={{ margin: '8px 0 0', fontSize: 14, opacity: 0.95, lineHeight: 1.5, fontWeight: 500 }}>
+          세트·DAY·유형을 고른 뒤 생성하면 Claude로 문제를 만들고, 미리보기 후 인쇄할 수 있습니다.
+        </p>
+      </header>
 
+      <div className="teacher-test-form-no-print" style={{ maxWidth: 1100, margin: '0 auto' }}>
       <div
         style={{
-          padding: 20,
-          borderRadius: RADIUS.lg,
+          padding: 22,
+          borderRadius: RADIUS.xl,
           border: `1px solid ${COLORS.border}`,
-          background: COLORS.surface,
-          boxShadow: SHADOW.card,
+          borderLeft: '4px solid #667eea',
+          background: 'rgba(255,255,255,0.95)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
+          boxShadow: '0 8px 32px rgba(31, 38, 135, 0.06)',
           marginBottom: 24,
         }}
       >
         <div style={{ display: 'grid', gap: 16, maxWidth: 560 }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={{ fontWeight: 700, fontSize: 14, color: COLORS.textPrimary }}>세트 선택</span>
+            <span style={{ fontWeight: 700, fontSize: 13, color: '#374151' }}>세트 선택</span>
             <select
               value={selectedSet}
               onChange={(e) => setSelectedSet(e.target.value)}
@@ -361,6 +390,7 @@ ${parts.join('\n')}
                 borderRadius: RADIUS.sm,
                 border: `1px solid ${COLORS.border}`,
                 fontSize: 15,
+                background: COLORS.surface,
               }}
             >
               <option value="">— 세트 선택 —</option>
@@ -510,9 +540,10 @@ ${parts.join('\n')}
               background: COLORS.headerGradient,
               color: COLORS.textOnGreen,
               fontWeight: 800,
-              fontSize: 16,
+              fontSize: 15,
               cursor: generating || wordPool.length === 0 ? 'not-allowed' : 'pointer',
               opacity: generating || wordPool.length === 0 ? 0.6 : 1,
+              boxShadow: generating || wordPool.length === 0 ? 'none' : '0 4px 16px rgba(102, 126, 234, 0.28)',
             }}
           >
             {generating ? '생성 중…' : '테스트지 생성'}
@@ -525,11 +556,13 @@ ${parts.join('\n')}
         <div
           className="test-sheet-print-area"
           style={{
+            maxWidth: 1100,
+            margin: '0 auto',
             padding: 24,
-            borderRadius: RADIUS.lg,
+            borderRadius: RADIUS.xl,
             border: `1px solid ${COLORS.border}`,
             background: '#fff',
-            boxShadow: SHADOW.card,
+            boxShadow: '0 8px 32px rgba(31, 38, 135, 0.06)',
           }}
         >
           <div

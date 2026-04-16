@@ -7,7 +7,7 @@ import {
   parseRestDayNumbers,
   parseReviewOffsets,
 } from '@/utils/routineAdmin'
-import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
+import { COLORS, RADIUS } from '@/utils/tokens'
 
 /**
  * @param {{ teacherId: string, setNames: string[] }} props
@@ -121,16 +121,29 @@ export default function RoutineSettingsSection({ teacherId, setNames }) {
       aria-label="루틴 설정"
       style={{
         maxWidth: 1280,
-        margin: '32px auto 0',
-        padding: '24px',
-        borderRadius: RADIUS.lg,
+        margin: '28px auto 0',
+        padding: '22px 24px 24px',
+        borderRadius: RADIUS.xl,
         border: `1px solid ${COLORS.border}`,
-        background: COLORS.surface,
-        boxShadow: SHADOW.card,
+        borderLeft: '4px solid #667eea',
+        background: 'rgba(255,255,255,0.95)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        boxShadow: '0 8px 32px rgba(31, 38, 135, 0.06)',
       }}
     >
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: COLORS.accentText }}>루틴 설정</h2>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: '1rem',
+            fontWeight: 700,
+            color: '#374151',
+            paddingLeft: 2,
+          }}
+        >
+          루틴 설정
+        </h2>
         <button
           type="button"
           onClick={() => {
@@ -145,9 +158,9 @@ export default function RoutineSettingsSection({ teacherId, setNames }) {
             background: COLORS.headerGradient,
             color: COLORS.textOnGreen,
             fontWeight: 700,
-            fontSize: 15,
+            fontSize: 14,
             cursor: 'pointer',
-            boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)',
+            boxShadow: '0 4px 16px rgba(102, 126, 234, 0.28)',
           }}
         >
           {formOpen ? '닫기' : '새 루틴 만들기'}
@@ -170,10 +183,11 @@ export default function RoutineSettingsSection({ teacherId, setNames }) {
             <div
               key={r.id}
               style={{
-                padding: '14px 16px',
-                borderRadius: RADIUS.md,
-                border: `1px solid ${COLORS.border}`,
-                background: COLORS.bg,
+                padding: '16px 18px',
+                borderRadius: RADIUS.lg,
+                border: `1px solid rgba(229, 231, 235, 0.9)`,
+                background: 'rgba(255,255,255,0.88)',
+                boxShadow: '0 1px 3px rgba(91, 124, 250, 0.08)',
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
                 gap: 10,
@@ -325,11 +339,12 @@ export default function RoutineSettingsSection({ teacherId, setNames }) {
                 padding: '12px 22px',
                 borderRadius: RADIUS.md,
                 border: 'none',
-                background: setNames.length === 0 ? COLORS.border : COLORS.primary,
+                background: setNames.length === 0 ? COLORS.border : COLORS.headerGradient,
                 color: COLORS.textOnGreen,
                 fontWeight: 700,
                 fontSize: 15,
                 cursor: setNames.length === 0 ? 'not-allowed' : 'pointer',
+                boxShadow: setNames.length === 0 ? 'none' : '0 4px 16px rgba(102, 126, 234, 0.28)',
               }}
             >
               {saving ? '저장 중…' : '저장 (routine_days + routine_tasks 생성)'}
@@ -343,8 +358,9 @@ export default function RoutineSettingsSection({ teacherId, setNames }) {
               style={{
                 padding: '12px 18px',
                 borderRadius: RADIUS.md,
-                border: `1px solid ${COLORS.border}`,
-                background: COLORS.surface,
+                border: `1px solid rgba(107, 114, 128, 0.28)`,
+                background: 'rgba(255,255,255,0.95)',
+                color: '#374151',
                 fontWeight: 600,
                 cursor: 'pointer',
               }}

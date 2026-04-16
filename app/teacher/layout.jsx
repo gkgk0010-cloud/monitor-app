@@ -39,7 +39,15 @@ export default function TeacherLayout({ children }) {
   const displayName = teacher?.name?.trim() || teacher?.email || '선생님';
 
   return (
-    <div style={{ minHeight: '100vh', background: COLORS.bg, display: 'flex', flexDirection: 'column' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(180deg, #f3e7ff 0%, #eef2ff 100%)',
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+      }}
+    >
       <header
         style={{
           flexShrink: 0,

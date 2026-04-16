@@ -10,6 +10,7 @@ import WordTable from './components/WordTable'
 import BulkImport from './components/BulkImport'
 import AutoFillPanel from './components/AutoFillPanel'
 import RoutineSettingsSection from './components/RoutineSettingsSection'
+import MenuSettingsSection from './components/MenuSettingsSection'
 import { normalizeWordDifficulty } from './utils/parsers'
 import { filterWordRows } from './utils/wordFilters'
 
@@ -32,7 +33,7 @@ export default function WordsManagePage() {
   const saveHintTimerRef = useRef(null)
   const inviteCopyMsgTimerRef = useRef(null)
 
-  const { teacher, loading: teacherLoading } = useTeacher()
+  const { teacher, loading: teacherLoading, refresh: refreshTeacher } = useTeacher()
   const teacherId = teacher?.id
   const academyId = teacher?.academy_id ?? DEFAULT_ACADEMY_ID
 
@@ -341,7 +342,14 @@ export default function WordsManagePage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: COLORS.bg, padding: '20px 16px 40px' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(180deg, #f3e7ff 0%, #eef2ff 100%)',
+        padding: '20px 16px 40px',
+        fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
+      }}
+    >
       <header
         style={{
           maxWidth: 1100,
@@ -418,13 +426,25 @@ export default function WordsManagePage() {
           maxWidth: 1280,
           margin: '0 auto 20px',
           padding: '22px 24px',
-          borderRadius: RADIUS.lg,
+          borderRadius: RADIUS.xl,
           border: `1px solid ${COLORS.border}`,
-          boxShadow: SHADOW.card,
-          background: `linear-gradient(135deg, ${COLORS.primarySoft} 0%, #ffffff 48%, ${COLORS.primaryLight} 100%)`,
+          borderLeft: `4px solid #667eea`,
+          boxShadow: '0 8px 32px rgba(31, 38, 135, 0.06)',
+          background: 'rgba(255,255,255,0.95)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
         }}
       >
-        <div style={{ fontSize: 15, fontWeight: 800, color: COLORS.accentText, marginBottom: 10, letterSpacing: '-0.02em' }}>
+        <div
+          style={{
+            margin: '0 0 12px',
+            paddingLeft: 2,
+            fontSize: '1rem',
+            fontWeight: 700,
+            color: '#374151',
+            letterSpacing: '-0.02em',
+          }}
+        >
           학생 초대 코드
         </div>
         <div
@@ -441,7 +461,7 @@ export default function WordsManagePage() {
         >
           {String(teacher?.invite_code ?? '').trim() || '—'}
         </div>
-        <p style={{ margin: '0 0 14px', fontSize: 15, color: COLORS.textSecondary, lineHeight: 1.5 }}>
+        <p style={{ margin: '0 0 14px', fontSize: 14, color: COLORS.textSecondary, lineHeight: 1.55, fontWeight: 500 }}>
           이 코드를 학생들에게 알려주세요
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
@@ -455,9 +475,9 @@ export default function WordsManagePage() {
               background: COLORS.headerGradient,
               color: COLORS.textOnGreen,
               fontWeight: 700,
-              fontSize: 16,
+              fontSize: 15,
               cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(102, 126, 234, 0.35)',
+              boxShadow: '0 4px 16px rgba(102, 126, 234, 0.28)',
             }}
           >
             복사하기
@@ -469,6 +489,12 @@ export default function WordsManagePage() {
           ) : null}
         </div>
       </section>
+
+      <MenuSettingsSection
+        teacherId={teacherId}
+        visibleMenus={teacher?.visible_menus}
+        onSaved={() => void refreshTeacher()}
+      />
 
       <div
         style={{

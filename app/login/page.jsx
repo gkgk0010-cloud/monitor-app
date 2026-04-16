@@ -50,12 +50,13 @@ export default function LoginPage() {
     <div
       style={{
         minHeight: '100vh',
-        background: COLORS.bg,
+        background: 'linear-gradient(180deg, #f3e7ff 0%, #eef2ff 100%)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         padding: 24,
+        fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
       }}
     >
       <div
@@ -64,9 +65,11 @@ export default function LoginPage() {
           maxWidth: 400,
           padding: '36px 28px',
           borderRadius: RADIUS.xl,
-          background: COLORS.surface,
-          boxShadow: SHADOW.modal,
-          border: `1px solid ${COLORS.border}`,
+          background: 'rgba(255,255,255,0.92)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          boxShadow: '0 8px 32px rgba(31, 38, 135, 0.08)',
+          border: '1px solid rgba(255,255,255,0.65)',
         }}
       >
         <div
@@ -88,7 +91,7 @@ export default function LoginPage() {
           >
             똑패스 선생님
           </h1>
-          <p style={{ fontSize: 13, color: COLORS.textSecondary }}>관리자 로그인</p>
+          <p style={{ fontSize: 13, color: COLORS.textSecondary, fontWeight: 500 }}>관리자 로그인</p>
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -115,6 +118,7 @@ export default function LoginPage() {
                 border: `1px solid ${COLORS.border}`,
                 outline: 'none',
                 boxSizing: 'border-box',
+                background: COLORS.surface,
               }}
             />
           </div>
@@ -141,6 +145,7 @@ export default function LoginPage() {
                 border: `1px solid ${COLORS.border}`,
                 outline: 'none',
                 boxSizing: 'border-box',
+                background: COLORS.surface,
               }}
             />
           </div>
@@ -164,7 +169,7 @@ export default function LoginPage() {
               borderRadius: RADIUS.md,
               background: COLORS.headerGradient,
               cursor: submitting ? 'wait' : 'pointer',
-              boxShadow: '0 4px 16px rgba(102, 126, 234, 0.35)',
+              boxShadow: '0 4px 16px rgba(102, 126, 234, 0.28)',
               opacity: submitting ? 0.85 : 1,
             }}
           >
