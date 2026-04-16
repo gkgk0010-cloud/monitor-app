@@ -49,6 +49,7 @@ export default function TeacherLayout({ children }) {
       }}
     >
       <header
+        className="teacher-layout-header"
         style={{
           flexShrink: 0,
           display: 'flex',

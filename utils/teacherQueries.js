@@ -18,14 +18,15 @@ export async function fetchStudentIdsForTeacher(teacherId) {
 /**
  * student_status는 teacher_id가 없을 수 있어, students 로 걸러진 id 로만 조회
  * @param {string} teacherId
- * @returns {Promise<{ data: object[] | null, error: Error | null }>}
+ * @returns {Promise<{ data: object[] | null, error: Error | null, studentIds: string[] }>}
  */
 export async function fetchStudentStatusForTeacher(teacherId) {
   const ids = await fetchStudentIdsForTeacher(teacherId);
   if (ids.length === 0) {
-    return { data: [], error: null };
+    return { data: [], error: null, studentIds: [] };
   }
-  return supabase.from('student_status').select('*').in('student_id', ids);
+  const res = await supabase.from('student_status').select('*').in('student_id', ids);
+  return { ...res, studentIds: ids };
 }
 
 /**

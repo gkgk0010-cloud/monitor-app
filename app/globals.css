@@ -146,9 +146,15 @@ html, body {
   box-shadow: 0 8px 24px rgba(102, 126, 234, 0.25);
 }
 
-/* 인쇄 / PDF: 상단 선생님 네비게이션 숨김 */
+/* 인쇄 / PDF: 상단 선생님 네비게이션·헤더 숨김 */
 @media print {
+  header.teacher-layout-header {
+    display: none !important;
+  }
   .teacher-app-nav {
+    display: none !important;
+  }
+  .no-print {
     display: none !important;
   }
   .test-sheet-actions {
@@ -160,5 +166,17 @@ html, body {
   }
   .teacher-test-form-no-print {
     display: none !important;
+  }
+  .test-questions-columns {
+    column-count: 2 !important;
+    column-gap: 40px !important;
+  }
+  .test-question-item {
+    break-inside: avoid;
+    margin-bottom: 16px;
+  }
+  .test-answer-key-page {
+    page-break-before: always;
+    padding-top: 16px;
   }
 }

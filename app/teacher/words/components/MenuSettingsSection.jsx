@@ -4,28 +4,31 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS } from '@/utils/tokens'
 
-const MENU_KEYS = [
+const VOCAB_MENU = { key: 'vocab', label: '단어 학습' }
+
+const TOEIC_MENU_KEYS = [
   { key: 'quiz', label: '오늘의 연구 (퀴즈)' },
   { key: 'result', label: '나의 성과' },
   { key: 'homework', label: '숙제 인증' },
   { key: 'absence', label: '결석 영상' },
-  { key: 'vocab', label: '단어 학습' },
   { key: 'jokbo', label: '시험 만점 족보' },
 ]
 
+const ALL_MENU_KEYS = [VOCAB_MENU, ...TOEIC_MENU_KEYS]
+
 const DEFAULT_MENUS = () => ({
-  quiz: true,
-  result: true,
-  homework: true,
-  absence: true,
+  quiz: false,
+  result: false,
+  homework: false,
+  absence: false,
   vocab: true,
-  jokbo: true,
+  jokbo: false,
 })
 
 function normalizeMenus(raw) {
   const base = DEFAULT_MENUS()
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    for (const { key } of MENU_KEYS) {
+    for (const { key } of ALL_MENU_KEYS) {
       if (typeof raw[key] === 'boolean') base[key] = raw[key]
     }
   }
@@ -102,30 +105,93 @@ export default function MenuSettingsSection({ teacherId, visibleMenus, onSaved }
         }}
       />
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 18 }}>
-        {MENU_KEYS.map(({ key, label }) => (
-          <label
-            key={key}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 18 }}>
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            cursor: 'pointer',
+            fontSize: 15,
+            color: COLORS.textPrimary,
+            fontWeight: 500,
+            padding: '2px 0',
+          }}
+        >
+          <span>{VOCAB_MENU.label}</span>
+          <input
+            type="checkbox"
+            checked={!!menus[VOCAB_MENU.key]}
+            onChange={() => toggle(VOCAB_MENU.key)}
+            disabled={!teacherId || saving}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              cursor: 'pointer',
-              fontSize: 15,
-              color: COLORS.textPrimary,
-              fontWeight: 500,
+              width: 18,
+              height: 18,
+              flexShrink: 0,
+              accentColor: '#4CAF50',
+              cursor: !teacherId || saving ? 'not-allowed' : 'pointer',
+            }}
+          />
+        </label>
+
+        <div style={{ margin: '14px 0 12px' }}>
+          <span
+            style={{
+              display: 'inline-block',
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: '-0.01em',
+              color: '#64748b',
+              background: 'rgba(102, 126, 234, 0.1)',
+              border: '1px solid rgba(102, 126, 234, 0.22)',
+              borderRadius: 6,
+              padding: '5px 10px',
+              marginBottom: 8,
             }}
           >
-            <input
-              type="checkbox"
-              checked={!!menus[key]}
-              onChange={() => toggle(key)}
-              disabled={!teacherId || saving}
-              style={{ width: 18, height: 18, accentColor: '#4CAF50', cursor: !teacherId || saving ? 'not-allowed' : 'pointer' }}
-            />
-            <span>{label}</span>
-          </label>
-        ))}
+            토익 전용
+          </span>
+          <div
+            style={{
+              height: 1,
+              background: 'linear-gradient(90deg, rgba(102,126,234,0.35) 0%, rgba(229,231,235,0.95) 100%)',
+            }}
+          />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {TOEIC_MENU_KEYS.map(({ key, label }) => (
+            <label
+              key={key}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                cursor: 'pointer',
+                fontSize: 15,
+                color: COLORS.textPrimary,
+                fontWeight: 500,
+              }}
+            >
+              <span>{label}</span>
+              <input
+                type="checkbox"
+                checked={!!menus[key]}
+                onChange={() => toggle(key)}
+                disabled={!teacherId || saving}
+                style={{
+                  width: 18,
+                  height: 18,
+                  flexShrink: 0,
+                  accentColor: '#4CAF50',
+                  cursor: !teacherId || saving ? 'not-allowed' : 'pointer',
+                }}
+              />
+            </label>
+          ))}
+        </div>
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>

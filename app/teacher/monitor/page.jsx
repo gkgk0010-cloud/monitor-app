@@ -335,6 +335,8 @@ export default function TeacherMonitorPage() {
   const refetchStudentsRef = useRef(null);
   /** 실시간 사건 기록 수동 갱신용 (Realtime 끊김 시 3연속 오답·복습 완료 등 최신 반영) */
   const refetchLogsRef = useRef(null);
+  /** students.teacher_id 로 묶인 student_id 집합 — Realtime에서 타 선생님 반 행 무시용 */
+  const allowedStudentIdsRef = useRef(new Set());
   /** 출석/미접속 N차 복사용 캐시 (인원 많을 때 나눠 붙여넣기) */
   const attendanceCopyRef = useRef({ names: null, chunk: 0 });
   const absentCopyRef = useRef({ initials: null, chunk: 0 });
@@ -513,15 +515,19 @@ export default function TeacherMonitorPage() {
     if (!teacher?.id) {
       setStudents([]);
       setFetchError(null);
+      allowedStudentIdsRef.current = new Set();
       return undefined;
     }
 
     const teacherId = teacher.id;
     let channel;
+    let channelRoutines;
+    let cancelled = false;
 
     const fetchStudents = async () => {
       setFetchError(null);
-      const { data, error } = await fetchStudentStatusForTeacher(teacherId);
+      const { data, error, studentIds } = await fetchStudentStatusForTeacher(teacherId);
+      allowedStudentIdsRef.current = new Set((studentIds || []).map(String));
       if (error) {
         setFetchError(error.message || 'Supabase 연결 실패');
         return;
@@ -536,28 +542,55 @@ export default function TeacherMonitorPage() {
       }
     };
     refetchStudentsRef.current = fetchStudents;
-    fetchStudents();
-    channel = supabase
-      .channel(`student_status_changes_${teacherId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'student_status' }, () => {
-        fetchStudentStatusForTeacher(teacherId).then(async ({ data }) => {
-          setStudents(sortStudents(data ?? []));
-          try {
-            const map = await fetchStudentRoutineSummariesForTeacher(teacherId);
-            setRoutineSummaries(map);
-          } catch {
-            setRoutineSummaries({});
-          }
-        });
-      })
-      .subscribe();
+
+    const onStudentStatusRealtime = () => {
+      void fetchStudents();
+    };
+
+    /** student_routines 는 student_status 와 별도로 바뀔 수 있음 — 같은 반 student_id 만 반영 */
+    const onStudentRoutinesRealtime = (payload) => {
+      const sid = payload?.new?.student_id ?? payload?.old?.student_id;
+      if (sid == null || sid === '') return;
+      const id = String(sid);
+      if (allowedStudentIdsRef.current.has(id)) {
+        fetchStudentRoutineSummariesForTeacher(teacherId)
+          .then((map) => setRoutineSummaries(map))
+          .catch(() => setRoutineSummaries({}));
+        return;
+      }
+      void fetchStudents();
+    };
+
+    void (async () => {
+      await fetchStudents();
+      if (cancelled) return;
+      channel = supabase
+        .channel(`student_status_changes_${teacherId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'student_status' },
+          onStudentStatusRealtime,
+        )
+        .subscribe();
+      channelRoutines = supabase
+        .channel(`student_routines_changes_${teacherId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'student_routines' },
+          onStudentRoutinesRealtime,
+        )
+        .subscribe();
+    })();
+
     const onVisible = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') fetchStudents();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
+      cancelled = true;
       document.removeEventListener('visibilitychange', onVisible);
       if (channel) supabase.removeChannel(channel);
+      if (channelRoutines) supabase.removeChannel(channelRoutines);
     };
   }, [teacher?.id, teacherLoading]);
 

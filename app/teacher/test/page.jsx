@@ -50,6 +50,141 @@ const VERSION_SEED = { A: 10001, B: 20002, C: 30003 };
 
 const CIRCLED = ['①', '②', '③', '④'];
 
+/** 레거시 / Claude 응답 타입 통일 */
+function normalizeType(t) {
+  const s = String(t || '').trim();
+  if (s === 'word_meaning') return 'word_to_meaning';
+  if (s === 'meaning_word') return 'meaning_to_word';
+  return s;
+}
+
+function normWord(s) {
+  return String(s ?? '')
+    .trim()
+    .toLowerCase();
+}
+
+function normMeaning(s) {
+  return String(s ?? '').trim();
+}
+
+function buildQuestionCountOptions(total) {
+  const n = Math.max(0, Math.floor(Number(total) || 0));
+  if (n === 0) return [];
+  if (n < 10) return [n];
+  const opts = [];
+  for (let i = 10; i < n; i += 10) opts.push(i);
+  opts.push(n);
+  return opts;
+}
+
+function buildSlots(typesList, counts) {
+  const slots = [];
+  for (let i = 0; i < typesList.length; i++) {
+    const c = counts[i] || 0;
+    for (let j = 0; j < c; j++) slots.push(typesList[i]);
+  }
+  return slots;
+}
+
+function chunkSlots(slots, size) {
+  const batches = [];
+  for (let i = 0; i < slots.length; i += size) {
+    batches.push(slots.slice(i, i + size));
+  }
+  return batches;
+}
+
+function validateQuestions(questions, wordPool, expectedLen) {
+  if (!Array.isArray(questions) || questions.length !== expectedLen) {
+    return { ok: false, reason: `문항 개수 불일치 (기대 ${expectedLen}개)` };
+  }
+
+  const wordSet = new Set();
+  const meaningSet = new Set();
+  for (const w of wordPool) {
+    const ww = normWord(w.word);
+    if (ww) wordSet.add(ww);
+    const m = normMeaning(w.meaning);
+    if (m) meaningSet.add(m);
+  }
+
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    const t = normalizeType(q.type);
+
+    if (t === 'word_to_meaning' || t === 'meaning_to_word') {
+      const opts = Array.isArray(q.options) ? q.options.map((x) => normMeaning(x)) : [];
+      if (opts.length !== 4) return { ok: false, reason: `${i + 1}번: 4지선다 보기는 4개여야 합니다.` };
+      if (new Set(opts).size !== 4) return { ok: false, reason: `${i + 1}번: 보기가 서로 달라야 합니다.` };
+      const ans = Number(q.answer);
+      if (!(ans >= 1 && ans <= 4)) return { ok: false, reason: `${i + 1}번: 정답은 1~4여야 합니다.` };
+      if (t === 'word_to_meaning') {
+        const wd = normWord(q.word);
+        if (!wd || !wordSet.has(wd)) return { ok: false, reason: `${i + 1}번: 단어가 목록에 없습니다.` };
+        for (const o of opts) {
+          if (!meaningSet.has(o)) return { ok: false, reason: `${i + 1}번: 뜻 보기가 목록에 없습니다.` };
+        }
+      } else {
+        const mn = normMeaning(q.meaning);
+        if (!mn || !meaningSet.has(mn)) return { ok: false, reason: `${i + 1}번: 뜻이 목록에 없습니다.` };
+        for (const o of opts) {
+          if (!wordSet.has(normWord(o))) return { ok: false, reason: `${i + 1}번: 단어 보기가 목록에 없습니다.` };
+        }
+      }
+    } else if (t === 'fill_blank') {
+      const wd = normWord(q.word);
+      if (!wd || !wordSet.has(wd)) return { ok: false, reason: `${i + 1}번: 빈칸 단어가 목록에 없습니다.` };
+      const ex = String(q.example ?? '');
+      if (!ex.includes('____') && !ex.includes('______')) {
+        return { ok: false, reason: `${i + 1}번: 예문에 빈칸(____)이 있어야 합니다.` };
+      }
+      if (normWord(q.answer) !== wd) return { ok: false, reason: `${i + 1}번: 빈칸 정답이 단어와 일치해야 합니다.` };
+    } else if (t === 'subjective_word') {
+      const wd = normWord(q.word);
+      if (!wd || !wordSet.has(wd)) return { ok: false, reason: `${i + 1}번: 단어가 목록에 없습니다.` };
+      if (!String(q.answer ?? '').trim()) return { ok: false, reason: `${i + 1}번: 주관식 정답(뜻)이 비었습니다.` };
+    } else if (t === 'subjective_meaning') {
+      const mn = normMeaning(q.meaning);
+      if (!mn || !meaningSet.has(mn)) return { ok: false, reason: `${i + 1}번: 뜻이 목록에 없습니다.` };
+      const aw = normWord(q.answer);
+      if (!aw || !wordSet.has(aw)) return { ok: false, reason: `${i + 1}번: 정답 단어가 목록에 없습니다.` };
+    } else {
+      return { ok: false, reason: `${i + 1}번: 알 수 없는 유형 "${q.type}"` };
+    }
+  }
+
+  return { ok: true };
+}
+
+function buildBatchPrompt(wordPoolJson, startNum, batchTypes, hintFirstTwo) {
+  const lines = batchTypes.map((ty, i) => `${i + 1}. 문항 번호 ${startNum + i}: 유형 "${ty}"`);
+
+  const typeGuide = `
+유형별 필수 필드 (반드시 아래 키 이름 사용):
+- word_to_meaning: word, question, options(뜻 문자열 4개), answer(1~4)
+- meaning_to_word: meaning, question, options(영단어 4개), answer(1~4) — 뜻은 목록의 meaning과 동일한 문장 사용
+- fill_blank: word, example(예문에서 해당 단어만 ____ 또는 ______ 로 표시), answer(영단어, word와 동일)
+- subjective_word: word, question, answer(뜻 텍스트)
+- subjective_meaning: meaning, question, answer(영단어), ${hintFirstTwo ? 'hint(첫 두 글자+언더스코어, 예: me__)' : 'hint는 생략 가능'}`;
+
+  return `아래 JSON 단어 목록에서만 문제를 만든다. 목록에 없는 영단어·뜻은 절대 쓰지 마라.
+4지선다 오답 보기도 반드시 같은 목록에 있는 항목만 사용한다 (단어 보기는 다른 단어들에서, 뜻 보기는 다른 뜻들에서).
+
+단어 목록:
+${wordPoolJson}
+
+이번 요청으로 문항 ${startNum}번부터 ${startNum + batchTypes.length - 1}번까지, 총 ${batchTypes.length}문항만 생성한다.
+
+${lines.join('\n')}
+${typeGuide}
+
+응답은 JSON 배열만 출력한다. 각 객체에 number(문항 번호), type, 그리고 유형별 필드를 포함한다. 마크다운·설명 금지.`;
+}
+
+const BATCH_SIZE = 10;
+const MAX_BATCH_RETRIES = 2;
+
 export default function TeacherTestPage() {
   const { teacher, loading: teacherLoading } = useTeacher();
   const teacherId = teacher?.id;
@@ -62,8 +197,13 @@ export default function TeacherTestPage() {
   const [endDay, setEndDay] = useState(1);
 
   const [typeWordToMeaning, setTypeWordToMeaning] = useState(true);
-  const [typeMeaningToWord, setTypeMeaningToWord] = useState(true);
+  const [typeMeaningToWord, setTypeMeaningToWord] = useState(false);
   const [typeFillBlank, setTypeFillBlank] = useState(false);
+  const [typeSubjectiveWord, setTypeSubjectiveWord] = useState(false);
+  const [typeSubjectiveMeaning, setTypeSubjectiveMeaning] = useState(false);
+  const [hintFirstTwo, setHintFirstTwo] = useState(false);
+
+  const [includeAnswerSheet, setIncludeAnswerSheet] = useState(false);
 
   const [questionCount, setQuestionCount] = useState(10);
   const [version, setVersion] = useState('A');
@@ -72,6 +212,7 @@ export default function TeacherTestPage() {
   const [previewQuestions, setPreviewQuestions] = useState(null);
   const [previewMeta, setPreviewMeta] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [genProgress, setGenProgress] = useState({ done: 0, total: 0 });
   const [genError, setGenError] = useState(null);
 
   useEffect(() => {
@@ -140,22 +281,9 @@ export default function TeacherTestPage() {
     };
   }, [teacherId, selectedSet, startDay, endDay, loadWordsForRange]);
 
-  const maxQuestions = useMemo(() => {
-    const n = wordPool.length;
-    return Math.min(40, Math.max(0, n));
-  }, [wordPool]);
+  const maxQuestions = wordPool.length;
 
-  const questionCountOptions = useMemo(() => {
-    const opts = [];
-    for (let q = 10; q <= maxQuestions; q += 10) opts.push(q);
-    if (maxQuestions > 0 && maxQuestions < 10 && !opts.includes(maxQuestions)) opts.push(maxQuestions);
-    if (maxQuestions >= 10 && !opts.includes(maxQuestions) && maxQuestions % 10 !== 0) {
-      const last = Math.floor(maxQuestions / 10) * 10;
-      if (last >= 10 && !opts.includes(last)) opts.push(last);
-      if (!opts.includes(maxQuestions)) opts.push(maxQuestions);
-    }
-    return [...new Set(opts)].sort((a, b) => a - b);
-  }, [maxQuestions]);
+  const questionCountOptions = useMemo(() => buildQuestionCountOptions(maxQuestions), [maxQuestions]);
 
   useEffect(() => {
     if (questionCountOptions.length === 0) return;
@@ -164,54 +292,58 @@ export default function TeacherTestPage() {
     }
   }, [questionCountOptions, questionCount]);
 
-  const buildPrompt = (wordsSubset, counts, typesList) => {
-    const wordsJson = JSON.stringify(
-      wordsSubset.map((w) => ({
-        word: String(w.word ?? '').trim(),
-        meaning: String(w.meaning ?? '').trim(),
-        example_sentence: w.example_sentence != null ? String(w.example_sentence).trim() : '',
-        day: w.day,
-      })),
-      null,
-      0,
-    );
+  const runOneBatch = async (wordPoolJson, startNum, batchTypes, hint) => {
+    const prompt = buildBatchPrompt(wordPoolJson, startNum, batchTypes, hint);
+    const system =
+      '너는 교육용 영어 단어 시험 문제를 만든다. 반드시 JSON 배열만 출력한다. 마크다운·코드펜스·설명 금지.';
 
-    const parts = [];
-    let idx = 0;
-    if (typesList.includes('word_meaning')) {
-      parts.push(`- ${counts[idx++]}개: 4지선다 — 단어를 보고 뜻 고르기 ("다음 단어의 뜻으로 올바른 것은?" 형태). 보기 4개는 모두 뜻.`);
+    let lastErr = '';
+    for (let attempt = 0; attempt <= MAX_BATCH_RETRIES; attempt++) {
+      const extra =
+        attempt > 0
+          ? `\n\n[재시도 ${attempt}] 이전 응답이 규칙 위반이었음: ${lastErr}. 목록 밖 단어·뜻 금지, 4지선다 보기 4개 서로 다름.`
+          : '';
+
+      const res = await fetch('/api/claude', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt + extra, system, max_tokens: 12000 }),
+      });
+      const data = await res.json();
+      const raw = data.text || '';
+      const parsed = parseClaudeJson(raw);
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        lastErr = 'JSON 배열 파싱 실패';
+        continue;
+      }
+
+      const normalized = parsed.map((q) => ({
+        ...q,
+        type: normalizeType(q.type),
+      }));
+
+      let typeOrderOk = true;
+      for (let ti = 0; ti < normalized.length; ti++) {
+        if (normalizeType(normalized[ti].type) !== batchTypes[ti]) {
+          lastErr = `유형 순서 오류 (${ti + 1}번째: 기대 "${batchTypes[ti]}", 응답 "${normalized[ti].type}")`;
+          typeOrderOk = false;
+          break;
+        }
+      }
+      if (!typeOrderOk) continue;
+
+      const v = validateQuestions(normalized, wordPool, batchTypes.length);
+      if (v.ok) {
+        return normalized.map((q, i) => ({
+          ...q,
+          number: startNum + i,
+          type: normalizeType(q.type),
+        }));
+      }
+      lastErr = v.reason || '검증 실패';
     }
-    if (typesList.includes('meaning_word')) {
-      parts.push(`- ${counts[idx++]}개: 4지선다 — 뜻을 보고 영단어 고르기 ("다음 뜻에 해당하는 단어는?" 형태). 보기 4개는 모두 영단어.`);
-    }
-    if (typesList.includes('fill_blank')) {
-      parts.push(
-        `- ${counts[idx++]}개: 빈칸 채우기 — 예문에서 해당 단어 자리를 _____ 로 바꾸고, 빈칸에 들어갈 말을 4지선다로 고르기 (보기는 단어 4개).`,
-      );
-    }
 
-    const total = counts.reduce((a, b) => a + b, 0);
-
-    return `아래 단어 목록으로 시험 문제를 총 ${total}개 만들어줘.
-${parts.join('\n')}
-
-규칙:
-- 각 4지선다는 정답 1개 + 같은 세트(목록)에서 뽑은 오답 3개.
-- 보기 순서는 랜덤으로 섞어줘.
-- 정답 위치도 ①②③④ 중 랜덤( answer 필드는 1~4 ).
-
-응답: JSON 배열만.
-형식: [{
-  "number": 1,
-  "type": "word_meaning" | "meaning_word" | "fill_blank",
-  "word": "tow",
-  "question": "다음 단어의 뜻으로 올바른 것은?",
-  "options": ["n. 차량", "v. 견인하다", "adj. 뒤의", "n. 기회"],
-  "answer": 2,
-  "sentence": "예문이 있으면 fill_blank일 때만, 단어는 _____ 처리"
-}]
-
-단어 목록: ${wordsJson}`;
+    throw new Error(lastErr || '배치 생성 실패');
   };
 
   const handleGenerate = async () => {
@@ -224,18 +356,22 @@ ${parts.join('\n')}
       setGenError('세트를 선택하세요.');
       return;
     }
+
     const typesList = [];
-    if (typeWordToMeaning) typesList.push('word_meaning');
-    if (typeMeaningToWord) typesList.push('meaning_word');
+    if (typeWordToMeaning) typesList.push('word_to_meaning');
+    if (typeMeaningToWord) typesList.push('meaning_to_word');
     if (typeFillBlank) typesList.push('fill_blank');
+    if (typeSubjectiveWord) typesList.push('subjective_word');
+    if (typeSubjectiveMeaning) typesList.push('subjective_meaning');
+
     if (typesList.length === 0) {
       setGenError('문제 유형을 하나 이상 선택하세요.');
       return;
     }
 
-    const needFour = typeWordToMeaning || typeMeaningToWord;
-    if (needFour && wordPool.length < 4) {
-      setGenError('4지선다는 선택한 DAY 범위에 단어가 4개 이상 있어야 합니다.');
+    const needFourMc = typeWordToMeaning || typeMeaningToWord;
+    if (needFourMc && wordPool.length < 4) {
+      setGenError('4지선다 유형은 선택한 DAY 범위에 단어가 4개 이상 있어야 합니다.');
       return;
     }
     if (wordPool.length === 0) {
@@ -249,32 +385,51 @@ ${parts.join('\n')}
       return;
     }
 
-    const shuffledPool = shuffleSeeded(wordPool, VERSION_SEED[version] + selectedSet.length);
-    const subset = shuffledPool.slice(0, Math.min(n, shuffledPool.length));
     const counts = distributeCounts(n, typesList.length);
+    const slots = buildSlots(typesList, counts);
+    const batches = chunkSlots(slots, BATCH_SIZE);
 
-    const prompt = buildPrompt(subset, counts, typesList);
-    const system =
-      '너는 교육용 영어 단어 시험 문제를 만든다. 반드시 JSON 배열만 출력한다. 마크다운·코드펜스·설명 금지.';
+    const wordsJson = JSON.stringify(
+      wordPool.map((w) => ({
+        word: String(w.word ?? '').trim(),
+        meaning: String(w.meaning ?? '').trim(),
+        example_sentence: w.example_sentence != null ? String(w.example_sentence).trim() : '',
+        day: w.day,
+      })),
+      null,
+      0,
+    );
 
     setGenerating(true);
+    setGenProgress({ done: 0, total: batches.length });
+
     try {
-      const res = await fetch('/api/claude', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, system, max_tokens: 14000 }),
+      let offset = 1;
+      const batchSpecs = batches.map((batchTypes, bi) => {
+        const startNum = offset;
+        offset += batchTypes.length;
+        return { bi, startNum, batchTypes };
       });
-      const data = await res.json();
-      const raw = data.text || '';
-      const parsed = parseClaudeJson(raw);
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        setGenError('문제를 생성하지 못했습니다. 다시 시도해 주세요.');
-        return;
-      }
+
+      const allChunks = await Promise.all(
+        batchSpecs.map(async ({ bi, startNum, batchTypes }) => {
+          const chunk = await runOneBatch(
+            wordsJson,
+            startNum,
+            batchTypes,
+            typeSubjectiveMeaning && hintFirstTwo,
+          );
+          setGenProgress((p) => ({ ...p, done: Math.min(p.done + 1, p.total) }));
+          return { bi, chunk };
+        }),
+      );
+
+      allChunks.sort((a, b) => a.bi - b.bi);
+      let flat = allChunks.flatMap((x) => x.chunk);
 
       const seed = (VERSION_SEED[version] || 1) + n * 17;
-      const shuffled = shuffleSeeded(parsed, seed);
-      const renumbered = shuffled.map((q, i) => ({ ...q, number: i + 1 }));
+      flat = shuffleSeeded(flat, seed);
+      const renumbered = flat.map((q, i) => ({ ...q, type: normalizeType(q.type), number: i + 1 }));
 
       const lo = Math.min(Number(startDay) || 1, Number(endDay) || 1);
       const hi = Math.max(Number(startDay) || 1, Number(endDay) || 1);
@@ -283,12 +438,14 @@ ${parts.join('\n')}
         dayLabel: lo === hi ? `DAY ${lo}` : `DAY ${lo}–${hi}`,
         version,
         teacherName,
+        includeAnswerSheet,
       });
       setPreviewQuestions(renumbered);
     } catch (e) {
       setGenError(e instanceof Error ? e.message : '요청에 실패했습니다.');
     } finally {
       setGenerating(false);
+      setGenProgress({ done: 0, total: 0 });
     }
   };
 
@@ -302,9 +459,108 @@ ${parts.join('\n')}
     setGenError(null);
   };
 
-  const half = previewQuestions ? Math.ceil(previewQuestions.length / 2) : 0;
-  const leftCol = previewQuestions ? previewQuestions.slice(0, half) : [];
-  const rightCol = previewQuestions ? previewQuestions.slice(half) : [];
+  const renderQuestionBlock = (q) => {
+    const t = normalizeType(q.type);
+    const n = q.number;
+
+    if (t === 'meaning_to_word') {
+      return (
+        <div key={n} className="test-question-item" style={{ breakInside: 'avoid', marginBottom: 16 }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>
+            {n}) {normMeaning(q.meaning)}
+          </div>
+          {q.question ? (
+            <div style={{ fontWeight: 600, marginBottom: 6, lineHeight: 1.45 }}>{q.question}</div>
+          ) : (
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>다음 뜻에 해당하는 단어는?</div>
+          )}
+          <div style={{ paddingLeft: 4 }}>
+            {(Array.isArray(q.options) ? q.options : []).slice(0, 4).map((opt, oi) => (
+              <div key={oi} style={{ marginBottom: 3 }}>
+                {CIRCLED[oi]} {String(opt)}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (t === 'fill_blank') {
+      return (
+        <div key={n} className="test-question-item" style={{ breakInside: 'avoid', marginBottom: 16 }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>{n}) 빈칸 채우기</div>
+          <div style={{ fontWeight: 500, marginBottom: 8, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+            {String(q.example ?? '')}
+          </div>
+        </div>
+      );
+    }
+
+    if (t === 'subjective_word') {
+      return (
+        <div key={n} className="test-question-item" style={{ breakInside: 'avoid', marginBottom: 16 }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>
+            {n}) <span style={{ fontWeight: 700 }}>{String(q.word ?? '').trim()}</span>
+          </div>
+          {q.question ? (
+            <div style={{ fontWeight: 600, marginBottom: 8, lineHeight: 1.45 }}>{q.question}</div>
+          ) : (
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>다음 단어의 뜻을 쓰시오.</div>
+          )}
+          <div style={{ borderBottom: '1px solid #94a3b8', minHeight: 28 }} />
+        </div>
+      );
+    }
+
+    if (t === 'subjective_meaning') {
+      return (
+        <div key={n} className="test-question-item" style={{ breakInside: 'avoid', marginBottom: 16 }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>
+            {n}) {normMeaning(q.meaning)}
+          </div>
+          {q.hint ? (
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 6 }}>힌트: {String(q.hint)}</div>
+          ) : null}
+          {q.question ? (
+            <div style={{ fontWeight: 600, marginBottom: 8, lineHeight: 1.45 }}>{q.question}</div>
+          ) : (
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>다음 뜻에 해당하는 단어를 쓰시오.</div>
+          )}
+          <div style={{ borderBottom: '1px solid #94a3b8', minHeight: 28 }} />
+        </div>
+      );
+    }
+
+    /* word_to_meaning & legacy */
+    return (
+      <div key={n} className="test-question-item" style={{ breakInside: 'avoid', marginBottom: 16 }}>
+        <div style={{ fontWeight: 800, marginBottom: 4 }}>
+          {n}) <span style={{ fontWeight: 700 }}>{String(q.word ?? '').trim()}</span>
+        </div>
+        {q.question ? (
+          <div style={{ fontWeight: 600, marginBottom: 6, lineHeight: 1.45 }}>{q.question}</div>
+        ) : null}
+        <div style={{ paddingLeft: 4 }}>
+          {(Array.isArray(q.options) ? q.options : []).slice(0, 4).map((opt, oi) => (
+            <div key={oi} style={{ marginBottom: 3 }}>
+              {CIRCLED[oi]} {String(opt)}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const formatKeyLine = (q) => {
+    const t = normalizeType(q.type);
+    if (t === 'word_to_meaning' || t === 'meaning_to_word') {
+      const a = Number(q.answer);
+      if (a >= 1 && a <= 4) return CIRCLED[a - 1];
+      return String(q.answer ?? '');
+    }
+    if (t === 'fill_blank') return String(q.answer ?? '').trim();
+    return String(q.answer ?? '').trim();
+  };
 
   if (teacherLoading) {
     return (
@@ -332,7 +588,7 @@ ${parts.join('\n')}
       }}
     >
       <header
-        className="teacher-page-header-bleed"
+        className="teacher-test-page-header no-print"
         style={{
           marginBottom: 16,
           padding: '14px 18px',
@@ -350,191 +606,268 @@ ${parts.join('\n')}
       </header>
 
       <div className="teacher-test-form-no-print" style={{ width: '100%', maxWidth: '100%' }}>
-      <div
-        style={{
-          padding: 22,
-          borderRadius: RADIUS.xl,
-          border: `1px solid ${COLORS.border}`,
-          borderLeft: '4px solid #667eea',
-          background: 'rgba(255,255,255,0.95)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          boxShadow: '0 8px 32px rgba(31, 38, 135, 0.06)',
-          marginBottom: 24,
-        }}
-      >
-        <div style={{ display: 'grid', gap: 16, maxWidth: 560 }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={{ fontWeight: 700, fontSize: 13, color: '#374151' }}>세트 선택</span>
-            <select
-              value={selectedSet}
-              onChange={(e) => setSelectedSet(e.target.value)}
-              disabled={setsLoading}
-              style={{
-                padding: '10px 12px',
-                borderRadius: RADIUS.sm,
-                border: `1px solid ${COLORS.border}`,
-                fontSize: 15,
-                background: COLORS.surface,
-              }}
-            >
-              <option value="">— 세트 선택 —</option>
-              {setNames.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-            {setsLoading ? (
-              <span style={{ fontSize: 12, color: COLORS.textHint }}>목록 불러오는 중…</span>
-            ) : null}
-          </label>
-
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
+        <div
+          style={{
+            padding: 22,
+            borderRadius: RADIUS.xl,
+            border: `1px solid ${COLORS.border}`,
+            borderLeft: '4px solid #667eea',
+            background: 'rgba(255,255,255,0.95)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            boxShadow: '0 8px 32px rgba(31, 38, 135, 0.06)',
+            marginBottom: 24,
+          }}
+        >
+          <div style={{ display: 'grid', gap: 16, maxWidth: 560 }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>시작 DAY</span>
-              <input
-                type="number"
-                min={1}
-                value={startDay}
-                onChange={(e) => setStartDay(Math.max(1, parseInt(e.target.value, 10) || 1))}
+              <span style={{ fontWeight: 700, fontSize: 13, color: '#374151' }}>세트 선택</span>
+              <select
+                value={selectedSet}
+                onChange={(e) => setSelectedSet(e.target.value)}
+                disabled={setsLoading}
                 style={{
-                  width: 100,
                   padding: '10px 12px',
                   borderRadius: RADIUS.sm,
                   border: `1px solid ${COLORS.border}`,
+                  fontSize: 15,
+                  background: COLORS.surface,
                 }}
-              />
+              >
+                <option value="">— 세트 선택 —</option>
+                {setNames.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              {setsLoading ? (
+                <span style={{ fontSize: 12, color: COLORS.textHint }}>목록 불러오는 중…</span>
+              ) : null}
             </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={{ fontWeight: 700, fontSize: 14 }}>끝 DAY</span>
-              <input
-                type="number"
-                min={1}
-                value={endDay}
-                onChange={(e) => setEndDay(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                style={{
-                  width: 100,
-                  padding: '10px 12px',
-                  borderRadius: RADIUS.sm,
-                  border: `1px solid ${COLORS.border}`,
-                }}
-              />
-            </label>
-            <span style={{ fontSize: 13, color: COLORS.textSecondary }}>
-              범위 단어 수: <strong>{wordPool.length}</strong>개
-            </span>
-          </div>
 
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>문제 유형 (복수 선택)</div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <input
-                type="checkbox"
-                checked={typeWordToMeaning}
-                onChange={(e) => setTypeWordToMeaning(e.target.checked)}
-              />
-              <span>4지선다 — 단어 보고 뜻 고르기</span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <input
-                type="checkbox"
-                checked={typeMeaningToWord}
-                onChange={(e) => setTypeMeaningToWord(e.target.checked)}
-              />
-              <span>4지선다 — 뜻 보고 단어 고르기</span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={typeFillBlank}
-                onChange={(e) => setTypeFillBlank(e.target.checked)}
-              />
-              <span>빈칸 채우기 — 예문에서 단어 빠진 것</span>
-            </label>
-          </div>
-
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>문항 수</span>
-            <select
-              value={questionCount}
-              onChange={(e) => setQuestionCount(parseInt(e.target.value, 10))}
-              disabled={questionCountOptions.length === 0}
-              style={{
-                padding: '10px 12px',
-                borderRadius: RADIUS.sm,
-                border: `1px solid ${COLORS.border}`,
-                maxWidth: 200,
-              }}
-            >
-              {questionCountOptions.map((q) => (
-                <option key={q} value={q}>
-                  {q}문항
-                </option>
-              ))}
-            </select>
-            {questionCountOptions.length === 0 ? (
-              <span style={{ fontSize: 12, color: COLORS.warning }}>선택한 범위에 단어가 없습니다.</span>
-            ) : (
-              <span style={{ fontSize: 12, color: COLORS.textHint }}>
-                최대 {maxQuestions}문항까지 (10단위, 단어 수 이내)
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>시작 DAY</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={startDay}
+                  onChange={(e) => setStartDay(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  style={{
+                    width: 100,
+                    padding: '10px 12px',
+                    borderRadius: RADIUS.sm,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>끝 DAY</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={endDay}
+                  onChange={(e) => setEndDay(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  style={{
+                    width: 100,
+                    padding: '10px 12px',
+                    borderRadius: RADIUS.sm,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                />
+              </label>
+              <span style={{ fontSize: 13, color: COLORS.textSecondary }}>
+                범위 단어 수: <strong>{wordPool.length}</strong>개
               </span>
-            )}
-          </label>
-
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>버전 (문항 순서 다름)</div>
-            <div style={{ display: 'flex', gap: 12 }}>
-              {['A', 'B', 'C'].map((v) => (
-                <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <input
-                    type="radio"
-                    name="test-version"
-                    checked={version === v}
-                    onChange={() => setVersion(v)}
-                  />
-                  <span>{v}형</span>
-                </label>
-              ))}
             </div>
-          </div>
 
-          {genError ? (
-            <div
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
+                문제 유형 — 각각 독립 선택 (복수 선택 가능)
+              </div>
+              <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 8 }}>
+                원하는 유형만 켜면 됩니다. 여러 유형을 동시에 선택할 수 있습니다.
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={typeWordToMeaning}
+                  onChange={(e) => setTypeWordToMeaning(e.target.checked)}
+                />
+                <span>4지선다 — 단어 보고 뜻 고르기</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={typeMeaningToWord}
+                  onChange={(e) => setTypeMeaningToWord(e.target.checked)}
+                />
+                <span>4지선다 — 뜻 보고 단어 고르기</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={typeFillBlank}
+                  onChange={(e) => setTypeFillBlank(e.target.checked)}
+                />
+                <span>빈칸 채우기 — 예문에서 단어 빠진 것</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={typeSubjectiveWord}
+                  onChange={(e) => setTypeSubjectiveWord(e.target.checked)}
+                />
+                <span>주관식 — 단어 보고 뜻 쓰기</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={typeSubjectiveMeaning}
+                  onChange={(e) => setTypeSubjectiveMeaning(e.target.checked)}
+                />
+                <span>주관식 — 뜻 보고 단어 쓰기</span>
+              </label>
+              {typeSubjectiveMeaning ? (
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginLeft: 24,
+                    marginTop: 4,
+                    fontSize: 14,
+                    color: COLORS.textSecondary,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={hintFirstTwo}
+                    onChange={(e) => setHintFirstTwo(e.target.checked)}
+                  />
+                  <span>첫 두 글자 힌트 표시 (예: pr__________ )</span>
+                </label>
+              ) : null}
+            </div>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>문항 수</span>
+              <select
+                value={questionCount}
+                onChange={(e) => setQuestionCount(parseInt(e.target.value, 10))}
+                disabled={questionCountOptions.length === 0}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  maxWidth: 200,
+                }}
+              >
+                {questionCountOptions.map((q) => (
+                  <option key={q} value={q}>
+                    {q}문항
+                  </option>
+                ))}
+              </select>
+              {questionCountOptions.length === 0 ? (
+                <span style={{ fontSize: 12, color: COLORS.warning }}>선택한 범위에 단어가 없습니다.</span>
+              ) : (
+                <span style={{ fontSize: 12, color: COLORS.textHint }}>
+                  최대 {maxQuestions}문항 (10단위 + 마지막은 범위 단어 수)
+                </span>
+              )}
+            </label>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={includeAnswerSheet}
+                onChange={(e) => setIncludeAnswerSheet(e.target.checked)}
+              />
+              <span style={{ fontWeight: 600, fontSize: 14 }}>
+                답지 포함 (테스트지 뒤에 별도 페이지로 인쇄)
+              </span>
+            </label>
+
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>버전 (문항 순서 다름)</div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                {['A', 'B', 'C'].map((v) => (
+                  <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="radio"
+                      name="test-version"
+                      checked={version === v}
+                      onChange={() => setVersion(v)}
+                    />
+                    <span>{v}형</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {genError ? (
+              <div
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: RADIUS.sm,
+                  background: COLORS.dangerBg,
+                  color: COLORS.danger,
+                  fontSize: 14,
+                  fontWeight: 600,
+                }}
+              >
+                {genError}
+              </div>
+            ) : null}
+
+            {generating && genProgress.total > 0 ? (
+              <div style={{ marginTop: 4 }}>
+                <div
+                  style={{
+                    height: 8,
+                    borderRadius: 4,
+                    background: '#e2e8f0',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${Math.round((genProgress.done / genProgress.total) * 100)}%`,
+                      background: 'linear-gradient(90deg, #667eea, #764ba2)',
+                      transition: 'width 0.2s ease',
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 6, display: 'block' }}>
+                  생성 진행: {genProgress.done}/{genProgress.total} 묶음
+                </span>
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => void handleGenerate()}
+              disabled={generating || wordPool.length === 0}
               style={{
-                padding: '10px 12px',
-                borderRadius: RADIUS.sm,
-                background: COLORS.dangerBg,
-                color: COLORS.danger,
-                fontSize: 14,
-                fontWeight: 600,
+                padding: '14px 22px',
+                borderRadius: RADIUS.md,
+                border: 'none',
+                background: COLORS.headerGradient,
+                color: COLORS.textOnGreen,
+                fontWeight: 800,
+                fontSize: 15,
+                cursor: generating || wordPool.length === 0 ? 'not-allowed' : 'pointer',
+                opacity: generating || wordPool.length === 0 ? 0.6 : 1,
+                boxShadow: generating || wordPool.length === 0 ? 'none' : '0 4px 16px rgba(102, 126, 234, 0.28)',
               }}
             >
-              {genError}
-            </div>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={() => void handleGenerate()}
-            disabled={generating || wordPool.length === 0}
-            style={{
-              padding: '14px 22px',
-              borderRadius: RADIUS.md,
-              border: 'none',
-              background: COLORS.headerGradient,
-              color: COLORS.textOnGreen,
-              fontWeight: 800,
-              fontSize: 15,
-              cursor: generating || wordPool.length === 0 ? 'not-allowed' : 'pointer',
-              opacity: generating || wordPool.length === 0 ? 0.6 : 1,
-              boxShadow: generating || wordPool.length === 0 ? 'none' : '0 4px 16px rgba(102, 126, 234, 0.28)',
-            }}
-          >
-            {generating ? '생성 중…' : '테스트지 생성'}
-          </button>
+              {generating ? '생성 중…' : '테스트지 생성'}
+            </button>
+          </div>
         </div>
-      </div>
       </div>
 
       {previewQuestions && previewMeta ? (
@@ -553,71 +886,92 @@ ${parts.join('\n')}
         >
           <div
             style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-              gap: 12,
               marginBottom: 20,
               paddingBottom: 12,
               borderBottom: '2px solid #1e293b',
             }}
           >
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 900, color: '#0f172a' }}>{previewMeta.setName}</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#334155', marginTop: 4 }}>{previewMeta.dayLabel}</div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: '#0f172a' }}>
+              {previewMeta.setName} {previewMeta.dayLabel}
             </div>
-            <div style={{ textAlign: 'right', fontSize: 14, color: '#334155' }}>
-              <div>
-                <strong>{previewMeta.teacherName}</strong>
-                <span style={{ marginLeft: 16 }}>Name: ____________________</span>
-              </div>
-              <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>{previewMeta.version}형</div>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: 12,
+                marginTop: 10,
+              }}
+            >
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#334155' }}>{previewMeta.teacherName}</div>
+              <div style={{ fontSize: 14, color: '#334155' }}>Name: ____________________</div>
+            </div>
+            <div style={{ textAlign: 'right', fontSize: 12, color: '#64748b', marginTop: 6 }}>
+              {previewMeta.version}형
             </div>
           </div>
 
           <div
+            className="test-questions-columns"
             style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '12px 28px',
-              alignItems: 'start',
+              columnCount: 2,
+              columnGap: 40,
               fontSize: 13,
               color: '#1e293b',
             }}
           >
-            {[leftCol, rightCol].map((col, ci) => (
-              <div key={ci} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {col.map((q) => (
-                  <div key={q.number} style={{ breakInside: 'avoid' }}>
-                    <div style={{ fontWeight: 800, marginBottom: 4 }}>
-                      {q.number}){' '}
-                      {q.type === 'fill_blank' ? (
-                        <span style={{ fontWeight: 600 }}>{String(q.word ?? '').trim()}</span>
-                      ) : (
-                        <span>{String(q.word ?? '').trim()}</span>
-                      )}
-                    </div>
-                    {q.type === 'fill_blank' && q.sentence ? (
-                      <div style={{ fontWeight: 500, marginBottom: 6, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-                        {String(q.sentence)}
-                      </div>
-                    ) : null}
-                    {q.question ? (
-                      <div style={{ fontWeight: 600, marginBottom: 6, lineHeight: 1.45 }}>{q.question}</div>
-                    ) : null}
-                    <div style={{ paddingLeft: 4 }}>
-                      {(Array.isArray(q.options) ? q.options : []).slice(0, 4).map((opt, oi) => (
-                        <div key={oi} style={{ marginBottom: 3 }}>
-                          {CIRCLED[oi]} {String(opt)}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ))}
+            {previewQuestions.map((q) => renderQuestionBlock(q))}
           </div>
+
+          {previewMeta.includeAnswerSheet ? (
+            <div className="test-answer-key-page">
+              <div
+                style={{
+                  fontSize: 17,
+                  fontWeight: 800,
+                  color: '#0f172a',
+                  marginBottom: 12,
+                  paddingBottom: 8,
+                  borderBottom: '1px solid #cbd5e1',
+                }}
+              >
+                {previewMeta.setName} {previewMeta.dayLabel} 답안지
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '8px 16px',
+                  fontSize: 13,
+                  marginBottom: 16,
+                }}
+              >
+                {previewQuestions
+                  .filter((q) => {
+                    const t = normalizeType(q.type);
+                    return t === 'word_to_meaning' || t === 'meaning_to_word';
+                  })
+                  .map((q) => (
+                    <div key={`k-${q.number}`}>
+                      {q.number}. {formatKeyLine(q)}
+                    </div>
+                  ))}
+              </div>
+              <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8, color: '#334155' }}>[주관식·빈칸 답]</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+                {previewQuestions.map((q) => {
+                  const t = normalizeType(q.type);
+                  if (t === 'word_to_meaning' || t === 'meaning_to_word') return null;
+                  return (
+                    <div key={`sk-${q.number}`}>
+                      {q.number}. {formatKeyLine(q)}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           <div
             style={{
@@ -626,7 +980,7 @@ ${parts.join('\n')}
               flexWrap: 'wrap',
               gap: 12,
             }}
-            className="test-sheet-actions"
+            className="test-sheet-actions no-print"
           >
             <button
               type="button"
@@ -660,7 +1014,6 @@ ${parts.join('\n')}
           </div>
         </div>
       ) : null}
-
     </div>
   );
 }
