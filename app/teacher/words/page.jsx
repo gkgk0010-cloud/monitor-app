@@ -13,6 +13,7 @@ import AutoFillPanel from './components/AutoFillPanel'
 import RoutineSettingsSection from './components/RoutineSettingsSection'
 import MenuSettingsSection from './components/MenuSettingsSection'
 import NewWordSetModal from './components/NewWordSetModal'
+import SetSettingsModal from './components/SetSettingsModal'
 import { normalizeWordDifficulty } from './utils/parsers'
 import { filterWordRows } from './utils/wordFilters'
 
@@ -36,6 +37,8 @@ export default function WordsManagePage() {
   const [tableGroupMode, setTableGroupMode] = useState('chunk10')
   const [inviteCopyMsg, setInviteCopyMsg] = useState(null)
   const [newSetModalOpen, setNewSetModalOpen] = useState(false)
+  /** 사이드바 세트별 [설정] 모달 — 세트 이름 또는 null */
+  const [settingsSetName, setSettingsSetName] = useState(null)
   const saveHintTimerRef = useRef(null)
   const rowSaveToastTimerRef = useRef(null)
   const inviteCopyMsgTimerRef = useRef(null)
@@ -700,28 +703,59 @@ export default function WordsManagePage() {
               const cnt = setNameCounts.get(n) || 0
               const active = setFilter === n
               return (
-                <button
+                <div
                   key={n}
-                  type="button"
-                  onClick={() => changeSetFilter(n)}
                   style={{
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '8px 10px',
-                    borderRadius: RADIUS.sm,
-                    border: `1px solid ${active ? COLORS.primary : COLORS.border}`,
-                    background: active ? COLORS.primarySoft : COLORS.bg,
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    fontWeight: active ? 700 : 400,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'stretch',
+                    gap: 6,
                   }}
-                  title={n}
                 >
-                  {n} ({cnt})
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => changeSetFilter(n)}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      textAlign: 'left',
+                      padding: '8px 10px',
+                      borderRadius: RADIUS.sm,
+                      border: `1px solid ${active ? COLORS.primary : COLORS.border}`,
+                      background: active ? COLORS.primarySoft : COLORS.bg,
+                      cursor: 'pointer',
+                      fontSize: 13,
+                      fontWeight: active ? 700 : 400,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={n}
+                  >
+                    {n} ({cnt})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSettingsSetName(n)
+                    }}
+                    style={{
+                      flexShrink: 0,
+                      padding: '6px 8px',
+                      borderRadius: RADIUS.sm,
+                      border: `1px solid ${COLORS.border}`,
+                      background: COLORS.bg,
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: COLORS.accentText,
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={`「${n}」세트 설정`}
+                  >
+                    설정
+                  </button>
+                </div>
               )
             })}
           </div>
@@ -1017,6 +1051,25 @@ export default function WordsManagePage() {
         importSetType={
           setFilter.trim() ? setTypeByName[setFilter.trim()] || 'word' : 'word'
         }
+      />
+
+      <SetSettingsModal
+        open={Boolean(settingsSetName)}
+        onClose={() => setSettingsSetName(null)}
+        setName={settingsSetName || ''}
+        teacherId={teacherId}
+        inferredSetType={settingsSetName ? setTypeByName[settingsSetName] || 'word' : 'word'}
+        hasImageWords={
+          settingsSetName
+            ? words.some(
+                (w) => String(w.set_name || '') === settingsSetName && w.image_url && String(w.image_url).trim(),
+              )
+            : false
+        }
+        onSaved={() => {
+          void loadWords()
+          void loadWordSetNames()
+        }}
       />
 
       <NewWordSetModal
