@@ -133,29 +133,63 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
   const handleComplete = async () => {
     const n = String(setName || '').trim()
     const selected = ALL_MODE_KEYS.filter((k) => modes[k])
+    const newSetData = {
+      name: n,
+      set_type: setType,
+      available_modes: selected,
+      teacher_id: teacherId,
+    }
+    console.log('완료 클릭', newSetData)
+
     if (selected.length === 0) {
       alert('학습 모드를 하나 이상 선택해 주세요.')
       return
     }
-    if (!teacherId) return
+    if (!teacherId) {
+      console.warn('[NewWordSetModal] teacherId 없음 — 로그인·선생님 정보를 확인해 주세요.')
+      alert('선생님 정보를 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.')
+      return
+    }
     setSaving(true)
     try {
-      const { error } = await supabase.from('word_sets').insert({
-        teacher_id: teacherId,
-        name: n,
-        set_type: setType,
-        available_modes: selected,
-      })
+      const { data, error } = await supabase
+        .from('word_sets')
+        .insert({
+          teacher_id: teacherId,
+          name: n,
+          set_type: setType,
+          available_modes: selected,
+        })
+        .select('id')
+        .maybeSingle()
+
       if (error) {
-        if (error.code === '23505' || /duplicate|unique/i.test(error.message)) {
+        console.error('[word_sets] insert 실패', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        })
+        if (error.code === '42P01' || /relation ["']?word_sets["']? does not exist/i.test(String(error.message))) {
+          alert(
+            'word_sets 테이블을 찾을 수 없습니다.\nSupabase에 supabase/snippets/word_sets.sql 스키마를 적용했는지 확인해 주세요.',
+          )
+        } else if (error.code === '23505' || /duplicate|unique/i.test(error.message)) {
           alert('같은 이름의 세트가 이미 있습니다.')
         } else {
           alert(`저장 실패: ${error.message}`)
         }
         return
       }
-      onSaved?.(n)
+
+      console.log('[word_sets] insert 성공', data)
+      /** 모달을 먼저 닫아야 부모 onSaved 예외 시에도 화면이 안 남습니다 */
       onClose()
+      try {
+        onSaved?.(n)
+      } catch (e) {
+        console.error('[NewWordSetModal] onSaved 콜백 오류', e)
+      }
     } finally {
       setSaving(false)
     }

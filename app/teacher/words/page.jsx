@@ -992,13 +992,13 @@ export default function WordsManagePage() {
         existingSetNames={setNames}
         hasImageWords={hasImageWords}
         onSaved={(createdName) => {
+          setNewSetModalOpen(false)
           const n = String(createdName || '').trim()
           if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
           setSaveHint('세트가 생성됐습니다. 단어를 추가해보세요')
           saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 6000)
           if (n) {
-            setSetFilter(n)
-            setDayFilter(null)
+            changeSetFilter(n)
             setWordSetNames((prev) => {
               if (prev.includes(n)) return prev
               return [...prev, n].sort((a, b) => a.localeCompare(b, 'ko'))
