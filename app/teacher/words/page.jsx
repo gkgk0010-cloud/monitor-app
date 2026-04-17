@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/utils/supabaseClient'
 import { DEFAULT_ACADEMY_ID } from '@/utils/defaults'
 import { useTeacher } from '@/utils/useTeacher'
@@ -16,6 +17,7 @@ import { normalizeWordDifficulty } from './utils/parsers'
 import { filterWordRows } from './utils/wordFilters'
 
 export default function WordsManagePage() {
+  const router = useRouter()
   const [words, setWords] = useState([])
   const [loading, setLoading] = useState(true)
   /** 나머지 청크 백그라운드 로드 중 */
@@ -991,9 +993,10 @@ export default function WordsManagePage() {
         teacherId={teacherId}
         existingSetNames={setNames}
         hasImageWords={hasImageWords}
-        onSaved={(createdName) => {
+        onSaved={({ name, setType }) => {
           setNewSetModalOpen(false)
-          const n = String(createdName || '').trim()
+          const n = String(name || '').trim()
+          const st = String(setType || 'word').trim() || 'word'
           if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
           setSaveHint('세트가 생성됐습니다. 단어를 추가해보세요')
           saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 6000)
@@ -1005,6 +1008,12 @@ export default function WordsManagePage() {
             })
           }
           void loadWordSetNames()
+          if (n) {
+            const q = new URLSearchParams()
+            q.set('name', n)
+            q.set('type', st)
+            router.push(`/teacher/words/create?${q.toString()}`)
+          }
         }}
       />
     </div>

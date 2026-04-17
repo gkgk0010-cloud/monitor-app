@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef, Suspense } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/utils/supabaseClient'
 import { DEFAULT_ACADEMY_ID } from '@/utils/defaults'
 import { useTeacher } from '@/utils/useTeacher'
@@ -11,6 +12,12 @@ import BulkImport from '../components/BulkImport'
 import AutoFillPanel from '../components/AutoFillPanel'
 import { normalizeWordDifficulty } from '../utils/parsers'
 import { assignDaysEqual, assignDaysChunk } from '../utils/dayAssign'
+
+const SET_TYPE_LABELS = {
+  word: '단어 세트',
+  sentence: '문장 세트',
+  image: '이미지 세트',
+}
 
 function emptyRow(setName) {
   return {
@@ -26,7 +33,10 @@ function emptyRow(setName) {
   }
 }
 
-export default function CreateWordSetPage() {
+function CreateWordSetPageContent() {
+  const searchParams = useSearchParams()
+  const queryAppliedRef = useRef(false)
+
   const [setName, setSetName] = useState('')
   const [rows, setRows] = useState(() => [emptyRow('')])
   const [selectedIds, setSelectedIds] = useState(() => new Set())
@@ -60,6 +70,21 @@ export default function CreateWordSetPage() {
     setSetName(v)
     setRows((prev) => prev.map((r) => ({ ...r, set_name: v })))
   }
+
+  useEffect(() => {
+    if (queryAppliedRef.current) return
+    const rawName = searchParams.get('name')
+    if (!rawName?.trim()) return
+    queryAppliedRef.current = true
+    let v = rawName.trim()
+    try {
+      v = decodeURIComponent(v)
+    } catch {
+      /* keep trimmed raw */
+    }
+    setSetName(v)
+    setRows((prev) => prev.map((r) => ({ ...r, set_name: v })))
+  }, [searchParams])
 
   /** 세트 이름은 syncSetName에서만 전 행에 반영. 참조 안정화로 WordTable 불필요 리렌더 감소 */
   const onRowsChange = useCallback((next) => {
@@ -282,6 +307,11 @@ export default function CreateWordSetPage() {
               }}
             />
           </label>
+          {searchParams.get('type') ? (
+            <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: COLORS.accentText }}>
+              세트 유형(참고): {SET_TYPE_LABELS[searchParams.get('type')] || searchParams.get('type')}
+            </p>
+          ) : null}
           <p style={{ margin: 0, fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.5 }}>
             DB에 있는 전체 단어 목록은 보이지 않습니다. 카드만 입력한 뒤, Day를 나누고 저장하면 됩니다. 예문
             돋보기·자동채우기는 Anthropic(Claude) API를 쓰며, 계정에 크레딧이 있어야 합니다. 이미지는 검색·URL·
@@ -458,5 +488,19 @@ export default function CreateWordSetPage() {
         />
       </div>
     </div>
+  )
+}
+
+export default function CreateWordSetPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ padding: '8px 0 24px' }}>
+          <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
+        </div>
+      }
+    >
+      <CreateWordSetPageContent />
+    </Suspense>
   )
 }

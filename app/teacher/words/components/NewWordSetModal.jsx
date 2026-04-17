@@ -89,7 +89,7 @@ function extraKeysForType(setType) {
  *   onClose: () => void
  *   teacherId: string
  *   existingSetNames: string[]
- *   onSaved?: (setName: string) => void
+ *   onSaved?: (payload: { name: string; setType: string }) => void
  *   hasImageWords?: boolean
  * }} props
  */
@@ -186,7 +186,7 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
       /** 모달을 먼저 닫아야 부모 onSaved 예외 시에도 화면이 안 남습니다 */
       onClose()
       try {
-        onSaved?.(n)
+        onSaved?.({ name: n, setType })
       } catch (e) {
         console.error('[NewWordSetModal] onSaved 콜백 오류', e)
       }
