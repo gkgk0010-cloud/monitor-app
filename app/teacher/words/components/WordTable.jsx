@@ -153,9 +153,10 @@ function WordTable({
     parts.push('minmax(160px, 1fr)')
     if (showSetNameColumn) parts.push('150px')
     if (showDayColumn) parts.push('60px')
+    if (onRowCommit) parts.push('76px')
     if (showDeleteColumn && onRowDelete) parts.push('70px')
     return parts.join(' ')
-  }, [showRowNumbers, showImageColumn, showSetNameColumn, showDayColumn, showDeleteColumn, onRowDelete])
+  }, [showRowNumbers, showImageColumn, showSetNameColumn, showDayColumn, showDeleteColumn, onRowDelete, onRowCommit])
 
   const [busyExampleId, setBusyExampleId] = useState(null)
   const [imagePicker, setImagePicker] = useState(null)
@@ -213,22 +214,28 @@ function WordTable({
     )
   }, [onRowsChange])
 
-  const commitRow = useCallback(
-    (id, patch) => {
-      const row = rowsRef.current.find((r) => String(r.id) === String(id))
-      if (!row || !onRowCommit) return
-      const merged = patch ? { ...row, ...patch } : row
-      void onRowCommit(merged)
-    },
-    [onRowCommit],
-  )
-
-  const commitDraftField = useCallback(
+  /** 블러 시 로컬 상태만 반영 — DB 저장은 행별 [저장] 버튼 */
+  const syncDraftField = useCallback(
     (id, field, val) => {
       updateField(id, field, val)
-      commitRow(id, { [field]: val })
     },
-    [updateField, commitRow],
+    [updateField],
+  )
+
+  const [savingId, setSavingId] = useState(null)
+
+  const handleRowSaveClick = useCallback(
+    async (id) => {
+      const row = getEffectiveRow(id)
+      if (!row || !onRowCommit) return
+      setSavingId(String(id))
+      try {
+        await onRowCommit(row)
+      } finally {
+        setSavingId((cur) => (cur === String(id) ? null : cur))
+      }
+    },
+    [getEffectiveRow, onRowCommit],
   )
 
   const [collapsedSections, setCollapsedSections] = useState(() => new Set())
@@ -361,7 +368,6 @@ function WordTable({
           if (Object.keys(dr).length === 0) delete cellDraftsRef.current[sid]
         }
         updateField(id, 'example_sentence', ex)
-        commitRow(id, { example_sentence: ex })
         requestAnimationFrame(() => {
           try {
             const el = document.querySelector(`input[data-row-id="${sid}"]`)
@@ -374,7 +380,7 @@ function WordTable({
         setBusyExampleId(null)
       }
     },
-    [getEffectiveRow, updateField, commitRow],
+    [getEffectiveRow, updateField],
   )
 
   const handleExampleKeyDown = useCallback(
@@ -420,7 +426,6 @@ function WordTable({
   const pickImage = (id, photo) => {
     const url = photo.regular || photo.thumb
     patchRow(id, { image_url: url, image_source: 'unsplash' })
-    commitRow(id, { image_url: url, image_source: 'unsplash' })
     setImagePicker(null)
   }
 
@@ -434,7 +439,6 @@ function WordTable({
       return
     }
     patchRow(id, { image_url: s, image_source: source })
-    commitRow(id, { image_url: s, image_source: source })
   }
 
   const onImageDrop = (id, e) => {
@@ -484,7 +488,7 @@ function WordTable({
         <div
           style={{
             width: '100%',
-            minWidth: 1180,
+            minWidth: 1260,
             fontSize: 14,
             boxSizing: 'border-box',
           }}
@@ -541,6 +545,11 @@ function WordTable({
             {showDayColumn ? (
               <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
                 day
+              </div>
+            ) : null}
+            {onRowCommit ? (
+              <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                저장
               </div>
             ) : null}
             {showDeleteColumn && onRowDelete ? (
@@ -658,7 +667,7 @@ function WordTable({
                       field="word"
                       value={row.word != null ? String(row.word) : ''}
                       cellDraftsRef={cellDraftsRef}
-                      onCommit={commitDraftField}
+                      onCommit={syncDraftField}
                       style={{
                         width: '100%',
                         minWidth: 0,
@@ -676,7 +685,7 @@ function WordTable({
                       field="meaning"
                       value={meaning}
                       cellDraftsRef={cellDraftsRef}
-                      onCommit={commitDraftField}
+                      onCommit={syncDraftField}
                       placeholder={meaningEmpty ? '뜻 입력' : ''}
                       style={{
                         width: '100%',
@@ -788,7 +797,7 @@ function WordTable({
                         field="example_sentence"
                         value={example}
                         cellDraftsRef={cellDraftsRef}
-                        onCommit={commitDraftField}
+                        onCommit={syncDraftField}
                         dataRowId={id}
                         onKeyDown={handleExampleKeyDown}
                         placeholder="예문 (선택) — 오른쪽 돋보기로 AI 생성"
@@ -855,7 +864,7 @@ function WordTable({
                         field="set_name"
                         value={row.set_name != null ? String(row.set_name) : ''}
                         cellDraftsRef={cellDraftsRef}
-                        onCommit={commitDraftField}
+                        onCommit={syncDraftField}
                         style={{
                           width: '100%',
                           minWidth: 0,
@@ -879,7 +888,7 @@ function WordTable({
                           rowId={id}
                           value={row.day != null ? Number(row.day) : 1}
                           cellDraftsRef={cellDraftsRef}
-                          onCommit={commitDraftField}
+                          onCommit={syncDraftField}
                           style={{
                             width: '100%',
                             maxWidth: 60,
@@ -890,6 +899,39 @@ function WordTable({
                           }}
                         />
                       )}
+                    </div>
+                  ) : null}
+                  {onRowCommit ? (
+                    <div
+                      role="gridcell"
+                      style={{
+                        padding: 8,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        minWidth: 0,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        title="이 행을 DB에 저장"
+                        disabled={savingId === id}
+                        onClick={() => void handleRowSaveClick(id)}
+                        style={{
+                          padding: '6px 10px',
+                          fontSize: 12,
+                          borderRadius: RADIUS.sm,
+                          border: `1px solid ${COLORS.primary}`,
+                          background: COLORS.primarySoft,
+                          color: COLORS.accentText,
+                          cursor: savingId === id ? 'wait' : 'pointer',
+                          fontWeight: 700,
+                          opacity: savingId === id ? 0.75 : 1,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {savingId === id ? '…' : '저장'}
+                      </button>
                     </div>
                   ) : null}
                   {showDeleteColumn && onRowDelete ? (

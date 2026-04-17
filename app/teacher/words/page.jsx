@@ -28,11 +28,14 @@ export default function WordsManagePage() {
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkOpen, setBulkOpen] = useState(false)
   const [saveHint, setSaveHint] = useState(null)
+  /** 단어 행 [저장] 결과 — 자동 저장 제거 후 버튼 전용 */
+  const [rowSaveToast, setRowSaveToast] = useState(null)
   /** 테이블 접기: 10개 단위 (Day는 사이드바에서 이미 필터) */
   const [tableGroupMode, setTableGroupMode] = useState('chunk10')
   const [inviteCopyMsg, setInviteCopyMsg] = useState(null)
   const [newSetModalOpen, setNewSetModalOpen] = useState(false)
   const saveHintTimerRef = useRef(null)
+  const rowSaveToastTimerRef = useRef(null)
   const inviteCopyMsgTimerRef = useRef(null)
   const youtubeSaveMsgTimerRef = useRef(null)
   /** 사이드바 DAY별 유튜브 URL 입력 (저장 전까지 로컬) */
@@ -47,6 +50,7 @@ export default function WordsManagePage() {
   useEffect(() => {
     return () => {
       if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
+      if (rowSaveToastTimerRef.current) clearTimeout(rowSaveToastTimerRef.current)
       if (inviteCopyMsgTimerRef.current) clearTimeout(inviteCopyMsgTimerRef.current)
       if (youtubeSaveMsgTimerRef.current) clearTimeout(youtubeSaveMsgTimerRef.current)
     }
@@ -71,6 +75,25 @@ export default function WordsManagePage() {
   }
 
   const WORDS_CHUNK = 2500
+
+  /** words에 아직 단어가 없는 세트도 사이드바에 표시 (word_sets 기준) */
+  const [wordSetNames, setWordSetNames] = useState([])
+
+  const loadWordSetNames = useCallback(async () => {
+    if (!teacherId) {
+      setWordSetNames([])
+      return
+    }
+    const { data, error } = await supabase.from('word_sets').select('name').eq('teacher_id', teacherId)
+    if (error) {
+      console.warn('[word_sets]', error.message)
+      return
+    }
+    const names = [
+      ...new Set((data || []).map((r) => String(r.name || '').trim()).filter(Boolean)),
+    ].sort((a, b) => a.localeCompare(b, 'ko'))
+    setWordSetNames(names)
+  }, [teacherId])
 
   const loadWords = useCallback(async () => {
     if (teacherLoading) return
@@ -132,13 +155,20 @@ export default function WordsManagePage() {
     void loadWords()
   }, [loadWords])
 
+  useEffect(() => {
+    void loadWordSetNames()
+  }, [loadWordSetNames])
+
   const setNames = useMemo(() => {
     const s = new Set()
     for (const w of words) {
       if (w.set_name) s.add(String(w.set_name))
     }
-    return [...s].sort()
-  }, [words])
+    for (const n of wordSetNames) {
+      if (n) s.add(n)
+    }
+    return [...s].sort((a, b) => a.localeCompare(b, 'ko'))
+  }, [words, wordSetNames])
 
   /** 세트명별 개수 — 사이드바에서 set마다 words.filter 반복하지 않도록 한 번에 집계 */
   const setNameCounts = useMemo(() => {
@@ -292,6 +322,12 @@ export default function WordsManagePage() {
     saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2000)
   }, [teacherId])
 
+  const flashRowSaveToast = useCallback((ok) => {
+    if (rowSaveToastTimerRef.current) clearTimeout(rowSaveToastTimerRef.current)
+    setRowSaveToast(ok ? 'success' : 'error')
+    rowSaveToastTimerRef.current = setTimeout(() => setRowSaveToast(null), 3200)
+  }, [])
+
   const handleRowCommit = useCallback(async (row) => {
     if (!teacherId) return
     const id = String(row.id)
@@ -328,25 +364,21 @@ export default function WordsManagePage() {
         .single()
       if (error) {
         console.warn(error)
-        alert(`추가 실패: ${error.message}`)
+        flashRowSaveToast(false)
         return
       }
       setWords((prev) => prev.map((r) => (String(r.id) === id ? data : r)))
-      if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
-      setSaveHint('저장했습니다. (같은 세트에 같은 영단어가 이미 있으면 그 행을 덮어씁니다)')
-      saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 3000)
+      flashRowSaveToast(true)
     } else {
       const { error } = await supabase.from('words').update(payload).eq('id', id).eq('teacher_id', teacherId)
       if (error) {
         console.warn(error)
-        alert(`저장 실패: ${error.message}`)
+        flashRowSaveToast(false)
         return
       }
-      if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
-      setSaveHint('저장했습니다.')
-      saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2500)
+      flashRowSaveToast(true)
     }
-  }, [teacherId, academyId])
+  }, [teacherId, academyId, flashRowSaveToast])
 
   const addEmptyRow = () => {
     setWords((prev) => [
@@ -884,6 +916,24 @@ export default function WordsManagePage() {
           </div>
         ) : null}
 
+        {rowSaveToast ? (
+          <div
+            role="status"
+            style={{
+              marginBottom: 12,
+              padding: '10px 14px',
+              borderRadius: RADIUS.md,
+              border: `1px solid ${rowSaveToast === 'success' ? '#86efac' : COLORS.danger}`,
+              background: rowSaveToast === 'success' ? '#ecfdf5' : COLORS.dangerBg,
+              color: rowSaveToast === 'success' ? '#15803d' : COLORS.danger,
+              fontSize: 14,
+              fontWeight: 700,
+            }}
+          >
+            {rowSaveToast === 'success' ? '저장됐습니다 ✓' : '저장 실패'}
+          </div>
+        ) : null}
+
         {loading ? (
           <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
         ) : (
@@ -896,10 +946,11 @@ export default function WordsManagePage() {
                 lineHeight: 1.5,
               }}
             >
-              예문은 탭만 바꾼다고 자동 입력되지 않습니다. 예문 칸{' '}
-              <strong style={{ color: COLORS.textPrimary }}>안 오른쪽 돋보기</strong>를 누르거나{' '}
-              <strong style={{ color: COLORS.textPrimary }}>Ctrl+S</strong>(예문 칸에 포커스)로 AI 예문을 넣을 수
-              있고, 아래 패널에서 선택한 행을 한꺼번에 채울 수도 있습니다.
+              단어·뜻·예문 등을 수정한 뒤 각 행 <strong style={{ color: COLORS.textPrimary }}>저장</strong>을 눌러야
+              DB에 반영됩니다. (다른 칸으로 포커스를 옮겨도 자동 저장되지 않습니다.) 예문 칸{' '}
+              <strong style={{ color: COLORS.textPrimary }}>오른쪽 돋보기</strong> 또는{' '}
+              <strong style={{ color: COLORS.textPrimary }}>Ctrl+S</strong>로 AI 예문을 넣을 수 있고, 아래 패널에서
+              선택한 행을 한꺼번에 채울 수도 있습니다.
             </p>
             <WordTable
               rows={filtered}
@@ -940,10 +991,20 @@ export default function WordsManagePage() {
         teacherId={teacherId}
         existingSetNames={setNames}
         hasImageWords={hasImageWords}
-        onSaved={() => {
+        onSaved={(createdName) => {
+          const n = String(createdName || '').trim()
           if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
-          setSaveHint('세트 정보를 저장했습니다. 단어는 표에서 추가하거나 가져오기로 넣을 수 있어요.')
-          saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 3500)
+          setSaveHint('세트가 생성됐습니다. 단어를 추가해보세요')
+          saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 6000)
+          if (n) {
+            setSetFilter(n)
+            setDayFilter(null)
+            setWordSetNames((prev) => {
+              if (prev.includes(n)) return prev
+              return [...prev, n].sort((a, b) => a.localeCompare(b, 'ko'))
+            })
+          }
+          void loadWordSetNames()
         }}
       />
     </div>

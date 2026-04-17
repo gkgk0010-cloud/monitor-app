@@ -4,40 +4,47 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 
-/** DB·단어앱과 맞출 모드 키 (영문 스네이크) */
+/**
+ * DB·단어앱과 맞출 모드 키 (영문 스네이크).
+ * 저장 시 선택 순서는 이 배열 순서를 따름. test = 앱의 객관식 테스트(vocabtest).
+ */
 const ALL_MODE_KEYS = [
   'flashcard',
-  'matching',
   'recall',
+  'matching',
   'writing',
-  'image',
+  'reading',
   'readAloud',
   'shadowing',
   'listening',
   'scramble',
   'dictation',
   'composition',
+  'image',
+  'test',
 ]
 
 const MODE_LABELS = {
   flashcard: '암기',
-  matching: '매칭',
   recall: '리콜',
+  matching: '매칭',
   writing: '라이팅',
-  image: '이미지',
+  reading: '직독직해',
   readAloud: '낭독',
   shadowing: '쉐도잉',
   listening: '집중듣기',
   scramble: '스크램블',
   dictation: '딕테이션',
   composition: '입영작',
+  image: '이미지',
+  test: '테스트',
 }
 
-/** 세트 타입별 자동 추천 (STEP 2 기본 구역) */
+/** 세트 타입별 기본 체크 5개 (순서 고정, test는 항상 마지막) */
 const DEFAULT_MODES_BY_TYPE = {
-  word: ['flashcard', 'matching', 'recall', 'writing'],
-  sentence: ['readAloud', 'shadowing', 'scramble', 'dictation'],
-  image: ['image', 'flashcard', 'matching'],
+  word: ['flashcard', 'recall', 'matching', 'writing', 'test'],
+  sentence: ['reading', 'readAloud', 'shadowing', 'scramble', 'test'],
+  image: ['image', 'flashcard', 'recall', 'matching', 'test'],
 }
 
 const SET_TYPE_OPTIONS = [
@@ -82,7 +89,7 @@ function extraKeysForType(setType) {
  *   onClose: () => void
  *   teacherId: string
  *   existingSetNames: string[]
- *   onSaved?: () => void
+ *   onSaved?: (setName: string) => void
  *   hasImageWords?: boolean
  * }} props
  */
@@ -147,7 +154,7 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
         }
         return
       }
-      onSaved?.()
+      onSaved?.(n)
       onClose()
     } finally {
       setSaving(false)
