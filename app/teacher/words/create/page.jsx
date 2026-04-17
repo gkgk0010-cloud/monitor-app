@@ -30,6 +30,7 @@ function emptyRow(setName) {
     difficulty: 1,
     image_url: null,
     image_source: 'none',
+    youtube_url: null,
   }
 }
 
@@ -58,6 +59,12 @@ function CreateWordSetPageContent() {
     if (!hasDayPreview && (tableGroupMode === 'day' || tableGroupMode === 'day_chunk')) return 'none'
     return tableGroupMode
   }, [hasDayPreview, tableGroupMode])
+
+  /** URL `?type=` → WordTable·가져오기·저장 검증 (기본 단어 세트) */
+  const createSetType = useMemo(() => {
+    const t = searchParams.get('type')
+    return t === 'sentence' || t === 'image' ? t : 'word'
+  }, [searchParams])
 
   useEffect(() => {
     if (!hasDayPreview) {
@@ -96,9 +103,15 @@ function CreateWordSetPageContent() {
   }
 
   const applyDayPreview = () => {
-    const validCount = rows.filter((r) => String(r.word).trim() && String(r.meaning).trim()).length
+    const validCount = rows.filter((r) => {
+      const w = String(r.word || '').trim()
+      const m = String(r.meaning || '').trim()
+      const ex = String(r.example_sentence || '').trim()
+      if (createSetType === 'sentence') return Boolean(ex && m)
+      return Boolean(w && m)
+    }).length
     if (validCount === 0) {
-      alert('영단어·뜻이 있는 행이 없습니다.')
+      alert(createSetType === 'sentence' ? '예문·뜻이 있는 행이 없습니다.' : '영단어·뜻이 있는 행이 없습니다.')
       return
     }
     if (dayMode === 'equal' && totalDays < 1) {
@@ -118,7 +131,10 @@ function CreateWordSetPageContent() {
     let vi = 0
     setRows((prev) =>
       prev.map((r) => {
-        const ok = String(r.word).trim() && String(r.meaning).trim()
+        const w = String(r.word || '').trim()
+        const m = String(r.meaning || '').trim()
+        const ex = String(r.example_sentence || '').trim()
+        const ok = createSetType === 'sentence' ? ex && m : w && m
         if (!ok) return { ...r, day: r.day ?? 1 }
         const d = seq[vi++]
         return { ...r, day: d }
@@ -142,26 +158,44 @@ function CreateWordSetPageContent() {
       alert('먼저 「Day 미리보기」로 day를 배정하세요.')
       return
     }
-    const valid = rows.filter((r) => String(r.word).trim() && String(r.meaning).trim())
+    const valid = rows.filter((r) => {
+      const w = String(r.word || '').trim()
+      const m = String(r.meaning || '').trim()
+      const ex = String(r.example_sentence || '').trim()
+      if (createSetType === 'sentence') return Boolean(ex && m)
+      return Boolean(w && m)
+    })
     if (valid.length === 0) {
-      alert('저장할 단어가 없습니다.')
+      alert(createSetType === 'sentence' ? '저장할 행이 없습니다. 예문·뜻을 확인하세요.' : '저장할 단어가 없습니다.')
       return
     }
     setSaving(true)
     setHint(null)
     try {
-      const payload = valid.map((r) => ({
-        word: String(r.word).trim(),
-        meaning: String(r.meaning).trim(),
-        example_sentence: String(r.example_sentence || '').trim() || null,
-        set_name: sn,
-        day: Math.max(1, parseInt(String(r.day ?? 1), 10) || 1),
-        difficulty: normalizeWordDifficulty(r.difficulty),
-        image_url: r.image_url ? String(r.image_url).trim() : null,
-        image_source: r.image_url ? String(r.image_source || 'none') : 'none',
-        academy_id: academyId,
-        teacher_id: teacherId,
-      }))
+      const payload = valid.map((r) => {
+        const ex = String(r.example_sentence || '').trim()
+        let word = String(r.word || '').trim()
+        if (createSetType === 'sentence' && !word) {
+          word = ex.length > 300 ? ex.slice(0, 300) : ex
+        }
+        const yt =
+          r.youtube_url != null && String(r.youtube_url).trim()
+            ? String(r.youtube_url).trim()
+            : null
+        return {
+          word,
+          meaning: String(r.meaning).trim(),
+          example_sentence: ex || null,
+          set_name: sn,
+          day: Math.max(1, parseInt(String(r.day ?? 1), 10) || 1),
+          difficulty: normalizeWordDifficulty(r.difficulty),
+          image_url: r.image_url ? String(r.image_url).trim() : null,
+          image_source: r.image_url ? String(r.image_source || 'none') : 'none',
+          youtube_url: yt,
+          academy_id: academyId,
+          teacher_id: teacherId,
+        }
+      })
       const { error } = await supabase.from('words').upsert(payload, {
         onConflict: 'set_name,word',
         defaultToNull: false,
@@ -467,6 +501,7 @@ function CreateWordSetPageContent() {
           showDeleteColumn
           onRowDelete={handleRowDelete}
           rowGroupMode={effectiveGroupMode}
+          columnPreset={createSetType}
         />
 
         <AutoFillPanel rows={autoFillRows} onFilled={handleAutoFilled} />
@@ -480,6 +515,7 @@ function CreateWordSetPageContent() {
           initialSetName={setName}
           teacherId={teacherId}
           academyId={academyId}
+          importSetType={createSetType}
           onLocalImported={(imported) => {
             setHasDayPreview(false)
             setRows((prev) => [...imported.map((r) => ({ ...r, set_name: setName })), ...prev])

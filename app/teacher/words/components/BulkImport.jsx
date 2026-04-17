@@ -14,9 +14,20 @@ const TABS = [
   { id: 'csv', label: 'CSV / 엑셀' },
 ]
 
-const EXCEL_FILE_NAME = 'tokpass_단어양식.xlsx'
+const EXCEL_FILE_NAMES = {
+  word: 'tokpass_단어양식.xlsx',
+  sentence: 'tokpass_문장양식.xlsx',
+  image: 'tokpass_이미지양식.xlsx',
+}
 
-const EXCEL_HEADERS = ['word', 'meaning', 'example_sentence', 'example_ko', 'image_url']
+/** @param {'word' | 'sentence' | 'image'} t */
+function isPreviewRowValidForSetType(r, t) {
+  const w = String(r.word || '').trim()
+  const m = String(r.meaning || '').trim()
+  const ex = String(r.example_sentence || '').trim()
+  if (t === 'sentence') return Boolean(ex && m)
+  return Boolean(w && m)
+}
 
 function normalizeExcelHeaderKey(k) {
   return String(k ?? '')
@@ -56,17 +67,39 @@ function isPlaceholderImageCell(s) {
   return false
 }
 
-function downloadTokpassExcelTemplate() {
-  const aoa = [
-    EXCEL_HEADERS,
-    ['apple', '사과', 'I ate an apple.', '나는 사과를 먹었다.', '(선택사항)'],
-    ['lend', '빌려주다', 'She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '(선택사항)'],
-  ]
+/** @param {'word' | 'sentence' | 'image'} importSetType */
+function downloadTokpassExcelTemplate(importSetType = 'word') {
+  let aoa
+  let cols
+  const t = importSetType === 'sentence' || importSetType === 'image' ? importSetType : 'word'
+  const fileName = EXCEL_FILE_NAMES[t] || EXCEL_FILE_NAMES.word
+  if (t === 'sentence') {
+    aoa = [
+      ['example_sentence', 'meaning', 'image_url', 'youtube_url'],
+      ['I ate an apple.', '나는 사과를 먹었다.', '(선택)', '(선택)'],
+      ['She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '(선택)', '(선택)'],
+    ]
+    cols = [{ wch: 36 }, { wch: 22 }, { wch: 24 }, { wch: 28 }]
+  } else if (t === 'image') {
+    aoa = [
+      ['word', 'meaning', 'image_url', 'youtube_url'],
+      ['apple', '사과', '(예: https://...)', '(선택)'],
+      ['lend', '빌려주다', '(예: https://...)', '(선택)'],
+    ]
+    cols = [{ wch: 14 }, { wch: 14 }, { wch: 28 }, { wch: 28 }]
+  } else {
+    aoa = [
+      ['word', 'meaning', 'example_sentence', 'image_url', 'youtube_url'],
+      ['apple', '사과', 'I ate an apple.', '(선택)', '(선택)'],
+      ['lend', '빌려주다', 'She lent me a book.', '(선택)', '(선택)'],
+    ]
+    cols = [{ wch: 14 }, { wch: 14 }, { wch: 32 }, { wch: 24 }, { wch: 28 }]
+  }
   const ws = XLSX.utils.aoa_to_sheet(aoa)
-  ws['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 32 }, { wch: 32 }, { wch: 24 }]
+  ws['!cols'] = cols
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'words')
-  XLSX.writeFile(wb, EXCEL_FILE_NAME)
+  XLSX.writeFile(wb, fileName)
 }
 
 /**
@@ -80,6 +113,7 @@ function downloadTokpassExcelTemplate() {
  *   initialSetName?: string
  *   teacherId?: string
  *   academyId?: string
+ *   importSetType?: 'word' | 'sentence' | 'image'
  * }} props
  */
 export default function BulkImport({
@@ -92,7 +126,9 @@ export default function BulkImport({
   initialSetName,
   teacherId,
   academyId,
+  importSetType = 'word',
 }) {
+  const setType = importSetType === 'sentence' || importSetType === 'image' ? importSetType : 'word'
   const [tab, setTab] = useState('ai')
   const [aiPassage, setAiPassage] = useState('')
   const [pasteText, setPasteText] = useState('')
@@ -143,6 +179,7 @@ export default function BulkImport({
       day,
       image_url: null,
       image_source: 'none',
+      youtube_url: null,
     }))
     setPreviewRows(rows)
     setSelectedIds(new Set(rows.map((r) => String(r.id))))
@@ -188,13 +225,13 @@ export default function BulkImport({
   }
 
   const handleSave = async () => {
-    const valid = previewRows.filter((r) => {
-      const w = String(r.word || '').trim()
-      const m = String(r.meaning || '').trim()
-      return w && m
-    })
+    const valid = previewRows.filter((r) => isPreviewRowValidForSetType(r, setType))
     if (valid.length === 0) {
-      alert('저장할 단어가 없습니다. 영단어·뜻을 모두 입력했는지 확인하세요.')
+      alert(
+        setType === 'sentence'
+          ? '저장할 행이 없습니다. 예문·뜻을 모두 입력했는지 확인하세요.'
+          : '저장할 단어가 없습니다. 필수 칸을 모두 입력했는지 확인하세요.',
+      )
       return
     }
     const trimmedSet = String(setName).trim()
@@ -208,18 +245,30 @@ export default function BulkImport({
     }
     setSaving(true)
     try {
-      const payload = valid.map((r) => ({
-        word: String(r.word).trim(),
-        meaning: String(r.meaning).trim(),
-        example_sentence: String(r.example_sentence || '').trim() || null,
-        set_name: String(r.set_name || setName).trim() || trimmedSet,
-        day: Math.max(1, parseInt(String(r.day ?? day), 10) || 1),
-        difficulty: normalizeWordDifficulty(r.difficulty),
-        image_url: r.image_url ? String(r.image_url) : null,
-        image_source: r.image_url ? (r.image_source || 'upload') : 'none',
-        academy_id: academyId,
-        teacher_id: teacherId,
-      }))
+      const payload = valid.map((r) => {
+        const ex = String(r.example_sentence || '').trim()
+        let word = String(r.word || '').trim()
+        if (setType === 'sentence' && !word) {
+          word = ex.length > 300 ? ex.slice(0, 300) : ex
+        }
+        const yt =
+          r.youtube_url != null && String(r.youtube_url).trim()
+            ? String(r.youtube_url).trim()
+            : null
+        return {
+          word,
+          meaning: String(r.meaning).trim(),
+          example_sentence: ex || null,
+          set_name: String(r.set_name || setName).trim() || trimmedSet,
+          day: Math.max(1, parseInt(String(r.day ?? day), 10) || 1),
+          difficulty: normalizeWordDifficulty(r.difficulty),
+          image_url: r.image_url ? String(r.image_url) : null,
+          image_source: r.image_url ? (r.image_source || 'upload') : 'none',
+          youtube_url: yt,
+          academy_id: academyId,
+          teacher_id: teacherId,
+        }
+      })
 
       if (localOnly && onLocalImported) {
         const stamp = Date.now()
@@ -233,6 +282,7 @@ export default function BulkImport({
           difficulty: p.difficulty,
           image_url: p.image_url,
           image_source: p.image_source,
+          youtube_url: p.youtube_url,
         }))
         onLocalImported(mapped)
         onClose()
@@ -272,6 +322,64 @@ export default function BulkImport({
     const d = Math.max(1, parseInt(String(day), 10) || 1)
     const rows = []
     let idx = 0
+    if (setType === 'sentence') {
+      for (const raw of jsonRows) {
+        const ex = getExcelCell(raw, 'example_sentence')
+        if (!ex) continue
+        const meaning = getExcelCell(raw, 'meaning')
+        if (!meaning) continue
+        let word = getExcelCell(raw, 'word')
+        if (!word) word = ex.length > 300 ? ex.slice(0, 300) : ex
+        const ko = getExcelCell(raw, 'example_ko')
+        const imgRaw = getExcelCell(raw, 'image_url')
+        const image_url = isPlaceholderImageCell(imgRaw) ? null : imgRaw
+        const ytRaw = getExcelCell(raw, 'youtube_url')
+        const youtube_url =
+          ytRaw && String(ytRaw).trim() && !isPlaceholderImageCell(ytRaw)
+            ? String(ytRaw).trim()
+            : null
+        rows.push({
+          id: `import-${stamp}-${idx}`,
+          word,
+          meaning,
+          example_sentence: mergeExampleFields(ex, ko),
+          set_name: sn,
+          day: d,
+          image_url,
+          image_source: image_url ? 'upload' : 'none',
+          youtube_url,
+        })
+        idx += 1
+      }
+      return rows
+    }
+    if (setType === 'image') {
+      for (const raw of jsonRows) {
+        const word = getExcelCell(raw, 'word')
+        const meaning = getExcelCell(raw, 'meaning')
+        if (!word || !meaning) continue
+        const imgRaw = getExcelCell(raw, 'image_url')
+        const image_url = isPlaceholderImageCell(imgRaw) ? null : imgRaw
+        const ytRaw = getExcelCell(raw, 'youtube_url')
+        const youtube_url =
+          ytRaw && String(ytRaw).trim() && !isPlaceholderImageCell(ytRaw)
+            ? String(ytRaw).trim()
+            : null
+        rows.push({
+          id: `import-${stamp}-${idx}`,
+          word,
+          meaning,
+          example_sentence: '',
+          set_name: sn,
+          day: d,
+          image_url,
+          image_source: image_url ? 'upload' : 'none',
+          youtube_url,
+        })
+        idx += 1
+      }
+      return rows
+    }
     for (const raw of jsonRows) {
       const word = getExcelCell(raw, 'word')
       if (!word) continue
@@ -280,6 +388,11 @@ export default function BulkImport({
       const ko = getExcelCell(raw, 'example_ko')
       const imgRaw = getExcelCell(raw, 'image_url')
       const image_url = isPlaceholderImageCell(imgRaw) ? null : imgRaw
+      const ytRaw = getExcelCell(raw, 'youtube_url')
+      const youtube_url =
+        ytRaw && String(ytRaw).trim() && !isPlaceholderImageCell(ytRaw)
+          ? String(ytRaw).trim()
+          : null
       rows.push({
         id: `import-${stamp}-${idx}`,
         word,
@@ -289,6 +402,7 @@ export default function BulkImport({
         day: d,
         image_url,
         image_source: image_url ? 'upload' : 'none',
+        youtube_url,
       })
       idx += 1
     }
@@ -316,7 +430,13 @@ export default function BulkImport({
       }
       const rows = buildPreviewFromExcelJson(jsonRows)
       if (rows.length === 0) {
-        alert('읽을 수 있는 단어(word) 행이 없습니다. 헤더와 열 이름을 확인해 주세요.')
+        alert(
+          setType === 'sentence'
+            ? '읽을 수 있는 문장(example_sentence·meaning) 행이 없습니다. 헤더와 열 이름을 확인해 주세요.'
+            : setType === 'image'
+              ? '읽을 수 있는 이미지(word·meaning) 행이 없습니다. 헤더와 열 이름을 확인해 주세요.'
+              : '읽을 수 있는 단어(word) 행이 없습니다. 헤더와 열 이름을 확인해 주세요.',
+        )
         return
       }
       setPreviewRows(rows)
@@ -393,7 +513,7 @@ export default function BulkImport({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
             <button
               type="button"
-              onClick={() => downloadTokpassExcelTemplate()}
+              onClick={() => downloadTokpassExcelTemplate(setType)}
               style={{
                 padding: '10px 18px',
                 borderRadius: RADIUS.md,
@@ -428,7 +548,12 @@ export default function BulkImport({
             </button>
           </div>
           <p style={{ fontSize: 12, color: COLORS.textHint, margin: '10px 0 0' }}>
-            컬럼: word · meaning · example_sentence · example_ko · image_url — 업로드 후 아래에서 미리보기·저장할 수 있어요.
+            {setType === 'sentence'
+              ? '컬럼: example_sentence · meaning · image_url(선택) · youtube_url(선택)'
+              : setType === 'image'
+                ? '컬럼: word · meaning · image_url · youtube_url(선택)'
+                : '컬럼: word · meaning · example_sentence · image_url(선택) · youtube_url(선택)'}
+            — 업로드 후 아래에서 미리보기·저장할 수 있어요.
           </p>
         </section>
 
@@ -618,6 +743,8 @@ export default function BulkImport({
                 onSelectedIdsChange={setSelectedIds}
                 showDeleteColumn
                 onRowDelete={handlePreviewRowDelete}
+                columnPreset={setType}
+                showImageColumn
               />
               <AutoFillPanel
                 rows={selectedIds.size > 0 ? previewRows.filter((r) => selectedIds.has(String(r.id))) : previewRows}
@@ -644,8 +771,8 @@ export default function BulkImport({
                 {saving
                   ? '저장 중…'
                   : localOnly
-                    ? `${previewRows.filter((r) => String(r.word).trim() && String(r.meaning).trim()).length}개 테이블에 추가`
-                    : `${previewRows.filter((r) => String(r.word).trim() && String(r.meaning).trim()).length}개 저장`}
+                    ? `${previewRows.filter((r) => isPreviewRowValidForSetType(r, setType)).length}개 테이블에 추가`
+                    : `${previewRows.filter((r) => isPreviewRowValidForSetType(r, setType)).length}개 저장`}
               </button>
             </>
           ) : null}

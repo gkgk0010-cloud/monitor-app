@@ -126,6 +126,7 @@ function DraftDayInput({ rowId, value, cellDraftsRef, onCommit, style }) {
  *   showRowNumbers?: boolean
  *   rowGroupMode?: 'none' | 'day' | 'chunk10' | 'day_chunk'
  *   chunkSize?: number
+ *   columnPreset?: 'classic' | 'word' | 'sentence' | 'image'
  * }} props
  */
 function WordTable({
@@ -143,20 +144,57 @@ function WordTable({
   showRowNumbers = true,
   rowGroupMode = 'none',
   chunkSize = 10,
+  columnPreset = 'classic',
 }) {
-  /** 체크 · (#) · word · meaning · (image) · example · (set_name) · (day) · (삭제) — 헤더/행 동일 */
+  const isSentence = columnPreset === 'sentence'
+  const isImage = columnPreset === 'image'
+  const isTypedWord = columnPreset === 'word'
+
+  /** 체크 · (#) · 데이터 컬럼들 · (day) · 저장 · 삭제 — 헤더/행 동일 */
   const wordTableGrid = useMemo(() => {
     const parts = ['48px']
     if (showRowNumbers) parts.push('50px')
+    if (isSentence) {
+      parts.push('minmax(200px, 1.4fr)', '200px', '150px', 'minmax(140px, 1fr)')
+      if (showDayColumn) parts.push('60px')
+      if (onRowCommit) parts.push('76px')
+      if (showDeleteColumn && onRowDelete) parts.push('70px')
+      return parts.join(' ')
+    }
+    if (isImage) {
+      parts.push('150px', '200px', '150px', 'minmax(140px, 1fr)')
+      if (showDayColumn) parts.push('60px')
+      if (onRowCommit) parts.push('76px')
+      if (showDeleteColumn && onRowDelete) parts.push('70px')
+      return parts.join(' ')
+    }
+    if (isTypedWord) {
+      parts.push('150px', '200px', '150px', 'minmax(160px, 1fr)', 'minmax(140px, 1fr)')
+      if (showDayColumn) parts.push('60px')
+      if (onRowCommit) parts.push('76px')
+      if (showDeleteColumn && onRowDelete) parts.push('70px')
+      return parts.join(' ')
+    }
     parts.push('150px', '200px')
     if (showImageColumn) parts.push('150px')
     parts.push('minmax(160px, 1fr)')
-    if (showSetNameColumn) parts.push('150px')
+    if (showSetNameColumn && !isTypedWord) parts.push('150px')
     if (showDayColumn) parts.push('60px')
     if (onRowCommit) parts.push('76px')
     if (showDeleteColumn && onRowDelete) parts.push('70px')
     return parts.join(' ')
-  }, [showRowNumbers, showImageColumn, showSetNameColumn, showDayColumn, showDeleteColumn, onRowDelete, onRowCommit])
+  }, [
+    showRowNumbers,
+    showImageColumn,
+    showSetNameColumn,
+    showDayColumn,
+    showDeleteColumn,
+    onRowDelete,
+    onRowCommit,
+    isSentence,
+    isImage,
+    isTypedWord,
+  ])
 
   const [busyExampleId, setBusyExampleId] = useState(null)
   const [imagePicker, setImagePicker] = useState(null)
@@ -344,9 +382,16 @@ function WordTable({
     async (id) => {
       const row = getEffectiveRow(id)
       if (!row) return
-      const word = String(row.word || '').trim()
+      const ex0 = String(row.example_sentence || '').trim()
+      let word = String(row.word || '').trim()
       const meaning = String(row.meaning || '').trim()
-      if (!word) {
+      if (isSentence) {
+        if (!ex0) {
+          alert('예문을 먼저 입력하세요.')
+          return
+        }
+        if (!word) word = ex0.split(/\s+/).filter(Boolean)[0] || 'a'
+      } else if (!word) {
         alert('영단어를 먼저 입력하세요.')
         return
       }
@@ -380,7 +425,7 @@ function WordTable({
         setBusyExampleId(null)
       }
     },
-    [getEffectiveRow, updateField],
+    [getEffectiveRow, updateField, isSentence],
   )
 
   const handleExampleKeyDown = useCallback(
@@ -397,9 +442,12 @@ function WordTable({
   const openImagePicker = async (id) => {
     const row = getEffectiveRow(id)
     if (!row) return
-    const q = String(row.word || '').trim()
+    const q =
+      String(row.word || '').trim() ||
+      String(row.meaning || '').trim() ||
+      String(row.example_sentence || '').trim().slice(0, 80)
     if (!q) {
-      alert('영단어를 먼저 입력하세요.')
+      alert(isSentence ? '뜻·예문 중 하나를 입력한 뒤 검색해 주세요.' : '영단어를 먼저 입력하세요.')
       return
     }
     setImageLoadingId(String(id))
@@ -466,6 +514,93 @@ function WordTable({
     }
   }
 
+  /** image 칼럼 UI (classic / sentence / image 프리셋 공통) */
+  function renderImageBlock(id, row) {
+    const img = row.image_url ? String(row.image_url).trim() : ''
+    return (
+      <div role="gridcell" style={{ padding: 8, verticalAlign: 'top', minWidth: 0 }}>
+        <div
+          onDragOver={(e) => {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'copy'
+          }}
+          onDrop={(e) => onImageDrop(id, e)}
+          onPaste={(e) => onImagePaste(id, e)}
+          tabIndex={0}
+          title="이미지 파일 드롭 또는 클립보드에서 이미지 붙여넣기"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            padding: 6,
+            borderRadius: RADIUS.sm,
+            border: `1px dashed ${COLORS.border}`,
+            background: COLORS.bg,
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            {img ? (
+              <img
+                src={img}
+                alt=""
+                style={{
+                  width: 40,
+                  height: 40,
+                  objectFit: 'cover',
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                }}
+              />
+            ) : (
+              <span style={{ fontSize: 12, color: COLORS.textHint }}>—</span>
+            )}
+            <button
+              type="button"
+              title="Unsplash에서 이미지 찾기"
+              onClick={() => void openImagePicker(id)}
+              disabled={imageLoadingId === id}
+              style={{
+                padding: '4px 8px',
+                fontSize: 12,
+                borderRadius: RADIUS.sm,
+                border: `1px solid ${COLORS.primary}`,
+                background: COLORS.primarySoft,
+                color: COLORS.accentText,
+                cursor: imageLoadingId === id ? 'wait' : 'pointer',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {imageLoadingId === id ? '검색…' : '검색'}
+            </button>
+          </div>
+          <input
+            type="url"
+            name={`imgurl-${id}`}
+            placeholder="https://… URL"
+            defaultValue=""
+            onBlur={(e) => {
+              const v = e.target.value.trim()
+              if (v) applyImageUrl(id, v, 'link')
+              e.target.value = ''
+            }}
+            style={{
+              fontSize: 11,
+              padding: '4px 6px',
+              borderRadius: RADIUS.sm,
+              border: `1px solid ${COLORS.border}`,
+              width: '100%',
+              boxSizing: 'border-box',
+            }}
+          />
+          <span style={{ fontSize: 10, color: COLORS.textHint }}>드롭·붙여넣기·URL</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className="word-table-wrap"
@@ -523,25 +658,77 @@ function WordTable({
                 #
               </div>
             ) : null}
-            <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
-              word
-            </div>
-            <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
-              meaning
-            </div>
-            {showImageColumn ? (
-              <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
-                image
-              </div>
-            ) : null}
-            <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
-              example_sentence
-            </div>
-            {showSetNameColumn ? (
-              <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
-                set_name
-              </div>
-            ) : null}
+            {isSentence ? (
+              <>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  example_sentence
+                </div>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  meaning
+                </div>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  image
+                </div>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  youtube_url
+                </div>
+              </>
+            ) : isImage ? (
+              <>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  word
+                </div>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  meaning
+                </div>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  image
+                </div>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  youtube_url
+                </div>
+              </>
+            ) : isTypedWord ? (
+              <>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  word
+                </div>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  meaning
+                </div>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  image
+                </div>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  example_sentence
+                </div>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  youtube_url
+                </div>
+              </>
+            ) : (
+              <>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  word
+                </div>
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  meaning
+                </div>
+                {showImageColumn ? (
+                  <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                    image
+                  </div>
+                ) : null}
+                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                  example_sentence
+                </div>
+                {showSetNameColumn && !isTypedWord ? (
+                  <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                    set_name
+                  </div>
+                ) : null}
+              </>
+            )}
             {showDayColumn ? (
               <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
                 day
@@ -661,222 +848,470 @@ function WordTable({
                       {rowNum}
                     </div>
                   ) : null}
-                  <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
-                    <DraftTextInput
-                      rowId={id}
-                      field="word"
-                      value={row.word != null ? String(row.word) : ''}
-                      cellDraftsRef={cellDraftsRef}
-                      onCommit={syncDraftField}
-                      style={{
-                        width: '100%',
-                        minWidth: 0,
-                        maxWidth: '100%',
-                        padding: '6px 8px',
-                        borderRadius: RADIUS.sm,
-                        border: `1px solid ${COLORS.border}`,
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                  </div>
-                  <div role="gridcell" style={{ padding: 8, background: meaningEmpty ? COLORS.warningBg : undefined, minWidth: 0 }}>
-                    <DraftTextInput
-                      rowId={id}
-                      field="meaning"
-                      value={meaning}
-                      cellDraftsRef={cellDraftsRef}
-                      onCommit={syncDraftField}
-                      placeholder={meaningEmpty ? '뜻 입력' : ''}
-                      style={{
-                        width: '100%',
-                        minWidth: 0,
-                        maxWidth: '100%',
-                        padding: '6px 8px',
-                        borderRadius: RADIUS.sm,
-                        border: `1px solid ${meaningEmpty ? COLORS.warning : COLORS.border}`,
-                        boxSizing: 'border-box',
-                      }}
-                    />
-                  </div>
-                  {showImageColumn ? (
-                    <div role="gridcell" style={{ padding: 8, verticalAlign: 'top', minWidth: 0 }}>
+                  {isSentence ? (
+                    <>
                       <div
-                        onDragOver={(e) => {
-                          e.preventDefault()
-                          e.dataTransfer.dropEffect = 'copy'
-                        }}
-                        onDrop={(e) => onImageDrop(id, e)}
-                        onPaste={(e) => onImagePaste(id, e)}
-                        tabIndex={0}
-                        title="이미지 파일 드롭 또는 클립보드에서 이미지 붙여넣기"
+                        role="gridcell"
                         style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 6,
-                          padding: 6,
-                          borderRadius: RADIUS.sm,
-                          border: `1px dashed ${COLORS.border}`,
-                          background: COLORS.bg,
-                          maxWidth: '100%',
-                          boxSizing: 'border-box',
+                          padding: 8,
+                          color: exampleEmpty ? COLORS.textHint : COLORS.textPrimary,
+                          verticalAlign: 'middle',
+                          minWidth: 0,
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          {img ? (
-                            <img
-                              src={img}
-                              alt=""
-                              style={{
-                                width: 40,
-                                height: 40,
-                                objectFit: 'cover',
-                                borderRadius: RADIUS.sm,
-                                border: `1px solid ${COLORS.border}`,
-                              }}
-                            />
-                          ) : (
-                            <span style={{ fontSize: 12, color: COLORS.textHint }}>—</span>
-                          )}
+                        <div style={{ position: 'relative', width: '100%', minWidth: 0 }}>
+                          <DraftTextInput
+                            rowId={id}
+                            field="example_sentence"
+                            value={example}
+                            cellDraftsRef={cellDraftsRef}
+                            onCommit={syncDraftField}
+                            dataRowId={id}
+                            onKeyDown={handleExampleKeyDown}
+                            placeholder="예문 — 돋보기로 AI"
+                            style={{
+                              boxSizing: 'border-box',
+                              width: '100%',
+                              minWidth: 0,
+                              padding: '6px 40px 6px 8px',
+                              borderRadius: RADIUS.sm,
+                              border: `1px solid ${COLORS.border}`,
+                              fontStyle: exampleEmpty ? 'italic' : 'normal',
+                            }}
+                            title="Ctrl+S: 예문 AI 제안"
+                          />
                           <button
                             type="button"
-                            title="Unsplash에서 이미지 찾기"
-                            onClick={() => void openImagePicker(id)}
-                            disabled={imageLoadingId === id}
+                            title="예문 AI 제안 (Ctrl+S)"
+                            aria-label="예문 찾기"
+                            disabled={busyExampleId === id}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => void suggestExample(id)}
                             style={{
-                              padding: '4px 8px',
-                              fontSize: 12,
+                              position: 'absolute',
+                              right: 4,
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              width: 32,
+                              height: 30,
+                              padding: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              border: 'none',
                               borderRadius: RADIUS.sm,
-                              border: `1px solid ${COLORS.primary}`,
-                              background: COLORS.primarySoft,
-                              color: COLORS.accentText,
-                              cursor: imageLoadingId === id ? 'wait' : 'pointer',
-                              fontWeight: 600,
-                              whiteSpace: 'nowrap',
+                              background: busyExampleId === id ? COLORS.border : COLORS.primarySoft,
+                              cursor: busyExampleId === id ? 'wait' : 'pointer',
                             }}
                           >
-                            {imageLoadingId === id ? '검색…' : '검색'}
+                            {busyExampleId === id ? (
+                              <span style={{ fontSize: 14, color: COLORS.textSecondary }}>…</span>
+                            ) : (
+                              <svg
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke={COLORS.accentText}
+                                strokeWidth="2.2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden
+                              >
+                                <circle cx="11" cy="11" r="7" />
+                                <path d="M20 20 16.65 16.65" />
+                              </svg>
+                            )}
                           </button>
                         </div>
-                        <input
-                          type="url"
-                          name={`imgurl-${id}`}
-                          placeholder="https://… URL"
-                          defaultValue=""
-                          onBlur={(e) => {
-                            const v = e.target.value.trim()
-                            if (v) applyImageUrl(id, v, 'link')
-                            e.target.value = ''
-                          }}
+                      </div>
+                      <div
+                        role="gridcell"
+                        style={{ padding: 8, background: meaningEmpty ? COLORS.warningBg : undefined, minWidth: 0 }}
+                      >
+                        <DraftTextInput
+                          rowId={id}
+                          field="meaning"
+                          value={meaning}
+                          cellDraftsRef={cellDraftsRef}
+                          onCommit={syncDraftField}
+                          placeholder={meaningEmpty ? '뜻 입력' : ''}
                           style={{
-                            fontSize: 11,
-                            padding: '4px 6px',
-                            borderRadius: RADIUS.sm,
-                            border: `1px solid ${COLORS.border}`,
                             width: '100%',
+                            minWidth: 0,
+                            maxWidth: '100%',
+                            padding: '6px 8px',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${meaningEmpty ? COLORS.warning : COLORS.border}`,
                             boxSizing: 'border-box',
                           }}
                         />
-                        <span style={{ fontSize: 10, color: COLORS.textHint }}>
-                          드롭·붙여넣기·URL
-                        </span>
                       </div>
-                    </div>
-                  ) : null}
-                  <div
-                    role="gridcell"
-                    style={{
-                      padding: 8,
-                      color: exampleEmpty ? COLORS.textHint : COLORS.textPrimary,
-                      verticalAlign: 'middle',
-                      minWidth: 0,
-                    }}
-                  >
-                    <div style={{ position: 'relative', width: '100%', minWidth: 0 }}>
-                      <DraftTextInput
-                        rowId={id}
-                        field="example_sentence"
-                        value={example}
-                        cellDraftsRef={cellDraftsRef}
-                        onCommit={syncDraftField}
-                        dataRowId={id}
-                        onKeyDown={handleExampleKeyDown}
-                        placeholder="예문 (선택) — 오른쪽 돋보기로 AI 생성"
+                      {renderImageBlock(id, row)}
+                      <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
+                        <DraftTextInput
+                          rowId={id}
+                          field="youtube_url"
+                          type="url"
+                          value={row.youtube_url != null ? String(row.youtube_url) : ''}
+                          cellDraftsRef={cellDraftsRef}
+                          onCommit={syncDraftField}
+                          placeholder="https://youtu.be/…"
+                          style={{
+                            width: '100%',
+                            minWidth: 0,
+                            maxWidth: '100%',
+                            padding: '6px 8px',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${COLORS.border}`,
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                    </>
+                  ) : isImage ? (
+                    <>
+                      <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
+                        <DraftTextInput
+                          rowId={id}
+                          field="word"
+                          value={row.word != null ? String(row.word) : ''}
+                          cellDraftsRef={cellDraftsRef}
+                          onCommit={syncDraftField}
+                          style={{
+                            width: '100%',
+                            minWidth: 0,
+                            maxWidth: '100%',
+                            padding: '6px 8px',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${COLORS.border}`,
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                      <div
+                        role="gridcell"
+                        style={{ padding: 8, background: meaningEmpty ? COLORS.warningBg : undefined, minWidth: 0 }}
+                      >
+                        <DraftTextInput
+                          rowId={id}
+                          field="meaning"
+                          value={meaning}
+                          cellDraftsRef={cellDraftsRef}
+                          onCommit={syncDraftField}
+                          placeholder={meaningEmpty ? '뜻 입력' : ''}
+                          style={{
+                            width: '100%',
+                            minWidth: 0,
+                            maxWidth: '100%',
+                            padding: '6px 8px',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${meaningEmpty ? COLORS.warning : COLORS.border}`,
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                      {renderImageBlock(id, row)}
+                      <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
+                        <DraftTextInput
+                          rowId={id}
+                          field="youtube_url"
+                          type="url"
+                          value={row.youtube_url != null ? String(row.youtube_url) : ''}
+                          cellDraftsRef={cellDraftsRef}
+                          onCommit={syncDraftField}
+                          placeholder="https://youtu.be/…"
+                          style={{
+                            width: '100%',
+                            minWidth: 0,
+                            maxWidth: '100%',
+                            padding: '6px 8px',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${COLORS.border}`,
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                    </>
+                  ) : isTypedWord ? (
+                    <>
+                      <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
+                        <DraftTextInput
+                          rowId={id}
+                          field="word"
+                          value={row.word != null ? String(row.word) : ''}
+                          cellDraftsRef={cellDraftsRef}
+                          onCommit={syncDraftField}
+                          style={{
+                            width: '100%',
+                            minWidth: 0,
+                            maxWidth: '100%',
+                            padding: '6px 8px',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${COLORS.border}`,
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                      <div
+                        role="gridcell"
+                        style={{ padding: 8, background: meaningEmpty ? COLORS.warningBg : undefined, minWidth: 0 }}
+                      >
+                        <DraftTextInput
+                          rowId={id}
+                          field="meaning"
+                          value={meaning}
+                          cellDraftsRef={cellDraftsRef}
+                          onCommit={syncDraftField}
+                          placeholder={meaningEmpty ? '뜻 입력' : ''}
+                          style={{
+                            width: '100%',
+                            minWidth: 0,
+                            maxWidth: '100%',
+                            padding: '6px 8px',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${meaningEmpty ? COLORS.warning : COLORS.border}`,
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                      {renderImageBlock(id, row)}
+                      <div
+                        role="gridcell"
                         style={{
-                          boxSizing: 'border-box',
-                          width: '100%',
+                          padding: 8,
+                          color: exampleEmpty ? COLORS.textHint : COLORS.textPrimary,
+                          verticalAlign: 'middle',
                           minWidth: 0,
-                          padding: '6px 40px 6px 8px',
-                          borderRadius: RADIUS.sm,
-                          border: `1px solid ${COLORS.border}`,
-                          fontStyle: exampleEmpty ? 'italic' : 'normal',
-                        }}
-                        title="Ctrl+S: 예문 AI 제안"
-                      />
-                      <button
-                        type="button"
-                        title="예문 AI 제안 (Ctrl+S)"
-                        aria-label="예문 찾기"
-                        disabled={busyExampleId === id}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => void suggestExample(id)}
-                        style={{
-                          position: 'absolute',
-                          right: 4,
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          width: 32,
-                          height: 30,
-                          padding: 0,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          border: 'none',
-                          borderRadius: RADIUS.sm,
-                          background: busyExampleId === id ? COLORS.border : COLORS.primarySoft,
-                          cursor: busyExampleId === id ? 'wait' : 'pointer',
                         }}
                       >
-                        {busyExampleId === id ? (
-                          <span style={{ fontSize: 14, color: COLORS.textSecondary }}>…</span>
-                        ) : (
-                          <svg
-                            width="18"
-                            height="18"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke={COLORS.accentText}
-                            strokeWidth="2.2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden
+                        <div style={{ position: 'relative', width: '100%', minWidth: 0 }}>
+                          <DraftTextInput
+                            rowId={id}
+                            field="example_sentence"
+                            value={example}
+                            cellDraftsRef={cellDraftsRef}
+                            onCommit={syncDraftField}
+                            dataRowId={id}
+                            onKeyDown={handleExampleKeyDown}
+                            placeholder="예문 (선택) — 오른쪽 돋보기로 AI 생성"
+                            style={{
+                              boxSizing: 'border-box',
+                              width: '100%',
+                              minWidth: 0,
+                              padding: '6px 40px 6px 8px',
+                              borderRadius: RADIUS.sm,
+                              border: `1px solid ${COLORS.border}`,
+                              fontStyle: exampleEmpty ? 'italic' : 'normal',
+                            }}
+                            title="Ctrl+S: 예문 AI 제안"
+                          />
+                          <button
+                            type="button"
+                            title="예문 AI 제안 (Ctrl+S)"
+                            aria-label="예문 찾기"
+                            disabled={busyExampleId === id}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => void suggestExample(id)}
+                            style={{
+                              position: 'absolute',
+                              right: 4,
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              width: 32,
+                              height: 30,
+                              padding: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              border: 'none',
+                              borderRadius: RADIUS.sm,
+                              background: busyExampleId === id ? COLORS.border : COLORS.primarySoft,
+                              cursor: busyExampleId === id ? 'wait' : 'pointer',
+                            }}
                           >
-                            <circle cx="11" cy="11" r="7" />
-                            <path d="M20 20 16.65 16.65" />
-                          </svg>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                  {showSetNameColumn ? (
-                    <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
-                      <DraftTextInput
-                        rowId={id}
-                        field="set_name"
-                        value={row.set_name != null ? String(row.set_name) : ''}
-                        cellDraftsRef={cellDraftsRef}
-                        onCommit={syncDraftField}
+                            {busyExampleId === id ? (
+                              <span style={{ fontSize: 14, color: COLORS.textSecondary }}>…</span>
+                            ) : (
+                              <svg
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke={COLORS.accentText}
+                                strokeWidth="2.2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden
+                              >
+                                <circle cx="11" cy="11" r="7" />
+                                <path d="M20 20 16.65 16.65" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                      <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
+                        <DraftTextInput
+                          rowId={id}
+                          field="youtube_url"
+                          type="url"
+                          value={row.youtube_url != null ? String(row.youtube_url) : ''}
+                          cellDraftsRef={cellDraftsRef}
+                          onCommit={syncDraftField}
+                          placeholder="https://youtu.be/…"
+                          style={{
+                            width: '100%',
+                            minWidth: 0,
+                            maxWidth: '100%',
+                            padding: '6px 8px',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${COLORS.border}`,
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
+                        <DraftTextInput
+                          rowId={id}
+                          field="word"
+                          value={row.word != null ? String(row.word) : ''}
+                          cellDraftsRef={cellDraftsRef}
+                          onCommit={syncDraftField}
+                          style={{
+                            width: '100%',
+                            minWidth: 0,
+                            maxWidth: '100%',
+                            padding: '6px 8px',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${COLORS.border}`,
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                      <div
+                        role="gridcell"
+                        style={{ padding: 8, background: meaningEmpty ? COLORS.warningBg : undefined, minWidth: 0 }}
+                      >
+                        <DraftTextInput
+                          rowId={id}
+                          field="meaning"
+                          value={meaning}
+                          cellDraftsRef={cellDraftsRef}
+                          onCommit={syncDraftField}
+                          placeholder={meaningEmpty ? '뜻 입력' : ''}
+                          style={{
+                            width: '100%',
+                            minWidth: 0,
+                            maxWidth: '100%',
+                            padding: '6px 8px',
+                            borderRadius: RADIUS.sm,
+                            border: `1px solid ${meaningEmpty ? COLORS.warning : COLORS.border}`,
+                            boxSizing: 'border-box',
+                          }}
+                        />
+                      </div>
+                      {showImageColumn ? renderImageBlock(id, row) : null}
+                      <div
+                        role="gridcell"
                         style={{
-                          width: '100%',
+                          padding: 8,
+                          color: exampleEmpty ? COLORS.textHint : COLORS.textPrimary,
+                          verticalAlign: 'middle',
                           minWidth: 0,
-                          maxWidth: '100%',
-                          padding: '6px 8px',
-                          borderRadius: RADIUS.sm,
-                          border: `1px solid ${COLORS.border}`,
-                          boxSizing: 'border-box',
                         }}
-                      />
-                    </div>
-                  ) : null}
+                      >
+                        <div style={{ position: 'relative', width: '100%', minWidth: 0 }}>
+                          <DraftTextInput
+                            rowId={id}
+                            field="example_sentence"
+                            value={example}
+                            cellDraftsRef={cellDraftsRef}
+                            onCommit={syncDraftField}
+                            dataRowId={id}
+                            onKeyDown={handleExampleKeyDown}
+                            placeholder="예문 (선택) — 오른쪽 돋보기로 AI 생성"
+                            style={{
+                              boxSizing: 'border-box',
+                              width: '100%',
+                              minWidth: 0,
+                              padding: '6px 40px 6px 8px',
+                              borderRadius: RADIUS.sm,
+                              border: `1px solid ${COLORS.border}`,
+                              fontStyle: exampleEmpty ? 'italic' : 'normal',
+                            }}
+                            title="Ctrl+S: 예문 AI 제안"
+                          />
+                          <button
+                            type="button"
+                            title="예문 AI 제안 (Ctrl+S)"
+                            aria-label="예문 찾기"
+                            disabled={busyExampleId === id}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => void suggestExample(id)}
+                            style={{
+                              position: 'absolute',
+                              right: 4,
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              width: 32,
+                              height: 30,
+                              padding: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              border: 'none',
+                              borderRadius: RADIUS.sm,
+                              background: busyExampleId === id ? COLORS.border : COLORS.primarySoft,
+                              cursor: busyExampleId === id ? 'wait' : 'pointer',
+                            }}
+                          >
+                            {busyExampleId === id ? (
+                              <span style={{ fontSize: 14, color: COLORS.textSecondary }}>…</span>
+                            ) : (
+                              <svg
+                                width="18"
+                                height="18"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke={COLORS.accentText}
+                                strokeWidth="2.2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden
+                              >
+                                <circle cx="11" cy="11" r="7" />
+                                <path d="M20 20 16.65 16.65" />
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                      {showSetNameColumn && !isTypedWord ? (
+                        <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
+                          <DraftTextInput
+                            rowId={id}
+                            field="set_name"
+                            value={row.set_name != null ? String(row.set_name) : ''}
+                            cellDraftsRef={cellDraftsRef}
+                            onCommit={syncDraftField}
+                            style={{
+                              width: '100%',
+                              minWidth: 0,
+                              maxWidth: '100%',
+                              padding: '6px 8px',
+                              borderRadius: RADIUS.sm,
+                              border: `1px solid ${COLORS.border}`,
+                              boxSizing: 'border-box',
+                            }}
+                          />
+                        </div>
+                      ) : null}
+                    </>
+                  )}
                   {showDayColumn ? (
                     <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
                       {dayReadOnly ? (

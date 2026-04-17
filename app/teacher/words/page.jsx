@@ -80,21 +80,29 @@ export default function WordsManagePage() {
 
   /** words에 아직 단어가 없는 세트도 사이드바에 표시 (word_sets 기준) */
   const [wordSetNames, setWordSetNames] = useState([])
+  /** 세트명 → set_type (word | sentence | image) */
+  const [setTypeByName, setSetTypeByName] = useState({})
 
   const loadWordSetNames = useCallback(async () => {
     if (!teacherId) {
       setWordSetNames([])
+      setSetTypeByName({})
       return
     }
-    const { data, error } = await supabase.from('word_sets').select('name').eq('teacher_id', teacherId)
+    const { data, error } = await supabase.from('word_sets').select('name, set_type').eq('teacher_id', teacherId)
     if (error) {
       console.warn('[word_sets]', error.message)
       return
     }
-    const names = [
-      ...new Set((data || []).map((r) => String(r.name || '').trim()).filter(Boolean)),
-    ].sort((a, b) => a.localeCompare(b, 'ko'))
+    const typeMap = {}
+    for (const r of data || []) {
+      const n = String(r.name || '').trim()
+      if (!n) continue
+      typeMap[n] = String(r.set_type || 'word')
+    }
+    const names = Object.keys(typeMap).sort((a, b) => a.localeCompare(b, 'ko'))
     setWordSetNames(names)
+    setSetTypeByName(typeMap)
   }, [teacherId])
 
   const loadWords = useCallback(async () => {
@@ -189,6 +197,15 @@ export default function WordsManagePage() {
     const noExample = words.filter((w) => !w.example_sentence || !String(w.example_sentence).trim()).length
     return { total, noImage, noExample }
   }, [words])
+
+  /** 선택 세트의 word_sets.set_type — 없으면 word. 전체 보기면 테이블은 classic */
+  const tableColumnPreset = useMemo(() => {
+    const sn = setFilter.trim()
+    if (!sn) return 'classic'
+    const t = setTypeByName[sn]
+    if (t === 'sentence' || t === 'image') return t
+    return 'word'
+  }, [setFilter, setTypeByName])
 
   const hasImageWords = useMemo(
     () => words.some((w) => w.image_url && String(w.image_url).trim()),
@@ -333,19 +350,30 @@ export default function WordsManagePage() {
   const handleRowCommit = useCallback(async (row) => {
     if (!teacherId) return
     const id = String(row.id)
-    const word = String(row.word || '').trim()
+    const sn = String(row.set_name || '').trim() || String(setFilter || '').trim() || '토익 기본 단어'
+    const st = setTypeByName[sn] || 'word'
+    let word = String(row.word || '').trim()
     const meaning = String(row.meaning || '').trim()
-    if (!word || !meaning) return
+    const ex = String(row.example_sentence || '').trim()
+    if (st === 'sentence') {
+      if (!ex || !meaning) return
+      if (!word) word = ex.length > 300 ? ex.slice(0, 300) : ex
+    } else if (st === 'image') {
+      if (!word || !meaning) return
+    } else {
+      if (!word || !meaning) return
+    }
 
     const payload = {
       word,
       meaning,
-      example_sentence: String(row.example_sentence || '').trim() || null,
+      example_sentence: ex || null,
       set_name: String(row.set_name || '토익 기본 단어').trim() || '토익 기본 단어',
       day: Math.max(1, parseInt(String(row.day ?? 1), 10) || 1),
       difficulty: normalizeWordDifficulty(row?.difficulty),
       image_url: row.image_url ? String(row.image_url).trim() : null,
       image_source: row.image_url ? String(row.image_source || 'none') : 'none',
+      youtube_url: row.youtube_url != null && String(row.youtube_url).trim() ? String(row.youtube_url).trim() : null,
     }
 
     if (id.startsWith('temp-')) {
@@ -380,7 +408,7 @@ export default function WordsManagePage() {
       }
       flashRowSaveToast(true)
     }
-  }, [teacherId, academyId, flashRowSaveToast])
+  }, [teacherId, academyId, flashRowSaveToast, setTypeByName, setFilter])
 
   const addEmptyRow = () => {
     setWords((prev) => [
@@ -963,6 +991,7 @@ export default function WordsManagePage() {
               onRowCommit={handleRowCommit}
               showDeleteColumn
               onRowDelete={handleRowDelete}
+              columnPreset={tableColumnPreset}
             />
             {loadingMore ? (
               <p style={{ margin: '10px 0 0', fontSize: 13, color: COLORS.textSecondary }}>
@@ -985,6 +1014,9 @@ export default function WordsManagePage() {
         initialSetName={setFilter}
         teacherId={teacherId}
         academyId={academyId}
+        importSetType={
+          setFilter.trim() ? setTypeByName[setFilter.trim()] || 'word' : 'word'
+        }
       />
 
       <NewWordSetModal
@@ -1006,6 +1038,7 @@ export default function WordsManagePage() {
               if (prev.includes(n)) return prev
               return [...prev, n].sort((a, b) => a.localeCompare(b, 'ko'))
             })
+            setSetTypeByName((prev) => ({ ...prev, [n]: st }))
           }
           void loadWordSetNames()
           if (n) {
