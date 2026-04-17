@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import * as XLSX from 'xlsx'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import { parseWordText, normalizeWordDifficulty } from '../utils/parsers'
@@ -12,6 +13,61 @@ const TABS = [
   { id: 'text', label: '단어장 텍스트' },
   { id: 'csv', label: 'CSV / 엑셀' },
 ]
+
+const EXCEL_FILE_NAME = 'tokpass_단어양식.xlsx'
+
+const EXCEL_HEADERS = ['word', 'meaning', 'example_sentence', 'example_ko', 'image_url']
+
+function normalizeExcelHeaderKey(k) {
+  return String(k ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+}
+
+function getExcelCell(row, ...aliases) {
+  const map = new Map()
+  for (const [k, v] of Object.entries(row)) {
+    map.set(normalizeExcelHeaderKey(k), v)
+  }
+  for (const a of aliases) {
+    const key = normalizeExcelHeaderKey(a)
+    if (map.has(key)) {
+      const v = map.get(key)
+      if (v != null && String(v).trim() !== '') return String(v).trim()
+    }
+  }
+  return ''
+}
+
+/** DB 예문 칸 하나에 넣기: 영문 + 한글 예문 줄바꿈 */
+function mergeExampleFields(exampleEn, exampleKo) {
+  const e = String(exampleEn ?? '').trim()
+  const k = String(exampleKo ?? '').trim()
+  if (e && k) return `${e}\n${k}`
+  return e || k || ''
+}
+
+function isPlaceholderImageCell(s) {
+  const t = String(s ?? '').trim()
+  if (!t) return true
+  if (t === '(선택사항)') return true
+  if (/^\(?선택/.test(t)) return true
+  return false
+}
+
+function downloadTokpassExcelTemplate() {
+  const aoa = [
+    EXCEL_HEADERS,
+    ['apple', '사과', 'I ate an apple.', '나는 사과를 먹었다.', '(선택사항)'],
+    ['lend', '빌려주다', 'She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '(선택사항)'],
+  ]
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  ws['!cols'] = [{ wch: 14 }, { wch: 14 }, { wch: 32 }, { wch: 32 }, { wch: 24 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'words')
+  XLSX.writeFile(wb, EXCEL_FILE_NAME)
+}
 
 /**
  * @param {{
@@ -47,6 +103,8 @@ export default function BulkImport({
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [saving, setSaving] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
+  const [excelParseBusy, setExcelParseBusy] = useState(false)
+  const xlsxInputRef = useRef(null)
 
   useEffect(() => {
     if (!open) return
@@ -208,6 +266,70 @@ export default function BulkImport({
     setPreviewRows(updated)
   }
 
+  const buildPreviewFromExcelJson = (jsonRows) => {
+    const stamp = Date.now()
+    const sn = String(setName || '').trim()
+    const d = Math.max(1, parseInt(String(day), 10) || 1)
+    const rows = []
+    let idx = 0
+    for (const raw of jsonRows) {
+      const word = getExcelCell(raw, 'word')
+      if (!word) continue
+      const meaning = getExcelCell(raw, 'meaning')
+      const ex = getExcelCell(raw, 'example_sentence')
+      const ko = getExcelCell(raw, 'example_ko')
+      const imgRaw = getExcelCell(raw, 'image_url')
+      const image_url = isPlaceholderImageCell(imgRaw) ? null : imgRaw
+      rows.push({
+        id: `import-${stamp}-${idx}`,
+        word,
+        meaning,
+        example_sentence: mergeExampleFields(ex, ko),
+        set_name: sn,
+        day: d,
+        image_url,
+        image_source: image_url ? 'upload' : 'none',
+      })
+      idx += 1
+    }
+    return rows
+  }
+
+  const handleXlsxFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (e.target) e.target.value = ''
+    if (!file) return
+    setExcelParseBusy(true)
+    try {
+      const buf = await file.arrayBuffer()
+      const wb = XLSX.read(buf, { type: 'array' })
+      const name = wb.SheetNames[0]
+      if (!name) {
+        alert('시트가 비어 있습니다.')
+        return
+      }
+      const ws = wb.Sheets[name]
+      const jsonRows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false })
+      if (!Array.isArray(jsonRows) || jsonRows.length === 0) {
+        alert('데이터 행이 없습니다. 양식 2행부터 채워 주세요.')
+        return
+      }
+      const rows = buildPreviewFromExcelJson(jsonRows)
+      if (rows.length === 0) {
+        alert('읽을 수 있는 단어(word) 행이 없습니다. 헤더와 열 이름을 확인해 주세요.')
+        return
+      }
+      setPreviewRows(rows)
+      setSelectedIds(new Set(rows.map((r) => String(r.id))))
+      setTab('csv')
+    } catch (err) {
+      console.warn(err)
+      alert(`엑셀을 읽지 못했습니다: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setExcelParseBusy(false)
+    }
+  }
+
   return (
     <div
       role="dialog"
@@ -251,6 +373,64 @@ export default function BulkImport({
             닫기
           </button>
         </div>
+
+        <section
+          aria-label="엑셀 양식"
+          style={{
+            marginBottom: 20,
+            padding: '14px 16px',
+            borderRadius: RADIUS.lg,
+            border: `1px solid ${COLORS.border}`,
+            borderLeft: `4px solid ${COLORS.primary}`,
+            background: COLORS.primarySoft,
+            boxShadow: SHADOW.card,
+          }}
+        >
+          <div style={{ fontSize: 15, fontWeight: 800, color: COLORS.accentText, marginBottom: 6 }}>📥 엑셀 양식 다운로드</div>
+          <p style={{ fontSize: 13, color: COLORS.textSecondary, margin: '0 0 12px', lineHeight: 1.5 }}>
+            양식을 다운받아 채운 후 파일 업로드로 가져오세요
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() => downloadTokpassExcelTemplate()}
+              style={{
+                padding: '10px 18px',
+                borderRadius: RADIUS.md,
+                border: `1px solid ${COLORS.primary}`,
+                background: COLORS.surface,
+                color: COLORS.primaryDark,
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontSize: 14,
+              }}
+            >
+              양식 받기 (.xlsx)
+            </button>
+            <input ref={xlsxInputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={(ev) => void handleXlsxFile(ev)} />
+            <button
+              type="button"
+              disabled={excelParseBusy}
+              onClick={() => xlsxInputRef.current?.click()}
+              style={{
+                padding: '10px 18px',
+                borderRadius: RADIUS.md,
+                border: 'none',
+                background: COLORS.headerGradient,
+                color: COLORS.textOnGreen,
+                fontWeight: 700,
+                cursor: excelParseBusy ? 'wait' : 'pointer',
+                fontSize: 14,
+                opacity: excelParseBusy ? 0.85 : 1,
+              }}
+            >
+              {excelParseBusy ? '읽는 중…' : '파일 업로드 (.xlsx)'}
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: COLORS.textHint, margin: '10px 0 0' }}>
+            컬럼: word · meaning · example_sentence · example_ko · image_url — 업로드 후 아래에서 미리보기·저장할 수 있어요.
+          </p>
+        </section>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           {TABS.map((t) => (
