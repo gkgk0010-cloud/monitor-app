@@ -85,5 +85,19 @@ export interface StudentReportData {
       correctCount: number
       correctRate: number
     }>
+    /** quiz_type output·grammar, 최근 30일 일별 */
+    recentResearchStats: Array<{
+      date: string
+      attempts: number
+      correctCount: number
+      correctRate: number
+    }>
+    /** quiz_type output·grammar, 태그별 누적 */
+    researchTagStats: Array<{
+      tag: string
+      totalCount: number
+      correctCount: number
+      correctRate: number
+    }>
   } | null
 }

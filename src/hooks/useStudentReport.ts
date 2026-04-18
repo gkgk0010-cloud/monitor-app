@@ -466,22 +466,20 @@ async function mergeMatchingModeStats(
   modeStats.matching = m
 }
 
-async function buildToeicDetail(studentId: string): Promise<NonNullable<StudentReportData['toeicDetail']>> {
-  const since = new Date(Date.now() - 30 * 86400000).toISOString()
-  const { data, error } = await supabase
-    .from('answer_logs')
-    .select('created_at, correct, tag')
-    .eq('student_id', studentId)
-    .eq('quiz_type', 'input')
-    .gte('created_at', since)
-    .limit(8000)
-  const recentJokboStats: NonNullable<StudentReportData['toeicDetail']>['recentJokboStats'] = []
-  const tagMap = new Map<string, { tot: number; cor: number }>()
-  if (error || !data?.length) {
-    return { recentJokboStats, tagStats: [] }
-  }
+type AnswerLogToeicRow = {
+  created_at: string | null
+  correct: boolean | null
+  tag: string | null
+  quiz_type: string | null
+}
+
+function aggregateToeicDailyAndTags(rows: AnswerLogToeicRow[]): {
+  recentDaily: Array<{ date: string; attempts: number; correctCount: number; correctRate: number }>
+  tagStats: Array<{ tag: string; totalCount: number; correctCount: number; correctRate: number }>
+} {
   const byDate = new Map<string, { tot: number; cor: number }>()
-  for (const row of data) {
+  const tagMap = new Map<string, { tot: number; cor: number }>()
+  for (const row of rows) {
     const d = row.created_at ? new Date(row.created_at) : new Date()
     const ymd = kstYmd(d)
     const cur = byDate.get(ymd) || { tot: 0, cor: 0 }
@@ -495,21 +493,60 @@ async function buildToeicDetail(studentId: string): Promise<NonNullable<StudentR
     tagMap.set(tag, tm)
   }
   const sortedDates = [...byDate.keys()].sort()
-  for (const date of sortedDates) {
+  const recentDaily = sortedDates.map((date) => {
     const v = byDate.get(date)!
-    recentJokboStats.push({
+    return {
       date,
       attempts: v.tot,
+      correctCount: v.cor,
       correctRate: v.tot ? Math.round((v.cor / v.tot) * 1000) / 10 : 0,
-    })
-  }
+    }
+  })
   const tagStats = [...tagMap.entries()].map(([tag, v]) => ({
     tag,
     totalCount: v.tot,
     correctCount: v.cor,
     correctRate: v.tot ? Math.round((v.cor / v.tot) * 1000) / 10 : 0,
   }))
-  return { recentJokboStats, tagStats }
+  return { recentDaily, tagStats }
+}
+
+async function buildToeicDetail(studentId: string): Promise<NonNullable<StudentReportData['toeicDetail']>> {
+  const since = new Date(Date.now() - 30 * 86400000).toISOString()
+  const empty: NonNullable<StudentReportData['toeicDetail']> = {
+    recentJokboStats: [],
+    tagStats: [],
+    recentResearchStats: [],
+    researchTagStats: [],
+  }
+  const { data, error } = await supabase
+    .from('answer_logs')
+    .select('created_at, correct, tag, quiz_type')
+    .eq('student_id', studentId)
+    .in('quiz_type', ['input', 'output', 'grammar'])
+    .gte('created_at', since)
+    .limit(8000)
+  if (error || !data?.length) {
+    return empty
+  }
+  const rows = data as AnswerLogToeicRow[]
+  const inputRows = rows.filter((r) => r.quiz_type === 'input')
+  const researchRows = rows.filter((r) => r.quiz_type === 'output' || r.quiz_type === 'grammar')
+
+  const jokboAgg = aggregateToeicDailyAndTags(inputRows)
+  const recentJokboStats: NonNullable<StudentReportData['toeicDetail']>['recentJokboStats'] =
+    jokboAgg.recentDaily.map(({ date, attempts, correctRate }) => ({ date, attempts, correctRate }))
+
+  const researchAgg = aggregateToeicDailyAndTags(researchRows)
+  const recentResearchStats = researchAgg.recentDaily
+  const researchTagStats = researchAgg.tagStats
+
+  return {
+    recentJokboStats,
+    tagStats: jokboAgg.tagStats,
+    recentResearchStats,
+    researchTagStats,
+  }
 }
 
 async function loadReport(rawStudentId: string): Promise<StudentReportData> {

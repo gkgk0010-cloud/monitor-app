@@ -200,6 +200,14 @@ export default function StudentReportLayer({
       ? [...data.toeicDetail.tagStats].sort((a, b) => a.correctRate - b.correctRate).slice(0, 5)
       : [];
 
+    const researchRows = data.toeicDetail?.recentResearchStats
+      ? [...data.toeicDetail.recentResearchStats].sort((a, b) => b.date.localeCompare(a.date))
+      : [];
+
+    const researchTagWeak = data.toeicDetail?.researchTagStats
+      ? [...data.toeicDetail.researchTagStats].sort((a, b) => a.correctRate - b.correctRate).slice(0, 5)
+      : [];
+
     const summaryLine = hasRoutine && totalDays
       ? `현재 루틴 ${curDay}/${totalDays} DAY 진행 중, 평균 성취도 ${avgDayScore}%`
       : `배정된 활성 루틴이 없습니다. 기록된 평균 DAY 점수는 ${avgDayScore}%입니다.`;
@@ -374,49 +382,112 @@ export default function StudentReportLayer({
         {data.isToeic && data.toeicDetail && (
           <section style={s.section} className="sr-section-toeic">
             <h3 style={s.h3}>📘 토익 상세</h3>
-            <h4 style={s.h4}>최근 30일 족보</h4>
-            <div style={s.tableWrap} className="sr-table-wrap-print">
-              <table style={s.table} className="sr-table-toeic">
-                <thead>
-                  <tr>
-                    <th style={s.th}>날짜</th>
-                    <th style={s.th}>시도</th>
-                    <th style={s.th}>정답률</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jokboRows.map((row) => (
-                    <tr key={row.date}>
-                      <td style={s.td}>{row.date}</td>
-                      <td style={s.td}>{row.attempts}</td>
-                      <td style={s.td}>{row.correctRate}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
 
-            <h4 style={s.h4}>태그별 누적 (약점 TOP 5)</h4>
-            <div style={s.tableWrap} className="sr-table-wrap-print">
-              <table style={s.table} className="sr-table-toeic">
-                <thead>
-                  <tr>
-                    <th style={s.th}>태그</th>
-                    <th style={s.th}>시도</th>
-                    <th style={s.th}>정답률</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tagWeak.map((row) => (
-                    <tr key={row.tag}>
-                      <td style={s.td}>{row.tag}</td>
-                      <td style={s.td}>{row.totalCount}</td>
-                      <td style={s.td}>{row.correctRate}%</td>
+            <h4 style={s.toeicBlockTitle}>━━━ 족보 ━━━</h4>
+            <h5 style={s.h5}>최근 30일 족보</h5>
+            {jokboRows.length === 0 ? (
+              <p style={s.muted}>기록이 없습니다.</p>
+            ) : (
+              <div style={s.tableWrap} className="sr-table-wrap-print">
+                <table style={s.table} className="sr-table-toeic">
+                  <thead>
+                    <tr>
+                      <th style={s.th}>날짜</th>
+                      <th style={s.th}>시도</th>
+                      <th style={s.th}>정답률</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {jokboRows.map((row) => (
+                      <tr key={row.date}>
+                        <td style={s.td}>{row.date}</td>
+                        <td style={s.td}>{row.attempts}</td>
+                        <td style={s.td}>{row.correctRate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <h5 style={s.h5}>태그별 누적 (약점 TOP 5)</h5>
+            {tagWeak.length === 0 ? (
+              <p style={s.muted}>기록이 없습니다.</p>
+            ) : (
+              <div style={s.tableWrap} className="sr-table-wrap-print">
+                <table style={s.table} className="sr-table-toeic">
+                  <thead>
+                    <tr>
+                      <th style={s.th}>태그</th>
+                      <th style={s.th}>시도</th>
+                      <th style={s.th}>정답률</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tagWeak.map((row) => (
+                      <tr key={row.tag}>
+                        <td style={s.td}>{row.tag}</td>
+                        <td style={s.td}>{row.totalCount}</td>
+                        <td style={s.td}>{row.correctRate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <h4 style={s.toeicBlockTitle}>━━━ 오늘의연구 ━━━</h4>
+            <h5 style={s.h5}>최근 30일 오늘의연구</h5>
+            {researchRows.length === 0 ? (
+              <p style={s.muted}>기록이 없습니다.</p>
+            ) : (
+              <div style={s.tableWrap} className="sr-table-wrap-print">
+                <table style={s.table} className="sr-table-toeic">
+                  <thead>
+                    <tr>
+                      <th style={s.th}>날짜</th>
+                      <th style={s.th}>시도</th>
+                      <th style={s.th}>정답률</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {researchRows.map((row) => (
+                      <tr key={row.date}>
+                        <td style={s.td}>{row.date}</td>
+                        <td style={s.td}>{row.attempts}</td>
+                        <td style={s.td}>{row.correctRate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <h5 style={s.h5}>태그별 누적 (약점 TOP 5)</h5>
+            {researchTagWeak.length === 0 ? (
+              <p style={s.muted}>기록이 없습니다.</p>
+            ) : (
+              <div style={s.tableWrap} className="sr-table-wrap-print">
+                <table style={s.table} className="sr-table-toeic">
+                  <thead>
+                    <tr>
+                      <th style={s.th}>태그</th>
+                      <th style={s.th}>시도</th>
+                      <th style={s.th}>정답률</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {researchTagWeak.map((row) => (
+                      <tr key={row.tag}>
+                        <td style={s.td}>{row.tag}</td>
+                        <td style={s.td}>{row.totalCount}</td>
+                        <td style={s.td}>{row.correctRate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         )}
       </>
@@ -685,6 +756,23 @@ const s = {
   h4: {
     margin: '16px 0 10px',
     fontSize: '0.9rem',
+    fontWeight: 600,
+    color: '#4b5563',
+  },
+  /** 토익 상세: 족보 / 오늘의연구 구분 */
+  toeicBlockTitle: {
+    margin: '18px 0 12px',
+    padding: '10px 0 8px',
+    borderTop: '1px solid #e5e7eb',
+    borderBottom: '1px solid #e5e7eb',
+    fontSize: '0.88rem',
+    fontWeight: 700,
+    color: '#1f2937',
+    letterSpacing: '0.02em',
+  },
+  h5: {
+    margin: '12px 0 8px',
+    fontSize: '0.85rem',
     fontWeight: 600,
     color: '#4b5563',
   },
