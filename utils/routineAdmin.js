@@ -29,8 +29,9 @@ export function parseRestDayNumbers(input, totalDays) {
 
 /**
  * 비휴일 day_number 한 개에 대한 routine_tasks 행 (order_index 순)
+ * @param {{ task_type: string, is_required: boolean }[]} [learningModeTasks] 세트 available_modes 기반 학습 모드 태스크 (암기·리콜 등)
  */
-export function buildTasksForStudyDay(dayNumber, reviewOffsets) {
+export function buildTasksForStudyDay(dayNumber, reviewOffsets, learningModeTasks = []) {
   const tasks = []
   let order = 0
   tasks.push({
@@ -41,6 +42,17 @@ export function buildTasksForStudyDay(dayNumber, reviewOffsets) {
     order_index: order++,
     is_available: true,
   })
+  for (const m of learningModeTasks) {
+    tasks.push({
+      task_type: m.task_type,
+      target_day: dayNumber,
+      review_round: null,
+      pass_score: null,
+      order_index: order++,
+      is_available: true,
+      is_required: m.is_required,
+    })
+  }
   for (let i = 0; i < reviewOffsets.length; i++) {
     const off = reviewOffsets[i]
     if (dayNumber > off) {
@@ -99,6 +111,7 @@ export async function fetchTeacherRoutinesWithStats(teacherId) {
 
 /**
  * routines 1행 + routine_days N행 + routine_tasks 자동 생성
+ * @param {{ task_type: string, is_required: boolean }[]} [learningModeTasks] 세트 필수/선택 학습 모드 (routine_tasks.task_type)
  * @returns {{ ok: boolean, error?: string, routineId?: string }}
  */
 export async function createRoutineWithDaysAndTasks({
@@ -108,9 +121,14 @@ export async function createRoutineWithDaysAndTasks({
   totalDays,
   reviewOffsets,
   restDayNumbers,
+  learningModeTasks = [],
+  /** @type {string[]} 복습 방식 키 (예: ['test','reading']) */
+  reviewModes = ['test'],
 }) {
   const td = Math.max(1, parseInt(String(totalDays), 10) || 1)
   const restSet = new Set(restDayNumbers.filter((d) => d >= 1 && d <= td))
+
+  const review_modes = Array.isArray(reviewModes) && reviewModes.length > 0 ? reviewModes : ['test']
 
   const { data: routineRow, error: e1 } = await supabase
     .from('routines')
@@ -119,6 +137,7 @@ export async function createRoutineWithDaysAndTasks({
       title: String(title).trim(),
       set_name: String(setName).trim(),
       total_days: td,
+      review_modes,
     })
     .select('id')
     .single()
@@ -153,18 +172,24 @@ export async function createRoutineWithDaysAndTasks({
     for (const day of sortedDays) {
       if (day.is_rest) continue
       const dn = Number(day.day_number)
-      const taskDefs = buildTasksForStudyDay(dn, reviewOffsets)
+      const taskDefs = buildTasksForStudyDay(dn, reviewOffsets, learningModeTasks)
       if (taskDefs.length === 0) continue
 
-      const taskRows = taskDefs.map((t) => ({
-        routine_day_id: day.id,
-        task_type: t.task_type,
-        target_day: t.target_day,
-        review_round: t.review_round,
-        pass_score: t.pass_score,
-        order_index: t.order_index,
-        is_available: t.is_available,
-      }))
+      const taskRows = taskDefs.map((t) => {
+        const row = {
+          routine_day_id: day.id,
+          task_type: t.task_type,
+          target_day: t.target_day,
+          review_round: t.review_round,
+          pass_score: t.pass_score,
+          order_index: t.order_index,
+          is_available: t.is_available,
+        }
+        if (Object.prototype.hasOwnProperty.call(t, 'is_required')) {
+          row.is_required = t.is_required
+        }
+        return row
+      })
 
       const { error: e3 } = await supabase.from('routine_tasks').insert(taskRows)
       if (e3) throw new Error(e3.message)

@@ -1,87 +1,21 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
-
-/**
- * DB·단어앱과 맞출 모드 키 (영문 스네이크).
- * 저장 시 선택 순서는 이 배열 순서를 따름. test = 앱의 객관식 테스트(vocabtest).
- */
-const ALL_MODE_KEYS = [
-  'flashcard',
-  'recall',
-  'matching',
-  'writing',
-  'reading',
-  'readAloud',
-  'shadowing',
-  'listening',
-  'scramble',
-  'dictation',
-  'composition',
-  'image',
-  'test',
-]
-
-const MODE_LABELS = {
-  flashcard: '암기',
-  recall: '리콜',
-  matching: '매칭',
-  writing: '라이팅',
-  reading: '직독직해',
-  readAloud: '낭독',
-  shadowing: '쉐도잉',
-  listening: '집중듣기',
-  scramble: '스크램블',
-  dictation: '딕테이션',
-  composition: '입영작',
-  image: '이미지',
-  test: '테스트',
-}
-
-/** 세트 타입별 기본 체크 5개 (순서 고정, test는 항상 마지막) */
-const DEFAULT_MODES_BY_TYPE = {
-  word: ['flashcard', 'recall', 'matching', 'writing', 'test'],
-  sentence: ['reading', 'readAloud', 'shadowing', 'scramble', 'test'],
-  image: ['image', 'flashcard', 'recall', 'matching', 'test'],
-}
+import {
+  ALL_MODE_KEYS,
+  initModesStateForType,
+  buildAvailableModesJson,
+  defaultRequiredForBaseKeys,
+} from '../utils/learningModes'
+import LearningModesPicker from './LearningModesPicker'
 
 const SET_TYPE_OPTIONS = [
-  {
-    id: 'word',
-    label: '단어 세트',
-    hint: 'word + meaning 중심',
-  },
-  {
-    id: 'sentence',
-    label: '문장 세트',
-    hint: 'example_sentence 중심',
-  },
-  {
-    id: 'image',
-    label: '이미지 세트',
-    hint: 'image_url 중심',
-  },
+  { id: 'word', label: '단어 세트', hint: 'word + meaning 중심' },
+  { id: 'sentence', label: '문장 세트', hint: 'example_sentence 중심' },
+  { id: 'image', label: '이미지 세트', hint: 'image_url 중심' },
 ]
-
-function modesRecordFromDefaults(setType) {
-  const defaults = new Set(DEFAULT_MODES_BY_TYPE[setType] || DEFAULT_MODES_BY_TYPE.word)
-  const o = {}
-  for (const k of ALL_MODE_KEYS) {
-    o[k] = defaults.has(k)
-  }
-  return o
-}
-
-function baseKeysForType(setType) {
-  return DEFAULT_MODES_BY_TYPE[setType] || DEFAULT_MODES_BY_TYPE.word
-}
-
-function extraKeysForType(setType) {
-  const base = new Set(baseKeysForType(setType))
-  return ALL_MODE_KEYS.filter((k) => !base.has(k))
-}
 
 /**
  * @param {{
@@ -97,7 +31,10 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
   const [step, setStep] = useState(1)
   const [setName, setSetName] = useState('')
   const [setType, setSetType] = useState('word')
-  const [modes, setModes] = useState(() => modesRecordFromDefaults('word'))
+  const [modes, setModes] = useState(() => initModesStateForType('word').modes)
+  const [requiredByMode, setRequiredByMode] = useState(() => initModesStateForType('word').requiredByMode)
+  const [passScore, setPassScore] = useState(80)
+  const [maxAttempts, setMaxAttempts] = useState(3)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -105,12 +42,13 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
     setStep(1)
     setSetName('')
     setSetType('word')
-    setModes(modesRecordFromDefaults('word'))
+    const init = initModesStateForType('word')
+    setModes(init.modes)
+    setRequiredByMode(init.requiredByMode)
+    setPassScore(init.passScore)
+    setMaxAttempts(init.maxAttempts)
     setSaving(false)
   }, [open])
-
-  const baseKeys = useMemo(() => baseKeysForType(setType), [setType])
-  const extraKeys = useMemo(() => extraKeysForType(setType), [setType])
 
   const goNext = () => {
     const n = String(setName || '').trim()
@@ -122,31 +60,37 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
       alert('이미 같은 이름의 세트가 있습니다. 다른 이름을 사용해 주세요.')
       return
     }
-    setModes(modesRecordFromDefaults(setType))
+    const init = initModesStateForType(setType)
+    setModes(init.modes)
+    setRequiredByMode(init.requiredByMode)
+    setPassScore(init.passScore)
+    setMaxAttempts(init.maxAttempts)
     setStep(2)
   }
 
-  const toggleMode = (key) => {
-    setModes((prev) => ({ ...prev, [key]: !prev[key] }))
+  const handleToggleMode = (key) => {
+    setModes((prev) => {
+      const next = { ...prev, [key]: !prev[key] }
+      if (next[key]) {
+        setRequiredByMode((r) => ({
+          ...r,
+          [key]: defaultRequiredForBaseKeys(setType)[key] ?? false,
+        }))
+      }
+      return next
+    })
   }
 
   const handleComplete = async () => {
     const n = String(setName || '').trim()
     const selected = ALL_MODE_KEYS.filter((k) => modes[k])
-    const newSetData = {
-      name: n,
-      set_type: setType,
-      available_modes: selected,
-      teacher_id: teacherId,
-    }
-    console.log('완료 클릭', newSetData)
+    const availableModes = buildAvailableModesJson(modes, requiredByMode, passScore, maxAttempts)
 
     if (selected.length === 0) {
       alert('학습 모드를 하나 이상 선택해 주세요.')
       return
     }
     if (!teacherId) {
-      console.warn('[NewWordSetModal] teacherId 없음 — 로그인·선생님 정보를 확인해 주세요.')
       alert('선생님 정보를 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.')
       return
     }
@@ -158,18 +102,13 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
           teacher_id: teacherId,
           name: n,
           set_type: setType,
-          available_modes: selected,
+          available_modes: availableModes,
         })
         .select('id')
         .maybeSingle()
 
       if (error) {
-        console.error('[word_sets] insert 실패', {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-        })
+        console.error('[word_sets] insert 실패', error)
         if (error.code === '42P01' || /relation ["']?word_sets["']? does not exist/i.test(String(error.message))) {
           alert(
             'word_sets 테이블을 찾을 수 없습니다.\nSupabase에 supabase/snippets/word_sets.sql 스키마를 적용했는지 확인해 주세요.',
@@ -182,8 +121,21 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
         return
       }
 
-      console.log('[word_sets] insert 성공', data)
-      /** 모달을 먼저 닫아야 부모 onSaved 예외 시에도 화면이 안 남습니다 */
+      const wordSetId = data?.id
+      if (wordSetId && modes.test) {
+        const { error: e2 } = await supabase.from('vocab_test_settings').upsert(
+          {
+            word_set_id: wordSetId,
+            pass_score: Math.min(100, Math.max(0, Math.round(Number(passScore) || 80))),
+            max_attempts: Math.max(1, Math.round(Number(maxAttempts) || 3)),
+          },
+          { onConflict: 'word_set_id' },
+        )
+        if (e2) {
+          console.warn('[vocab_test_settings] 저장 실패 (테이블·RLS 확인):', e2.message)
+        }
+      }
+
       onClose()
       try {
         onSaved?.({ name: n, setType })
@@ -216,7 +168,7 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
     >
       <div
         style={{
-          width: 'min(440px, 100%)',
+          width: 'min(480px, 100%)',
           maxHeight: '92vh',
           overflow: 'auto',
           background: COLORS.surface,
@@ -271,13 +223,7 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
                       cursor: 'pointer',
                     }}
                   >
-                    <input
-                      type="radio"
-                      name="set-type"
-                      checked={active}
-                      onChange={() => setSetType(opt.id)}
-                      style={{ marginTop: 3 }}
-                    />
+                    <input type="radio" name="set-type" checked={active} onChange={() => setSetType(opt.id)} style={{ marginTop: 3 }} />
                     <span>
                       <span style={{ fontWeight: 700, color: COLORS.textPrimary }}>{opt.label}</span>
                       <span style={{ display: 'block', fontSize: 12, color: COLORS.textSecondary, marginTop: 4 }}>{opt.hint}</span>
@@ -328,54 +274,18 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
               세트: <strong style={{ color: COLORS.textPrimary }}>{String(setName).trim() || '—'}</strong>
             </p>
 
-            <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.accentText, marginBottom: 10 }}>기본 (자동 추천)</div>
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '10px 14px',
-                marginBottom: 18,
-                padding: '12px 14px',
-                borderRadius: RADIUS.md,
-                border: `1px solid ${COLORS.border}`,
-                background: COLORS.primarySoft,
-              }}
-            >
-              {baseKeys.map((key) => (
-                <label key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
-                  <input type="checkbox" checked={!!modes[key]} onChange={() => toggleMode(key)} />
-                  {MODE_LABELS[key]}
-                </label>
-              ))}
-            </div>
-
-            <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.accentText, marginBottom: 10 }}>추가 선택</div>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '10px 12px',
-                marginBottom: 12,
-                padding: '12px 14px',
-                borderRadius: RADIUS.md,
-                border: `1px solid ${COLORS.border}`,
-                background: COLORS.bg,
-              }}
-            >
-              {extraKeys.map((key) => (
-                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
-                  <input type="checkbox" checked={!!modes[key]} onChange={() => toggleMode(key)} />
-                  <span>
-                    {MODE_LABELS[key]}
-                    {key === 'image' ? (
-                      <span style={{ display: 'block', fontSize: 11, color: COLORS.textHint, marginTop: 2 }}>
-                        {hasImageWords ? '단어에 이미지가 있으면 앱에서 사용할 수 있어요.' : 'image_url이 있는 단어가 있을 때 앱에서 활성화돼요.'}
-                      </span>
-                    ) : null}
-                  </span>
-                </label>
-              ))}
-            </div>
+            <LearningModesPicker
+              setType={setType}
+              modes={modes}
+              requiredByMode={requiredByMode}
+              passScore={passScore}
+              maxAttempts={maxAttempts}
+              hasImageWords={hasImageWords}
+              onToggleMode={handleToggleMode}
+              onRequiredChange={(key, required) => setRequiredByMode((r) => ({ ...r, [key]: required }))}
+              onPassScoreChange={setPassScore}
+              onMaxAttemptsChange={setMaxAttempts}
+            />
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 22, gap: 10, flexWrap: 'wrap' }}>
               <button

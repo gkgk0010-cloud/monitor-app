@@ -1,70 +1,21 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import { assignDaysEqual, assignDaysChunk } from '../utils/dayAssign'
-
-const ALL_MODE_KEYS = [
-  'flashcard',
-  'recall',
-  'matching',
-  'writing',
-  'reading',
-  'readAloud',
-  'shadowing',
-  'listening',
-  'scramble',
-  'dictation',
-  'composition',
-  'image',
-  'test',
-]
-
-const MODE_LABELS = {
-  flashcard: '암기',
-  recall: '리콜',
-  matching: '매칭',
-  writing: '라이팅',
-  reading: '직독직해',
-  readAloud: '낭독',
-  shadowing: '쉐도잉',
-  listening: '집중듣기',
-  scramble: '스크램블',
-  dictation: '딕테이션',
-  composition: '입영작',
-  image: '이미지',
-  test: '테스트',
-}
-
-const DEFAULT_MODES_BY_TYPE = {
-  word: ['flashcard', 'recall', 'matching', 'writing', 'test'],
-  sentence: ['reading', 'readAloud', 'shadowing', 'scramble', 'test'],
-  image: ['image', 'flashcard', 'recall', 'matching', 'test'],
-}
+import {
+  ALL_MODE_KEYS,
+  parseAvailableModes,
+  buildAvailableModesJson,
+  defaultRequiredForBaseKeys,
+} from '../utils/learningModes'
+import LearningModesPicker from './LearningModesPicker'
 
 const SET_TYPE_LABELS = {
   word: '단어 세트',
   sentence: '문장 세트',
   image: '이미지 세트',
-}
-
-function modesRecordFromKeys(selectedKeys) {
-  const set = new Set(selectedKeys || [])
-  const o = {}
-  for (const k of ALL_MODE_KEYS) {
-    o[k] = set.has(k)
-  }
-  return o
-}
-
-function baseKeysForType(setType) {
-  return DEFAULT_MODES_BY_TYPE[setType] || DEFAULT_MODES_BY_TYPE.word
-}
-
-function extraKeysForType(setType) {
-  const base = new Set(baseKeysForType(setType))
-  return ALL_MODE_KEYS.filter((k) => !base.has(k))
 }
 
 /**
@@ -80,8 +31,12 @@ function extraKeysForType(setType) {
  */
 export default function SetSettingsModal({ open, onClose, setName, teacherId, inferredSetType, hasImageWords, onSaved }) {
   const [loading, setLoading] = useState(true)
+  const [wordSetId, setWordSetId] = useState(null)
   const [setType, setSetType] = useState('word')
-  const [modes, setModes] = useState(() => modesRecordFromKeys([]))
+  const [modes, setModes] = useState({})
+  const [requiredByMode, setRequiredByMode] = useState({})
+  const [passScore, setPassScore] = useState(80)
+  const [maxAttempts, setMaxAttempts] = useState(3)
   const [dayMode, setDayMode] = useState('equal')
   const [totalDays, setTotalDays] = useState(7)
   const [perDay, setPerDay] = useState(20)
@@ -91,18 +46,16 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
   const [savingModes, setSavingModes] = useState(false)
   const [hint, setHint] = useState(null)
 
-  const baseKeys = useMemo(() => baseKeysForType(setType), [setType])
-  const extraKeys = useMemo(() => extraKeysForType(setType), [setType])
-
   const load = useCallback(async () => {
     const sn = String(setName || '').trim()
     if (!sn || !teacherId) return
     setLoading(true)
     setHint(null)
     setHasDayPreview(false)
+    setWordSetId(null)
     try {
       const [{ data: ws, error: wsErr }, { data: wordRows, error: wErr }] = await Promise.all([
-        supabase.from('word_sets').select('set_type, available_modes').eq('teacher_id', teacherId).eq('name', sn).maybeSingle(),
+        supabase.from('word_sets').select('id, set_type, available_modes').eq('teacher_id', teacherId).eq('name', sn).maybeSingle(),
         supabase
           .from('words')
           .select('id, word, meaning, example_sentence, day, difficulty, image_url, image_source, youtube_url')
@@ -117,10 +70,22 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
       if (st !== 'sentence' && st !== 'image') st = 'word'
       setSetType(st)
 
-      const am = ws?.available_modes
-      let keys = Array.isArray(am) ? am.map((x) => String(x).trim()).filter(Boolean) : []
-      if (keys.length === 0) keys = baseKeysForType(st)
-      setModes(modesRecordFromKeys(keys))
+      const parsed = parseAvailableModes(ws?.available_modes, st)
+      setModes(parsed.modes)
+      setRequiredByMode(parsed.requiredByMode)
+      let ps = parsed.passScore
+      let ma = parsed.maxAttempts
+      const wid = ws?.id ? String(ws.id) : null
+      setWordSetId(wid)
+      if (wid) {
+        const { data: vts } = await supabase.from('vocab_test_settings').select('pass_score, max_attempts').eq('word_set_id', wid).maybeSingle()
+        if (vts) {
+          if (vts.pass_score != null) ps = Math.min(100, Math.max(0, Number(vts.pass_score)))
+          if (vts.max_attempts != null) ma = Math.max(1, Number(vts.max_attempts))
+        }
+      }
+      setPassScore(ps)
+      setMaxAttempts(ma)
 
       const list = (wordRows || []).map((r) => ({
         id: String(r.id),
@@ -144,8 +109,17 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
     void load()
   }, [open, load])
 
-  const toggleMode = (key) => {
-    setModes((prev) => ({ ...prev, [key]: !prev[key] }))
+  const handleToggleMode = (key) => {
+    setModes((prev) => {
+      const next = { ...prev, [key]: !prev[key] }
+      if (next[key]) {
+        setRequiredByMode((r) => ({
+          ...r,
+          [key]: defaultRequiredForBaseKeys(setType)[key] ?? false,
+        }))
+      }
+      return next
+    })
   }
 
   const applyDayPreview = () => {
@@ -236,6 +210,7 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
       return
     }
     const sn = String(setName || '').trim()
+    const availableModes = buildAvailableModesJson(modes, requiredByMode, passScore, maxAttempts)
     setSavingModes(true)
     try {
       const { error } = await supabase.from('word_sets').upsert(
@@ -243,11 +218,27 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
           teacher_id: teacherId,
           name: sn,
           set_type: setType,
-          available_modes: selected,
+          available_modes: availableModes,
         },
         { onConflict: 'teacher_id,name' },
       )
       if (error) throw error
+
+      const { data: row } = await supabase.from('word_sets').select('id').eq('teacher_id', teacherId).eq('name', sn).maybeSingle()
+      const wid = row?.id ? String(row.id) : wordSetId
+
+      if (wid && modes.test) {
+        const { error: e2 } = await supabase.from('vocab_test_settings').upsert(
+          {
+            word_set_id: wid,
+            pass_score: Math.min(100, Math.max(0, Math.round(Number(passScore) || 80))),
+            max_attempts: Math.max(1, Math.round(Number(maxAttempts) || 3)),
+          },
+          { onConflict: 'word_set_id' },
+        )
+        if (e2) console.warn('[vocab_test_settings]', e2.message)
+      }
+
       setHint('학습 모드가 저장되었습니다.')
       onSaved?.()
     } catch (e) {
@@ -396,55 +387,21 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
               학습 모드 재설정
             </div>
             <p style={{ fontSize: 12, color: COLORS.textSecondary, margin: '0 0 10px' }}>
-              새 세트 만들기 2단계와 동일하게 선택합니다.
+              새 세트 만들기 2단계와 동일합니다. 필수/선택과 테스트 통과 기준이 `word_sets`·`vocab_test_settings`에 저장됩니다.
             </p>
-            <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.accentText, marginBottom: 8 }}>기본 (자동 추천)</div>
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '10px 14px',
-                marginBottom: 14,
-                padding: '12px 14px',
-                borderRadius: RADIUS.md,
-                border: `1px solid ${COLORS.border}`,
-                background: COLORS.primarySoft,
-              }}
-            >
-              {baseKeys.map((key) => (
-                <label key={key} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
-                  <input type="checkbox" checked={!!modes[key]} onChange={() => toggleMode(key)} />
-                  {MODE_LABELS[key]}
-                </label>
-              ))}
-            </div>
-            <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.accentText, marginBottom: 8 }}>추가 선택</div>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '10px 12px',
-                marginBottom: 16,
-                padding: '12px 14px',
-                borderRadius: RADIUS.md,
-                border: `1px solid ${COLORS.border}`,
-                background: COLORS.bg,
-              }}
-            >
-              {extraKeys.map((key) => (
-                <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
-                  <input type="checkbox" checked={!!modes[key]} onChange={() => toggleMode(key)} />
-                  <span>
-                    {MODE_LABELS[key]}
-                    {key === 'image' ? (
-                      <span style={{ display: 'block', fontSize: 11, color: COLORS.textHint, marginTop: 2 }}>
-                        {hasImageWords ? '단어에 이미지가 있으면 앱에서 사용할 수 있어요.' : 'image_url이 있는 단어가 있을 때 앱에서 활성화돼요.'}
-                      </span>
-                    ) : null}
-                  </span>
-                </label>
-              ))}
-            </div>
+
+            <LearningModesPicker
+              setType={setType}
+              modes={modes}
+              requiredByMode={requiredByMode}
+              passScore={passScore}
+              maxAttempts={maxAttempts}
+              hasImageWords={hasImageWords}
+              onToggleMode={handleToggleMode}
+              onRequiredChange={(key, required) => setRequiredByMode((r) => ({ ...r, [key]: required }))}
+              onPassScoreChange={setPassScore}
+              onMaxAttemptsChange={setMaxAttempts}
+            />
 
             {hint ? (
               <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600, color: COLORS.accentText }}>{hint}</p>
