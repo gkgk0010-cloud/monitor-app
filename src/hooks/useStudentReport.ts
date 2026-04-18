@@ -13,15 +13,20 @@ function kstYmd(d: Date = new Date()): string {
  * KST 기준 "오늘" 00:00:00.000 ~ 23:59:59.999 에 해당하는 UTC 구간 (ISO 문자열).
  * answer_logs.created_at (timestamptz)과 비교할 때 로컬 문자열 경로보다 안정적이다.
  */
-function kstTodayRangeUtc(now: Date = new Date()): { startIso: string; endIso: string } {
-  const kstOffsetMs = 9 * 60 * 60 * 1000
-  const nowKstMs = now.getTime() + kstOffsetMs
-  const kstDate = new Date(nowKstMs)
-  const y = kstDate.getUTCFullYear()
-  const m = kstDate.getUTCMonth()
-  const d = kstDate.getUTCDate()
-  const startUtcMs = Date.UTC(y, m, d, 0, 0, 0) - kstOffsetMs
-  const endUtcMs = Date.UTC(y, m, d, 23, 59, 59, 999) - kstOffsetMs
+function kstTodayRangeUtc(): { startIso: string; endIso: string } {
+  const KST_OFFSET_MS = 9 * 60 * 60 * 1000
+
+  const nowUtcMs = Date.now()
+  const kstNowMs = nowUtcMs + KST_OFFSET_MS
+  const kstNow = new Date(kstNowMs)
+
+  const y = kstNow.getUTCFullYear()
+  const m = kstNow.getUTCMonth()
+  const d = kstNow.getUTCDate()
+
+  const startUtcMs = Date.UTC(y, m, d, 0, 0, 0, 0) - KST_OFFSET_MS
+  const endUtcMs = Date.UTC(y, m, d, 23, 59, 59, 999) - KST_OFFSET_MS
+
   return {
     startIso: new Date(startUtcMs).toISOString(),
     endIso: new Date(endUtcMs).toISOString(),
