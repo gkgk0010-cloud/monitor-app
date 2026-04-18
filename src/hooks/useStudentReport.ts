@@ -56,11 +56,32 @@ function pickStudentFields(row: StudentRow, studentId: string): StudentReportDat
   }
 }
 
+// students는 월별 스냅샷(__sheet_name=User_Profile_YYYY-MM)이
+// 쌓이는 구조라 같은 User ID에 여러 행이 존재할 수 있음.
+// 최신 월의 프로필 1건만 사용.
 async function fetchStudentByUserId(studentId: string): Promise<{ row: StudentRow | null; err: string | null }> {
-  const q1 = await supabase.from('students').select('*').eq('User ID', studentId).maybeSingle()
+  const q1 = await supabase
+    .from('students')
+    .select('*')
+    .eq('User ID', studentId)
+    .order('__sheet_name', { ascending: false, nullsFirst: false })
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle()
   if (!q1.error && q1.data) return { row: q1.data as StudentRow, err: null }
-  const q2 = await supabase.from('students').select('*').filter('"User ID"', 'eq', studentId).maybeSingle()
+
+  const q2 = await supabase
+    .from('students')
+    .select('*')
+    .filter('"User ID"', 'eq', studentId)
+    .order('__sheet_name', { ascending: false, nullsFirst: false })
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle()
   if (!q2.error && q2.data) return { row: q2.data as StudentRow, err: null }
+
+  if (!q1.error && !q2.error) return { row: null, err: null }
+
   const errMsg = q1.error?.message || q2.error?.message || '학생을 찾을 수 없습니다.'
   return { row: null, err: errMsg }
 }
@@ -437,10 +458,22 @@ async function buildToeicDetail(studentId: string): Promise<NonNullable<StudentR
 
 async function loadReport(studentId: string): Promise<StudentReportData> {
   const { row, err } = await fetchStudentByUserId(studentId)
-  if (err || !row) {
-    throw new Error(err || '학생 정보를 불러올 수 없습니다.')
+  if (err) {
+    throw new Error(err)
   }
-  const student = pickStudentFields(row, studentId)
+  const student: StudentReportData['student'] = row
+    ? pickStudentFields(row, studentId)
+    : (() => {
+        console.warn('students 테이블에서 학생 찾지 못함: ' + studentId)
+        return {
+          id: studentId,
+          name: studentId,
+          className: '',
+          score: '0',
+          academyId: null,
+          teacherId: null,
+        }
+      })()
 
   const [isToeic, todayAns, topWrong, rep] = await Promise.all([
     fetchTeacherToeicFlags(student.teacherId),
