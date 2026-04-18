@@ -12,6 +12,8 @@ import {
   fetchStudentRoutineSummariesForTeacher,
   routineLastStudyParts,
 } from '@/utils/teacherQueries';
+import { useStudentReport } from '@/src/hooks/useStudentReport';
+import StudentReportLayer from './StudentReportLayer';
 
 const COLOR_ORDER = { gold: 0, red: 1, orange: 2, blue: 3, green: 4, purple: 5, white: 6 };
 const MAIN_ZONE_MAX = 30;
@@ -57,9 +59,6 @@ function sortByRecentFirst(rows) {
   return [...(rows || [])].sort((a, b) => getLatestActiveTs(b) - getLatestActiveTs(a));
 }
 
-/** 오늘의 연구 일일 상한 (표시용). 실제 answer_logs는 더 쌓일 수 있음 */
-const DAILY_CAP = 50;
-
 /** 출석/미접속 복사 시 한 번에 붙여넣기 편한 인원 수 (이 이상이면 N차 복사) */
 const COPY_CHUNK_SIZE = 40;
 
@@ -75,15 +74,18 @@ function formatNamesInLines(names, prefix = '· ') {
   return lines;
 }
 
-/** 오늘 푼 문제 수를 최대 DAILY_CAP으로 캡한 표시용 값 (정답/오답·정답률도 비율 유지) */
-function getCappedTodayScore(stats) {
-  if (!stats) return null;
-  const raw = stats.problemsSolved;
-  const displayedCount = Math.min(raw, DAILY_CAP);
-  const displayedCorrect = raw > 0 ? Math.round(displayedCount * stats.correctCount / raw) : stats.correctCount;
-  const displayedWrong = displayedCount - displayedCorrect;
-  const displayedAccuracy = displayedCount > 0 ? Math.round((displayedCorrect / displayedCount) * 100) : stats.accuracyPercent;
-  return { displayedCount, displayedCorrect, displayedWrong, displayedAccuracy };
+/** 한국시간 기준 오늘 날짜 YYYY-MM-DD (족보 일별 통계 키와 맞춤) */
+function kstYmdToday() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+}
+
+/** 루틴 진행률 바 색: 0% 회색, 1~49% 빨강, 50~99% 주황, 100% 초록 */
+function routineProgressFillColor(progress) {
+  const p = Math.min(100, Math.max(0, Number(progress) || 0));
+  if (p <= 0) return '#9ca3af';
+  if (p < 50) return '#ef4444';
+  if (p < 100) return '#ea580c';
+  return '#22c55e';
 }
 
 /** 집중관리 30인 = 최근 활동 순 상위 30명 (문제 풀면 위로 올라옴, 새로 올라오면 순차적으로 내려감). 안전 = 그 외 전원 */
@@ -328,8 +330,7 @@ export default function TeacherMonitorPage() {
   const [legendOpen, setLegendOpen] = useState(false);
   const [copyToast, setCopyToast] = useState(null);
   const [detailStudent, setDetailStudent] = useState(null);
-  const [detailTodayStats, setDetailTodayStats] = useState(null);
-  const [detailStatsLoading, setDetailStatsLoading] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   /** 집중관리존: 10초 후 정답/오답 → 대기 전환을 위해 1초마다 리렌더 */
   const [tick, setTick] = useState(0);
   /** 폰에서 수동 갱신용 (빨간불/파란불 Realtime 끊김 시) */
@@ -349,6 +350,10 @@ export default function TeacherMonitorPage() {
 
   const { teacher, loading: teacherLoading } = useTeacher();
 
+  const { loading: reportLoading, error: reportError, data: reportData } = useStudentReport(
+    detailStudent?.student_id ?? null,
+  );
+
   useEffect(() => {
     studentsRef.current = students;
   }, [students]);
@@ -359,80 +364,8 @@ export default function TeacherMonitorPage() {
   }, []);
 
   useEffect(() => {
-    if (!detailStudent?.student_id) {
-      setDetailTodayStats(null);
-      return;
-    }
-    let cancelled = false;
-    setDetailStatsLoading(true);
-    supabase
-      .from('answer_logs')
-      .select('created_at, created_at_kst, tag, correct, quiz_type')
-      .eq('student_id', detailStudent.student_id)
-      .order('created_at', { ascending: false })
-      .limit(500)
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        setDetailStatsLoading(false);
-        if (error) {
-          setDetailTodayStats(null);
-          return;
-        }
-        const rows = Array.isArray(data) ? data : [];
-        // 오늘의 스코어·약점: quiz_type 'output'(오늘의 연구·복습) 또는 'grammar'(과거 데이터)만 집계. 'input'(족보 테스트) 제외
-        const outputRows = rows.filter((r) => {
-          const qt = (r?.quiz_type || '').trim().toLowerCase();
-          return qt === 'output' || qt === 'grammar' || qt === '';
-        });
-        const todayRows = outputRows.filter((r) => isTodayByKstOrUtc(r?.created_at_kst, r?.created_at));
-        const problemsSolved = todayRows.length;
-        const correctCount = todayRows.filter((r) => r.correct === true).length;
-        const wrongCount = problemsSolved - correctCount;
-        const accuracyPercent = problemsSolved > 0 ? Math.round((correctCount / problemsSolved) * 100) : 0;
-        const wrongByTag = {};
-        todayRows.filter((r) => r.correct === false).forEach((r) => {
-          const t = (r.tag || '').trim() || '(태그없음)';
-          wrongByTag[t] = (wrongByTag[t] || 0) + 1;
-        });
-        const worst3 = Object.entries(wrongByTag)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 3)
-          .map(([tag, count]) => ({ tag, count }));
-
-        // 오늘의 족보 기록: quiz_type 'input'만 (태그별 + 전체 정답률)
-        const inputRows = rows.filter((r) => (r?.quiz_type || '').trim().toLowerCase() === 'input');
-        const todayInputRows = inputRows.filter((r) => isTodayByKstOrUtc(r?.created_at_kst, r?.created_at));
-        const inputByTagMap = {};
-        todayInputRows.forEach((r) => {
-          const tag = (r.tag || '').trim() || '(태그없음)';
-          if (!inputByTagMap[tag]) inputByTagMap[tag] = { total: 0, correct: 0 };
-          inputByTagMap[tag].total += 1;
-          if (r.correct === true) inputByTagMap[tag].correct += 1;
-        });
-        const inputByTag = Object.entries(inputByTagMap).map(([tag, o]) => ({
-          tag,
-          total: o.total,
-          correct: o.correct,
-          percent: o.total ? Math.round((o.correct / o.total) * 100) : 0,
-        }));
-        const inputTotal = todayInputRows.length;
-        const inputCorrect = todayInputRows.filter((r) => r.correct === true).length;
-        const inputPercent = inputTotal > 0 ? Math.round((inputCorrect / inputTotal) * 100) : 0;
-
-        setDetailTodayStats({
-          problemsSolved,
-          correctCount,
-          wrongCount,
-          accuracyPercent,
-          worst3,
-          inputByTag,
-          inputTotal,
-          inputCorrect,
-          inputPercent,
-        });
-      });
-    return () => { cancelled = true; };
-  }, [detailStudent?.student_id]);
+    if (!detailStudent) setReportOpen(false);
+  }, [detailStudent]);
 
   const copyToClipboard = async (text) => {
     if (!text) return;
@@ -463,41 +396,73 @@ export default function TeacherMonitorPage() {
     const name = (detailStudent.student_name ?? '-').trim() || '-';
     const lines = [`🕵️ ${name} 상세`, ''];
 
-    lines.push('📊 오늘의 스코어');
-    if (detailStatsLoading) {
-      lines.push('불러오는 중...');
-    } else if (detailTodayStats) {
-      const capped = getCappedTodayScore(detailTodayStats);
-      lines.push(`오늘 ${capped.displayedCount}문제 풀었고, 정답률은 ${capped.displayedAccuracy}%입니다. (${capped.displayedCorrect}정답 / ${capped.displayedWrong}오답)`);
+    if (reportLoading) {
+      lines.push('(리포트 불러오는 중...)');
+      lines.push('');
+    } else if (reportError) {
+      lines.push(`리포트 로드 실패: ${reportError}`);
+      lines.push('');
+    } else if (!reportData) {
+      lines.push('데이터 없음');
+      lines.push('');
     } else {
-      lines.push('오늘 푼 기록이 없어요.');
-    }
-    lines.push('');
-
-    lines.push('📉 오늘의 약점 (Worst 3)');
-    if (detailStatsLoading) {
-      lines.push('불러오는 중...');
-    } else if (detailTodayStats?.worst3?.length > 0) {
-      lines.push(`오늘 유독 ${detailTodayStats.worst3.map((w) => `${w.tag} ${w.count}개`).join(', ')}에서 많이 틀렸어요.`);
-    } else if (detailTodayStats) {
-      lines.push('오늘 오답이 없어요. 잘했어요!');
-    } else {
-      lines.push('오늘 푼 기록이 없어요.');
-    }
-    lines.push('');
-
-    lines.push('📚 오늘의 족보 기록');
-    if (detailStatsLoading) {
-      lines.push('불러오는 중...');
-    } else if (detailTodayStats?.inputTotal > 0) {
-      lines.push(`오늘 족보 ${detailTodayStats.inputTotal}문제 풀었고, 정답률 ${detailTodayStats.inputPercent}%입니다. (${detailTodayStats.inputCorrect}정답 / ${detailTodayStats.inputTotal - detailTodayStats.inputCorrect}오답)`);
-      if (detailTodayStats.inputByTag?.length > 0) {
-        lines.push(detailTodayStats.inputByTag.map((x) => `${x.tag} ${x.percent}%`).join(', '));
+      const d = reportData;
+      lines.push('📘 오늘의 스코어');
+      if (!d.isToeic) {
+        lines.push('해당 없음');
+      } else {
+        lines.push(`누적 Score: ${d.todayScore.cumulativeScore}`);
+        const att = d.todayScore.todayAttempts;
+        const rate = d.todayScore.todayCorrectRate;
+        if (att === 0) {
+          lines.push('오늘 0문제 풀었고, 정답률은 0%입니다.');
+        } else if (rate == null) {
+          lines.push('오늘 푼 문제 없음');
+        } else {
+          const correct = Math.round((rate / 100) * att);
+          const wrong = att - correct;
+          lines.push(`오늘 정답률: ${rate}% (${correct}정답 / ${wrong}오답)`);
+        }
       }
-    } else {
-      lines.push('오늘 족보 학습 기록이 없어요.');
+      lines.push('');
+
+      lines.push('📊 오늘의 약점 (Worst 3)');
+      if (!d.isToeic) {
+        lines.push('해당 없음');
+      } else if (d.todayScore.topWrongTags.length > 0) {
+        d.todayScore.topWrongTags.forEach((t) => {
+          lines.push(`${t.tag} — ${t.wrongCount}/${t.totalCount} 오답 (${t.wrongRate}%)`);
+        });
+      } else {
+        lines.push('오늘 오답이 없어요. 잘했어요!');
+      }
+      lines.push('');
+
+      lines.push('🎯 오늘의 루틴');
+      if (!d.todayRoutine.hasActiveRoutine) {
+        lines.push('배정된 루틴이 없어요.');
+      } else {
+        lines.push(`${d.todayRoutine.routineTitle ?? '-'} — DAY ${d.todayRoutine.currentDay}`);
+        lines.push(
+          `진행 ${d.todayRoutine.todayProgress}% (${d.todayRoutine.requiredTasksCompleted}/${d.todayRoutine.requiredTasksTotal} 완료)`,
+        );
+      }
+      lines.push('');
+
+      lines.push('📚 오늘의 족보 기록');
+      if (!d.isToeic) {
+        lines.push('해당 없음');
+      } else {
+        const today = kstYmdToday();
+        const j = d.toeicDetail?.recentJokboStats?.find((s) => s.date === today);
+        if (j) {
+          lines.push(`오늘 ${j.attempts}회 학습, 정답률 ${j.correctRate}%`);
+        } else {
+          lines.push('오늘 족보 학습 기록이 없어요.');
+        }
+      }
+      lines.push('');
     }
-    lines.push('');
 
     lines.push('📜 개인 로그');
     const studentLogs = statusLogs
@@ -1067,8 +1032,8 @@ export default function TeacherMonitorPage() {
           <div style={styles.modalOverlay} onClick={() => setDetailStudent(null)} role="dialog" aria-modal="true" aria-labelledby="detail-title">
             <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
-                <h2 id="detail-title" style={styles.modalTitle}>🕵️‍♂️ {detailStudent.student_name ?? '-'} 상세</h2>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h2 id="detail-title" style={styles.modalTitle}>🕵️ {detailStudent.student_name ?? '-'} 상세</h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); copyToClipboard(getDetailModalCopyText()); }}
@@ -1077,65 +1042,181 @@ export default function TeacherMonitorPage() {
                   >
                     💬 복사
                   </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); alert('준비 중'); }}
+                    style={styles.logCopyBtn}
+                    title="PDF (준비 중)"
+                  >
+                    📄 PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setReportOpen(true); }}
+                    style={styles.logCopyBtn}
+                    title="학생 개인 리포트"
+                  >
+                    📊 리포트
+                  </button>
                   <button type="button" onClick={() => setDetailStudent(null)} style={styles.modalClose} aria-label="닫기">✕</button>
                 </div>
               </div>
               <div style={styles.modalBody}>
-                <div style={styles.detailBlock}>
-                  <h3 style={styles.detailBlockTitle}>📊 오늘의 스코어</h3>
-                  {detailStatsLoading ? (
-                    <p style={styles.detailPlaceholder}>불러오는 중...</p>
-                  ) : detailTodayStats ? (
-                    (() => {
-                      const capped = getCappedTodayScore(detailTodayStats);
-                      return (
-                        <p style={styles.detailScore}>
-                          오늘 <strong>{capped.displayedCount}문제</strong> 풀었고, 정답률은 <strong>{capped.displayedAccuracy}%</strong>입니다.
-                          <br />
-                          <span style={styles.detailScoreSub}>({capped.displayedCorrect}정답 / {capped.displayedWrong}오답)</span>
-                        </p>
-                      );
-                    })()
-                  ) : (
-                    <p style={styles.detailPlaceholder}>오늘 푼 기록이 없어요. (1단계 Supabase 테이블 생성 + 2단계 똑패스 앱 연동 후 자동 반영)</p>
-                  )}
-                </div>
-                <div style={styles.detailBlock}>
-                  <h3 style={styles.detailBlockTitle}>📉 오늘의 약점 (Worst 3)</h3>
-                  {detailStatsLoading ? (
-                    <p style={styles.detailPlaceholder}>불러오는 중...</p>
-                  ) : detailTodayStats?.worst3?.length > 0 ? (
-                    <p style={styles.detailScore}>
-                      오늘 유독 <strong>{detailTodayStats.worst3.map((w) => `${w.tag} ${w.count}개`).join(', ')}</strong>에서 많이 틀렸어요.
-                    </p>
-                  ) : detailTodayStats ? (
-                    <p style={styles.detailPlaceholder}>오늘 오답이 없어요. 잘했어요!</p>
-                  ) : (
-                    <p style={styles.detailPlaceholder}>오늘 푼 기록이 없어요.</p>
-                  )}
-                </div>
-                <div style={styles.detailBlock}>
-                  <h3 style={styles.detailBlockTitle}>📚 오늘의 족보 기록</h3>
-                  {detailStatsLoading ? (
-                    <p style={styles.detailPlaceholder}>불러오는 중...</p>
-                  ) : detailTodayStats?.inputTotal > 0 ? (
-                    <p style={styles.detailScore}>
-                      오늘 족보 <strong>{detailTodayStats.inputTotal}문제</strong> 풀었고, 정답률 <strong>{detailTodayStats.inputPercent}%</strong>입니다.
-                      <br />
-                      <span style={styles.detailScoreSub}>({detailTodayStats.inputCorrect}정답 / {detailTodayStats.inputTotal - detailTodayStats.inputCorrect}오답)</span>
-                      {detailTodayStats.inputByTag?.length > 0 && (
+                {reportLoading && (
+                  <p style={{ ...styles.detailPlaceholder, marginBottom: 16 }}>불러오는 중...</p>
+                )}
+                {reportError && (
+                  <p style={styles.reportLoadError}>
+                    리포트 로드 실패:
+                    {' '}
+                    {reportError}
+                  </p>
+                )}
+                {!reportLoading && !reportError && reportData === null && (
+                  <p style={{ ...styles.detailPlaceholder, marginBottom: 16 }}>데이터 없음</p>
+                )}
+
+                {!reportLoading && !reportError && reportData && (
+                  <>
+                    <div style={styles.detailBlock}>
+                      <h3 style={styles.detailBlockTitle}>📘 오늘의 스코어</h3>
+                      {!reportData.isToeic ? (
+                        <p style={styles.detailNa}>해당 없음</p>
+                      ) : (
                         <>
-                          <br />
-                          <span style={styles.detailScoreSub}>
-                            {detailTodayStats.inputByTag.map((x) => `${x.tag} ${x.percent}%`).join(', ')}
-                          </span>
+                          <p style={styles.detailScore}>
+                            누적 Score:
+                            {' '}
+                            <strong>{reportData.todayScore.cumulativeScore}</strong>
+                          </p>
+                          {reportData.todayScore.todayAttempts === 0 ? (
+                            <p style={{ ...styles.detailScore, marginTop: 8 }}>
+                              오늘 0문제 풀었고, 정답률은 0%입니다.
+                            </p>
+                          ) : reportData.todayScore.todayCorrectRate == null ? (
+                            <p style={{ ...styles.detailScore, marginTop: 8 }}>오늘 푼 문제 없음</p>
+                          ) : (
+                            (() => {
+                              const att = reportData.todayScore.todayAttempts;
+                              const rate = reportData.todayScore.todayCorrectRate;
+                              const correct = Math.round((rate / 100) * att);
+                              const wrong = att - correct;
+                              return (
+                                <p style={{ ...styles.detailScore, marginTop: 8 }}>
+                                  오늘 정답률:
+                                  {' '}
+                                  <strong>{rate}%</strong>
+                                  {' '}
+                                  (
+                                  {correct}
+                                  정답 /
+                                  {' '}
+                                  {wrong}
+                                  오답)
+                                </p>
+                              );
+                            })()
+                          )}
                         </>
                       )}
-                    </p>
-                  ) : (
-                    <p style={styles.detailPlaceholder}>오늘 족보 학습 기록이 없어요.</p>
-                  )}
-                </div>
+                    </div>
+
+                    <div style={styles.detailBlock}>
+                      <h3 style={styles.detailBlockTitle}>📊 오늘의 약점 (Worst 3)</h3>
+                      {!reportData.isToeic ? (
+                        <p style={styles.detailNa}>해당 없음</p>
+                      ) : reportData.todayScore.topWrongTags.length > 0 ? (
+                        <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: '#374151', fontSize: 14, lineHeight: 1.65 }}>
+                          {reportData.todayScore.topWrongTags.map((t) => (
+                            <li key={t.tag}>
+                              {t.tag}
+                              {' '}
+                              —
+                              {' '}
+                              {t.wrongCount}
+                              /
+                              {t.totalCount}
+                              {' '}
+                              오답 (
+                              {t.wrongRate}
+                              %)
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p style={styles.detailPlaceholder}>오늘 오답이 없어요. 잘했어요!</p>
+                      )}
+                    </div>
+
+                    <div style={styles.detailBlock}>
+                      <h3 style={styles.detailBlockTitle}>🎯 오늘의 루틴</h3>
+                      {!reportData.todayRoutine.hasActiveRoutine ? (
+                        <p style={styles.detailNa}>배정된 루틴이 없어요.</p>
+                      ) : (
+                        <>
+                          <p style={styles.detailScore}>
+                            <strong>{reportData.todayRoutine.routineTitle ?? '-'}</strong>
+                          </p>
+                          <p style={{ ...styles.detailScoreSub, marginTop: 4 }}>
+                            DAY
+                            {' '}
+                            {reportData.todayRoutine.currentDay}
+                          </p>
+                          <div style={{ marginTop: 10 }}>
+                            <div style={styles.routineTrack}>
+                              <div
+                                style={{
+                                  ...styles.routineFill,
+                                  width: `${Math.min(100, Math.max(0, reportData.todayRoutine.todayProgress))}%`,
+                                  background: routineProgressFillColor(reportData.todayRoutine.todayProgress),
+                                }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, flexWrap: 'wrap', gap: 6 }}>
+                              <span style={styles.detailScoreSub}>
+                                {reportData.todayRoutine.requiredTasksCompleted}
+                                {' '}
+                                /
+                                {' '}
+                                {reportData.todayRoutine.requiredTasksTotal}
+                                {' '}
+                                완료
+                              </span>
+                              <span style={{ ...styles.detailScore, fontWeight: 600 }}>
+                                {reportData.todayRoutine.todayProgress}
+                                %
+                              </span>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    <div style={styles.detailBlock}>
+                      <h3 style={styles.detailBlockTitle}>📚 오늘의 족보 기록</h3>
+                      {!reportData.isToeic ? (
+                        <p style={styles.detailNa}>해당 없음</p>
+                      ) : (() => {
+                        const j = reportData.toeicDetail?.recentJokboStats?.find((s) => s.date === kstYmdToday());
+                        if (j) {
+                          return (
+                            <p style={styles.detailScore}>
+                              오늘
+                              {' '}
+                              <strong>{j.attempts}</strong>
+                              회 학습, 정답률
+                              {' '}
+                              <strong>{j.correctRate}</strong>
+                              %
+                            </p>
+                          );
+                        }
+                        return <p style={styles.detailPlaceholder}>오늘 족보 학습 기록이 없어요.</p>;
+                      })()}
+                    </div>
+                  </>
+                )}
+
                 <div style={styles.detailBlock}>
                   <h3 style={styles.detailBlockTitle}>📜 개인 로그</h3>
                   <div style={styles.detailLogList}>
@@ -1157,6 +1238,16 @@ export default function TeacherMonitorPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {reportOpen && detailStudent && (
+          <StudentReportLayer
+            studentDisplayName={detailStudent.student_name}
+            onClose={() => setReportOpen(false)}
+            loading={reportLoading}
+            error={reportError}
+            data={reportData}
+          />
         )}
       </div>
     </div>
@@ -1237,5 +1328,9 @@ const styles = {
   detailLogItem: { display: 'flex', gap: 8, alignItems: 'flex-start', padding: '8px 0', borderBottom: '1px solid #e5e7eb', fontSize: 13 },
   detailLogTime: { fontFamily: 'monospace', color: '#6b7280', flexShrink: 0 },
   detailLogMsg: { color: '#374151', flex: 1 },
+  detailNa: { margin: '6px 0 0', fontSize: 13, color: '#888', lineHeight: 1.5 },
+  reportLoadError: { margin: '0 0 16px', fontSize: 13, color: '#dc2626', lineHeight: 1.5 },
+  routineTrack: { height: 10, borderRadius: 5, background: '#e5e7eb', overflow: 'hidden' },
+  routineFill: { height: '100%', borderRadius: 5, transition: 'width 0.2s ease' },
   errorBox: { padding: 22, background: 'linear-gradient(135deg, #fce8e6 0%, #f9d5d2 100%)', borderRadius: 24, color: '#991b1b' },
 };
