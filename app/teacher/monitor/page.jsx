@@ -12,7 +12,7 @@ import {
   fetchStudentRoutineSummariesForTeacher,
   routineLastStudyParts,
 } from '@/utils/teacherQueries';
-import { useStudentReport } from '@/src/hooks/useStudentReport';
+import { useStudentReport, normalizeReportStudentId } from '@/src/hooks/useStudentReport';
 import StudentReportLayer from './StudentReportLayer';
 
 const COLOR_ORDER = { gold: 0, red: 1, orange: 2, blue: 3, green: 4, purple: 5, white: 6 };
@@ -351,7 +351,7 @@ export default function TeacherMonitorPage() {
   const { teacher, loading: teacherLoading } = useTeacher();
 
   const { loading: reportLoading, error: reportError, data: reportData } = useStudentReport(
-    detailStudent?.student_id ?? null,
+    detailStudent?.student_id != null ? normalizeReportStudentId(detailStudent.student_id) : null,
   );
 
   useEffect(() => {

@@ -33,6 +33,14 @@ function kstTodayRangeUtc(): { startIso: string; endIso: string } {
   }
 }
 
+/**
+ * student_status.student_id 등에 이름·숫자 사이 공백이 끼는 경우가 있어 answer_logs 등과 불일치함.
+ * 앱/DB의 User ID는 공백 없이 쓰는 경우가 많으므로 전체 공백 제거 후 사용.
+ */
+export function normalizeReportStudentId(raw: string | null | undefined): string {
+  return String(raw ?? '').replace(/\s+/g, '').trim()
+}
+
 function daysElapsedKstFromIso(startedAt: string | null): number {
   if (!startedAt) return 0
   const s = kstYmd(new Date(startedAt))
@@ -63,7 +71,7 @@ function pickStudentFields(row: StudentRow, studentId: string): StudentReportDat
   const academyId =
     row.academy_id != null ? String(row.academy_id) : row.academyId != null ? String(row.academyId) : null
   return {
-    id: uid,
+    id: normalizeReportStudentId(uid) || normalizeReportStudentId(studentId) || String(studentId),
     name,
     className,
     score,
@@ -470,18 +478,22 @@ async function buildToeicDetail(studentId: string): Promise<NonNullable<StudentR
   return { recentJokboStats, tagStats }
 }
 
-async function loadReport(studentId: string): Promise<StudentReportData> {
-  const { row, err } = await fetchStudentByUserId(studentId)
+async function loadReport(rawStudentId: string): Promise<StudentReportData> {
+  const id = normalizeReportStudentId(rawStudentId)
+  if (!id) {
+    throw new Error('유효한 학생 ID가 없습니다.')
+  }
+  const { row, err } = await fetchStudentByUserId(id)
   if (err) {
     throw new Error(err)
   }
   const student: StudentReportData['student'] = row
-    ? pickStudentFields(row, studentId)
+    ? pickStudentFields(row, id)
     : (() => {
-        console.warn('students 테이블에서 학생 찾지 못함: ' + studentId)
+        console.warn('students 테이블에서 학생 찾지 못함: ' + id)
         return {
-          id: studentId,
-          name: studentId,
+          id,
+          name: id,
           className: '',
           score: '0',
           academyId: null,
@@ -491,9 +503,9 @@ async function loadReport(studentId: string): Promise<StudentReportData> {
 
   const [isToeic, todayAns, topWrong, rep] = await Promise.all([
     fetchTeacherToeicFlags(student.teacherId),
-    fetchTodayAnswerStats(studentId),
-    fetchTopWrongTags(studentId),
-    fetchPrimaryActiveRoutine(studentId),
+    fetchTodayAnswerStats(id),
+    fetchTopWrongTags(id),
+    fetchPrimaryActiveRoutine(id),
   ])
 
   const isToeicFinal = isToeic
@@ -520,7 +532,7 @@ async function loadReport(studentId: string): Promise<StudentReportData> {
     const dayRowId = await fetchRoutineDayId(rep.routineId, rep.currentDay)
     let reqTasks: { id: string; task_type: string }[] = []
     if (dayRowId) reqTasks = await fetchRequiredTasksForDay(dayRowId)
-    const comp = await fetchCompletionsForDay(studentId, rep.routineId, rep.currentDay)
+    const comp = await fetchCompletionsForDay(id, rep.routineId, rep.currentDay)
     const completed = reqTasks.filter((t) => comp.has(t.id)).length
     const total = reqTasks.length
     const progress = total > 0 ? Math.round((completed / total) * 1000) / 10 : 0
@@ -538,21 +550,21 @@ async function loadReport(studentId: string): Promise<StudentReportData> {
     overall.totalDaysElapsed = daysElapsedKstFromIso(rep.startedAt)
     overall.currentDay = rep.currentDay
     const [dailyScores, modeStats] = await Promise.all([
-      buildDailyScores(studentId, rep),
-      fetchWordLearningAggregates(studentId, since),
+      buildDailyScores(id, rep),
+      fetchWordLearningAggregates(id, since),
     ])
     overall.dailyScores = dailyScores
     overall.modeStats = modeStats
-    await mergeVocabTestModeStats(studentId, since, overall.modeStats)
-    await mergeMatchingModeStats(studentId, since, overall.modeStats)
+    await mergeVocabTestModeStats(id, since, overall.modeStats)
+    await mergeMatchingModeStats(id, since, overall.modeStats)
   } else {
     const sinceDefault = new Date(Date.now() - 365 * 86400000).toISOString()
-    overall.modeStats = await fetchWordLearningAggregates(studentId, sinceDefault)
-    await mergeVocabTestModeStats(studentId, sinceDefault, overall.modeStats)
-    await mergeMatchingModeStats(studentId, sinceDefault, overall.modeStats)
+    overall.modeStats = await fetchWordLearningAggregates(id, sinceDefault)
+    await mergeVocabTestModeStats(id, sinceDefault, overall.modeStats)
+    await mergeMatchingModeStats(id, sinceDefault, overall.modeStats)
   }
 
-  const toeicDetail = isToeicFinal ? await buildToeicDetail(studentId) : null
+  const toeicDetail = isToeicFinal ? await buildToeicDetail(id) : null
 
   return {
     student,
@@ -585,7 +597,8 @@ export function useStudentReport(studentId: string | null): {
   }, [])
 
   useEffect(() => {
-    if (!studentId || !String(studentId).trim()) {
+    const id = normalizeReportStudentId(studentId)
+    if (!id) {
       setLoading(false)
       setError(null)
       setData(null)
@@ -594,7 +607,7 @@ export function useStudentReport(studentId: string | null): {
     let cancelled = false
     setLoading(true)
     setError(null)
-    void loadReport(String(studentId).trim())
+    void loadReport(id)
       .then((d) => {
         if (!cancelled) {
           setData(d)
