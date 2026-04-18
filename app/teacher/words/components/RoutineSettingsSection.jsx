@@ -10,7 +10,14 @@ import {
   parseReviewOffsets,
 } from '@/utils/routineAdmin'
 import { COLORS, RADIUS } from '@/utils/tokens'
-import { MODE_LABELS, parseAvailableModes, splitModesForRoutine } from '../utils/learningModes'
+import {
+  ALL_MODE_KEYS,
+  MODE_LABELS,
+  buildModesDataForWordSetSave,
+  parseAvailableModes,
+  splitModesForRoutine,
+  normalizeSetType,
+} from '../utils/learningModes'
 
 /** routines.review_modes JSON 배열에 들어가는 키 */
 const REVIEW_MODE_OPTIONS = [
@@ -18,6 +25,7 @@ const REVIEW_MODE_OPTIONS = [
   { key: 'reading', label: '직독직해로 복습' },
   { key: 'shadowing', label: '쉐도잉으로 복습' },
   { key: 'writing', label: '라이팅으로 복습' },
+  { key: 'scramble', label: '스크램블로 복습' },
 ]
 
 const defaultReviewModePick = () => ({
@@ -25,7 +33,33 @@ const defaultReviewModePick = () => ({
   reading: false,
   shadowing: false,
   writing: false,
+  scramble: false,
 })
+
+/** UI/서버 메시지 — 객체가 그대로 나가면 [object Object] 방지 */
+function formatRoutineError(err) {
+  if (err == null) return '저장에 실패했습니다.'
+  if (typeof err === 'string') return err
+  if (err instanceof Error) return err.message
+  if (typeof err === 'object' && typeof err.message === 'string') return err.message
+  try {
+    return JSON.stringify(err)
+  } catch {
+    return String(err)
+  }
+}
+
+/** 추천 필수 모드 → word_sets.available_modes JSON */
+function buildModesPayload(recommendedKeys, passScore, maxAttempts) {
+  const modes = {}
+  const requiredByMode = {}
+  for (const k of ALL_MODE_KEYS) {
+    const on = recommendedKeys.includes(k)
+    modes[k] = on
+    requiredByMode[k] = on
+  }
+  return buildModesDataForWordSetSave(modes, requiredByMode, passScore, maxAttempts)
+}
 
 /**
  * @param {{ teacherId?: string, setNames: string[] }} props
@@ -44,10 +78,15 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
   const [routineName, setRoutineName] = useState('')
   const [selectedSet, setSelectedSet] = useState('')
   const [modesLoading, setModesLoading] = useState(false)
+  const [currentSetType, setCurrentSetType] = useState('word')
+  const [testPassScore, setTestPassScore] = useState(80)
+  const [testMaxAttempts, setTestMaxAttempts] = useState(3)
   const [requiredModeKeys, setRequiredModeKeys] = useState([])
   const [optionalModeKeys, setOptionalModeKeys] = useState([])
   const [includeOptional, setIncludeOptional] = useState({})
   const [reviewModePick, setReviewModePick] = useState(defaultReviewModePick)
+  const [toast, setToast] = useState(null)
+  const [recommendSaving, setRecommendSaving] = useState(false)
   const [totalDaysInput, setTotalDaysInput] = useState('28')
   const [reviewCycleInput, setReviewCycleInput] = useState('+1+3+7')
   const [restDaysInput, setRestDaysInput] = useState('DAY7, DAY14, DAY21')
@@ -78,6 +117,12 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
   }, [load])
 
   useEffect(() => {
+    if (!toast) return
+    const t = window.setTimeout(() => setToast(null), 3200)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  useEffect(() => {
     if (formOpen && setNames.length && !selectedSet) {
       setSelectedSet(setNames[0])
     }
@@ -89,6 +134,7 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
       setRequiredModeKeys([])
       setOptionalModeKeys([])
       setIncludeOptional({})
+      setCurrentSetType('word')
       return
     }
     setModesLoading(true)
@@ -99,12 +145,19 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
         .eq('teacher_id', teacherId)
         .eq('name', sn)
         .maybeSingle()
-      const st = ws?.set_type === 'sentence' || ws?.set_type === 'image' ? ws.set_type : 'word'
+      setCurrentSetType(normalizeSetType(ws?.set_type))
       const parsed = parseAvailableModes(ws?.available_modes, st)
+      setTestPassScore(parsed.passScore ?? 80)
+      setTestMaxAttempts(parsed.maxAttempts ?? 3)
       const { requiredKeys, optionalKeys } = splitModesForRoutine(parsed)
       setRequiredModeKeys(requiredKeys)
       setOptionalModeKeys(optionalKeys)
-      setIncludeOptional({})
+      /** 세트에 켜져 있는 선택 모드 → 체크 유지 (available_modes 반영) */
+      const inc = {}
+      for (const k of optionalKeys) {
+        inc[k] = !!parsed.modes[k]
+      }
+      setIncludeOptional(inc)
     } finally {
       setModesLoading(false)
     }
@@ -121,11 +174,61 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
     setRequiredModeKeys([])
     setOptionalModeKeys([])
     setIncludeOptional({})
+    setCurrentSetType('word')
+    setTestPassScore(80)
+    setTestMaxAttempts(3)
     setReviewModePick(defaultReviewModePick())
     setTotalDaysInput('28')
     setReviewCycleInput('+1+3+7')
     setRestDaysInput('DAY7, DAY14, DAY21')
     setSaveError(null)
+  }
+
+  const applyRecommendedModes = async (recommendedKeys, label) => {
+    const sn = String(selectedSet || '').trim()
+    if (!teacherId || !sn) {
+      setToast({ tone: 'err', message: '세트를 선택하세요.' })
+      return
+    }
+    setRecommendSaving(true)
+    try {
+      const modesData = buildModesPayload(recommendedKeys, testPassScore, testMaxAttempts)
+      const { data, error } = await supabase
+        .from('word_sets')
+        .upsert(
+          {
+            teacher_id: teacherId,
+            name: sn,
+            set_type: currentSetType,
+            available_modes: modesData,
+          },
+          { onConflict: 'teacher_id,name' },
+        )
+        .select('id')
+        .maybeSingle()
+
+      if (error) {
+        console.error('[RoutineSettingsSection] word_sets 업데이트 실패', error)
+        setToast({ tone: 'err', message: formatRoutineError(error) })
+        return
+      }
+
+      console.log('[RoutineSettingsSection] word_sets 업데이트 성공', {
+        setName: sn,
+        setType: currentSetType,
+        label,
+        modes: recommendedKeys,
+        rowId: data?.id ?? null,
+      })
+
+      setToast({ tone: 'ok', message: `${label} 적용됨 · 세트 학습 모드가 저장되었습니다.` })
+      await loadModesForSet(sn)
+    } catch (e) {
+      console.error('[RoutineSettingsSection] 추천 적용 예외', e)
+      setToast({ tone: 'err', message: formatRoutineError(e) })
+    } finally {
+      setRecommendSaving(false)
+    }
   }
 
   const handleCreate = async (e) => {
@@ -176,10 +279,13 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
     setSaving(false)
 
     if (!result.ok) {
-      setSaveError(result.error || '저장에 실패했습니다.')
+      const msg = formatRoutineError(result.error)
+      setSaveError(msg)
+      setToast({ tone: 'err', message: msg })
       return
     }
 
+    setToast({ tone: 'ok', message: '루틴이 저장되었습니다.' })
     setFormOpen(false)
     resetForm()
     void load()
@@ -209,8 +315,33 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
         boxShadow: '0 8px 32px rgba(31, 38, 135, 0.06)',
+        position: 'relative',
       }}
     >
+      {toast ? (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 9999,
+            padding: '12px 20px',
+            borderRadius: 12,
+            fontSize: 14,
+            fontWeight: 600,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            maxWidth: 'min(420px, 92vw)',
+            textAlign: 'center',
+            background: toast.tone === 'ok' ? '#065f46' : '#991b1b',
+            color: '#fff',
+          }}
+        >
+          {toast.message}
+        </div>
+      ) : null}
+
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
         <h2
           style={{
@@ -370,6 +501,80 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
               필수 모드는 세트의 <span style={{ fontWeight: 600 }}>word_sets.available_modes</span>에서 <span style={{ fontWeight: 600 }}>required: true</span>인
               항목이 자동 반영됩니다. 선택 모드는 체크 시 루틴 DAY에 추가됩니다.
             </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+              {currentSetType === 'word' ? (
+                <button
+                  type="button"
+                  disabled={recommendSaving || !selectedSet}
+                  onClick={() =>
+                    void applyRecommendedModes(['flashcard', 'recall', 'matching', 'test'], '단어 세트 추천')
+                  }
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: RADIUS.sm,
+                    border: `1px solid ${COLORS.primary}`,
+                    background: 'rgba(102, 126, 234, 0.08)',
+                    color: COLORS.primary,
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: recommendSaving || !selectedSet ? 'not-allowed' : 'pointer',
+                    opacity: recommendSaving || !selectedSet ? 0.55 : 1,
+                  }}
+                >
+                  단어 세트 추천
+                </button>
+              ) : null}
+              {currentSetType === 'sentence_writing' ? (
+                <button
+                  type="button"
+                  disabled={recommendSaving || !selectedSet}
+                  onClick={() =>
+                    void applyRecommendedModes(
+                      ['reading', 'dictation', 'writing', 'scramble'],
+                      '문장 세트 라이팅 추천',
+                    )
+                  }
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: RADIUS.sm,
+                    border: `1px solid #0d9488`,
+                    background: 'rgba(13, 148, 136, 0.08)',
+                    color: '#0f766e',
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: recommendSaving || !selectedSet ? 'not-allowed' : 'pointer',
+                    opacity: recommendSaving || !selectedSet ? 0.55 : 1,
+                  }}
+                >
+                  문장 세트 라이팅 추천
+                </button>
+              ) : null}
+              {currentSetType === 'sentence_speaking' ? (
+                <button
+                  type="button"
+                  disabled={recommendSaving || !selectedSet}
+                  onClick={() =>
+                    void applyRecommendedModes(
+                      ['dictation', 'listening', 'shadowing', 'scramble'],
+                      '문장 세트 스피킹 추천',
+                    )
+                  }
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: RADIUS.sm,
+                    border: `1px solid #c2410c`,
+                    background: 'rgba(234, 88, 12, 0.08)',
+                    color: '#c2410c',
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: recommendSaving || !selectedSet ? 'not-allowed' : 'pointer',
+                    opacity: recommendSaving || !selectedSet ? 0.55 : 1,
+                  }}
+                >
+                  문장 세트 스피킹 추천
+                </button>
+              ) : null}
+            </div>
             {modesLoading ? (
               <span style={{ fontSize: 13, color: COLORS.textSecondary }}>세트 모드 불러오는 중…</span>
             ) : (

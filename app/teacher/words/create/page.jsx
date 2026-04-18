@@ -15,8 +15,8 @@ import { assignDaysEqual, assignDaysChunk } from '../utils/dayAssign'
 
 const SET_TYPE_LABELS = {
   word: '단어 세트',
-  sentence: '문장 세트',
-  image: '이미지 세트',
+  sentence_writing: '문장 세트 — 라이팅',
+  sentence_speaking: '문장 세트 — 스피킹',
 }
 
 function emptyRow(setName) {
@@ -63,8 +63,14 @@ function CreateWordSetPageContent() {
   /** URL `?type=` → WordTable·가져오기·저장 검증 (기본 단어 세트) */
   const createSetType = useMemo(() => {
     const t = searchParams.get('type')
-    return t === 'sentence' || t === 'image' ? t : 'word'
+    if (t === 'sentence_writing' || t === 'sentence_speaking') return t
+    if (t === 'sentence' || t === 'image') return 'sentence_writing'
+    return 'word'
   }, [searchParams])
+
+  const isSentenceStyleCreate =
+    createSetType === 'sentence_writing' || createSetType === 'sentence_speaking'
+  const wordTableColumnPreset = isSentenceStyleCreate ? 'sentence' : 'word'
 
   useEffect(() => {
     if (!hasDayPreview) {
@@ -107,11 +113,11 @@ function CreateWordSetPageContent() {
       const w = String(r.word || '').trim()
       const m = String(r.meaning || '').trim()
       const ex = String(r.example_sentence || '').trim()
-      if (createSetType === 'sentence') return Boolean(ex && m)
+      if (isSentenceStyleCreate) return Boolean(ex && m)
       return Boolean(w && m)
     }).length
     if (validCount === 0) {
-      alert(createSetType === 'sentence' ? '예문·뜻이 있는 행이 없습니다.' : '영단어·뜻이 있는 행이 없습니다.')
+      alert(isSentenceStyleCreate ? '예문·뜻이 있는 행이 없습니다.' : '영단어·뜻이 있는 행이 없습니다.')
       return
     }
     if (dayMode === 'equal' && totalDays < 1) {
@@ -134,7 +140,7 @@ function CreateWordSetPageContent() {
         const w = String(r.word || '').trim()
         const m = String(r.meaning || '').trim()
         const ex = String(r.example_sentence || '').trim()
-        const ok = createSetType === 'sentence' ? ex && m : w && m
+        const ok = isSentenceStyleCreate ? ex && m : w && m
         if (!ok) return { ...r, day: r.day ?? 1 }
         const d = seq[vi++]
         return { ...r, day: d }
@@ -162,11 +168,11 @@ function CreateWordSetPageContent() {
       const w = String(r.word || '').trim()
       const m = String(r.meaning || '').trim()
       const ex = String(r.example_sentence || '').trim()
-      if (createSetType === 'sentence') return Boolean(ex && m)
+      if (isSentenceStyleCreate) return Boolean(ex && m)
       return Boolean(w && m)
     })
     if (valid.length === 0) {
-      alert(createSetType === 'sentence' ? '저장할 행이 없습니다. 예문·뜻을 확인하세요.' : '저장할 단어가 없습니다.')
+      alert(isSentenceStyleCreate ? '저장할 행이 없습니다. 예문·뜻을 확인하세요.' : '저장할 단어가 없습니다.')
       return
     }
     setSaving(true)
@@ -175,7 +181,7 @@ function CreateWordSetPageContent() {
       const payload = valid.map((r) => {
         const ex = String(r.example_sentence || '').trim()
         let word = String(r.word || '').trim()
-        if (createSetType === 'sentence' && !word) {
+        if (isSentenceStyleCreate && !word) {
           word = ex.length > 300 ? ex.slice(0, 300) : ex
         }
         const yt =
@@ -343,7 +349,7 @@ function CreateWordSetPageContent() {
           </label>
           {searchParams.get('type') ? (
             <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: COLORS.accentText }}>
-              세트 유형(참고): {SET_TYPE_LABELS[searchParams.get('type')] || searchParams.get('type')}
+              세트 유형(참고): {SET_TYPE_LABELS[createSetType] || createSetType}
             </p>
           ) : null}
           <p style={{ margin: 0, fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.5 }}>
@@ -501,7 +507,7 @@ function CreateWordSetPageContent() {
           showDeleteColumn
           onRowDelete={handleRowDelete}
           rowGroupMode={effectiveGroupMode}
-          columnPreset={createSetType}
+          columnPreset={wordTableColumnPreset}
         />
 
         <AutoFillPanel rows={autoFillRows} onFilled={handleAutoFilled} />

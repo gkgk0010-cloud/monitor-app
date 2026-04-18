@@ -13,8 +13,8 @@ import LearningModesPicker from './LearningModesPicker'
 
 const SET_TYPE_OPTIONS = [
   { id: 'word', label: '단어 세트', hint: 'word + meaning 중심' },
-  { id: 'sentence', label: '문장 세트', hint: 'example_sentence 중심' },
-  { id: 'image', label: '이미지 세트', hint: 'image_url 중심' },
+  { id: 'sentence_writing', label: '문장 세트 — 라이팅', hint: 'reading · dictation · writing · scramble' },
+  { id: 'sentence_speaking', label: '문장 세트 — 스피킹', hint: 'dictation · listening · shadowing · scramble' },
 ]
 
 /**

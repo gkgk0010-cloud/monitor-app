@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS public.word_sets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   teacher_id uuid NOT NULL REFERENCES public.teachers (id) ON DELETE CASCADE,
   name text NOT NULL,
-  set_type text NOT NULL CHECK (set_type IN ('word', 'sentence', 'image')),
+  set_type text NOT NULL CHECK (set_type IN ('word', 'sentence_writing', 'sentence_speaking')),
   available_modes jsonb NOT NULL DEFAULT '[]'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (teacher_id, name)

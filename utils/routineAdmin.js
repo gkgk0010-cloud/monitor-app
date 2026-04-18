@@ -1,5 +1,17 @@
 import { supabase } from '@/utils/supabaseClient'
 
+function errMessage(e) {
+  if (e == null) return '알 수 없는 오류'
+  if (typeof e === 'string') return e
+  if (e instanceof Error) return e.message
+  if (typeof e === 'object' && typeof e.message === 'string') return e.message
+  try {
+    return JSON.stringify(e)
+  } catch {
+    return String(e)
+  }
+}
+
 /**
  * "+1+3+5" / "1,3,5" / "1 + 3 + 5" → 양수 배열
  */
@@ -143,7 +155,7 @@ export async function createRoutineWithDaysAndTasks({
     .single()
 
   if (e1 || !routineRow?.id) {
-    return { ok: false, error: e1?.message || '루틴을 저장하지 못했습니다.' }
+    return { ok: false, error: errMessage(e1) || '루틴을 저장하지 못했습니다.' }
   }
 
   const routineId = routineRow.id
@@ -163,7 +175,7 @@ export async function createRoutineWithDaysAndTasks({
 
   if (e2 || !insertedDays?.length) {
     await supabase.from('routines').delete().eq('id', routineId)
-    return { ok: false, error: e2?.message || 'routine_days 생성에 실패했습니다.' }
+    return { ok: false, error: errMessage(e2) || 'routine_days 생성에 실패했습니다.' }
   }
 
   const sortedDays = [...insertedDays].sort((a, b) => Number(a.day_number) - Number(b.day_number))
@@ -192,12 +204,12 @@ export async function createRoutineWithDaysAndTasks({
       })
 
       const { error: e3 } = await supabase.from('routine_tasks').insert(taskRows)
-      if (e3) throw new Error(e3.message)
+      if (e3) throw new Error(errMessage(e3))
     }
   } catch (err) {
     await supabase.from('routine_days').delete().eq('routine_id', routineId)
     await supabase.from('routines').delete().eq('id', routineId)
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    return { ok: false, error: errMessage(err) }
   }
 
   return { ok: true, routineId }

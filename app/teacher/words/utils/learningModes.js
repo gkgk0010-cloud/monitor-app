@@ -35,35 +35,30 @@ export const MODE_LABELS = {
   test: '테스트',
 }
 
+/** word | sentence_writing | sentence_speaking (구 image·sentence 는 normalizeSetType 로 정규화) */
 export const DEFAULT_MODES_BY_TYPE = {
-  word: ['flashcard', 'recall', 'matching', 'writing', 'test'],
-  sentence: ['reading', 'readAloud', 'shadowing', 'scramble', 'test'],
-  image: ['image', 'flashcard', 'recall', 'matching', 'test'],
+  word: ['flashcard', 'recall', 'matching', 'test'],
+  sentence_writing: ['reading', 'dictation', 'writing', 'scramble'],
+  sentence_speaking: ['dictation', 'listening', 'shadowing', 'scramble'],
 }
 
-/** 세트 타입별 기본 체크 + 필수 여부(자동 추천 라인) */
+/** DB·구버전 값 → word | sentence_writing | sentence_speaking */
+export function normalizeSetType(t) {
+  const s = String(t || 'word').trim()
+  if (s === 'image') return 'word'
+  if (s === 'sentence') return 'sentence_writing'
+  if (s === 'sentence_writing' || s === 'sentence_speaking') return s
+  return 'word'
+}
+
+/** 세트 타입별 기본 체크 — 루틴 추천과 동일하게 해당 키 전부 필수(true) */
 export function defaultRequiredForBaseKeys(setType) {
-  const st = setType === 'sentence' || setType === 'image' ? setType : 'word'
+  const st = normalizeSetType(setType)
   const o = {}
   for (const k of ALL_MODE_KEYS) o[k] = false
-  if (st === 'word') {
-    o.flashcard = true
-    o.recall = true
-    o.matching = false
-    o.writing = false
-    o.test = false
-  } else if (st === 'sentence') {
-    o.reading = true
-    o.readAloud = true
-    o.shadowing = false
-    o.scramble = false
-    o.test = false
-  } else {
-    o.image = true
-    o.flashcard = true
-    o.recall = true
-    o.matching = false
-    o.test = false
+  const base = DEFAULT_MODES_BY_TYPE[st] || DEFAULT_MODES_BY_TYPE.word
+  for (const k of base) {
+    o[k] = true
   }
   return o
 }
@@ -78,7 +73,8 @@ export function modesRecordFromKeys(selectedKeys) {
 }
 
 export function baseKeysForType(setType) {
-  return DEFAULT_MODES_BY_TYPE[setType] || DEFAULT_MODES_BY_TYPE.word
+  const st = normalizeSetType(setType)
+  return DEFAULT_MODES_BY_TYPE[st] || DEFAULT_MODES_BY_TYPE.word
 }
 
 export function extraKeysForType(setType) {
@@ -102,10 +98,62 @@ export function splitModesForRoutine(parsed) {
   return { requiredKeys, optionalKeys }
 }
 
+/** DB/이전 버그로 깨진 값 정리 → 배열 또는 null */
+export function normalizeRawAvailableModes(raw) {
+  if (raw == null) return null
+  if (Array.isArray(raw)) return raw
+  if (typeof raw === 'string') {
+    const t = raw.trim()
+    if (t === '' || t === '[object Object]') return null
+    try {
+      const p = JSON.parse(t)
+      return Array.isArray(p) ? p : null
+    } catch {
+      return null
+    }
+  }
+  if (typeof raw === 'object') {
+    if (raw.mode != null) return [raw]
+    return null
+  }
+  return null
+}
+
+/**
+ * word_sets.available_modes 저장용 — 순수 JSON 직렬화 가능한 plain object 배열만 반환.
+ * @returns {object[]}
+ */
+export function buildModesDataForWordSetSave(modes, requiredByMode, passScore, maxAttempts) {
+  const selectedKeys = ALL_MODE_KEYS.filter((k) => modes[k])
+  const modesData = selectedKeys.map((modeName) => ({
+    mode: modeName,
+    required: !!requiredByMode[modeName],
+    ...(modeName === 'test'
+      ? {
+          pass_score: Math.min(100, Math.max(0, Math.round(Number(passScore) || 80))),
+          max_attempts: Math.max(1, Math.round(Number(maxAttempts) || 3)),
+        }
+      : {}),
+  }))
+  return JSON.parse(JSON.stringify(modesData))
+}
+
+/** 사이드바 등 한 줄 요약: 암기·리콜·매칭·테스트 */
+export function formatAvailableModesSummary(am, setType) {
+  const parsed = parseAvailableModes(am, setType)
+  const labels = []
+  for (const k of ALL_MODE_KEYS) {
+    if (parsed.modes[k]) labels.push(MODE_LABELS[k] || k)
+  }
+  if (labels.length === 0) return '—'
+  return labels.join('·')
+}
+
 /**
  * @returns {{ modes: Record<string, boolean>, requiredByMode: Record<string, boolean>, passScore: number, maxAttempts: number }}
  */
 export function parseAvailableModes(am, setType) {
+  const amNorm = normalizeRawAvailableModes(am)
   const base = baseKeysForType(setType)
   const defReq = defaultRequiredForBaseKeys(setType)
   const modes = {}
@@ -118,7 +166,7 @@ export function parseAvailableModes(am, setType) {
   let passScore = 80
   let maxAttempts = 3
 
-  if (!Array.isArray(am) || am.length === 0) {
+  if (!Array.isArray(amNorm) || amNorm.length === 0) {
     for (const k of base) {
       modes[k] = true
       requiredByMode[k] = !!defReq[k]
@@ -126,7 +174,7 @@ export function parseAvailableModes(am, setType) {
     return { modes, requiredByMode, passScore, maxAttempts }
   }
 
-  for (const item of am) {
+  for (const item of amNorm) {
     if (typeof item === 'string') {
       const k = String(item).trim()
       if (!ALL_MODE_KEYS.includes(k)) continue
@@ -162,22 +210,13 @@ export function parseAvailableModes(am, setType) {
  * @param {Record<string, boolean>} requiredByMode
  */
 export function buildAvailableModesJson(modes, requiredByMode, passScore, maxAttempts) {
-  const out = []
-  for (const k of ALL_MODE_KEYS) {
-    if (!modes[k]) continue
-    const entry = { mode: k, required: !!requiredByMode[k] }
-    if (k === 'test') {
-      entry.pass_score = Math.min(100, Math.max(0, Math.round(Number(passScore) || 80)))
-      entry.max_attempts = Math.max(1, Math.round(Number(maxAttempts) || 3))
-    }
-    out.push(entry)
-  }
-  return out
+  return buildModesDataForWordSetSave(modes, requiredByMode, passScore, maxAttempts)
 }
 
 /** 새 세트 STEP2 / 세트 타입 변경 시 초기 상태 */
 export function initModesStateForType(setType) {
-  const keys = DEFAULT_MODES_BY_TYPE[setType] || DEFAULT_MODES_BY_TYPE.word
+  const st = normalizeSetType(setType)
+  const keys = DEFAULT_MODES_BY_TYPE[st] || DEFAULT_MODES_BY_TYPE.word
   const modes = modesRecordFromKeys(keys)
   const def = defaultRequiredForBaseKeys(setType)
   const requiredByMode = {}

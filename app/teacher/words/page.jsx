@@ -16,6 +16,7 @@ import NewWordSetModal from './components/NewWordSetModal'
 import SetSettingsModal from './components/SetSettingsModal'
 import { normalizeWordDifficulty } from './utils/parsers'
 import { filterWordRows } from './utils/wordFilters'
+import { formatAvailableModesSummary, normalizeSetType } from './utils/learningModes'
 
 export default function WordsManagePage() {
   const router = useRouter()
@@ -83,29 +84,38 @@ export default function WordsManagePage() {
 
   /** words에 아직 단어가 없는 세트도 사이드바에 표시 (word_sets 기준) */
   const [wordSetNames, setWordSetNames] = useState([])
-  /** 세트명 → set_type (word | sentence | image) */
+  /** 세트명 → set_type (word | sentence_writing | sentence_speaking) */
   const [setTypeByName, setSetTypeByName] = useState({})
+  /** 세트명 → word_sets.available_modes (요약 표시용) */
+  const [availableModesBySetName, setAvailableModesBySetName] = useState({})
 
   const loadWordSetNames = useCallback(async () => {
     if (!teacherId) {
       setWordSetNames([])
       setSetTypeByName({})
+      setAvailableModesBySetName({})
       return
     }
-    const { data, error } = await supabase.from('word_sets').select('name, set_type').eq('teacher_id', teacherId)
+    const { data, error } = await supabase
+      .from('word_sets')
+      .select('name, set_type, available_modes')
+      .eq('teacher_id', teacherId)
     if (error) {
       console.warn('[word_sets]', error.message)
       return
     }
     const typeMap = {}
+    const modesMap = {}
     for (const r of data || []) {
       const n = String(r.name || '').trim()
       if (!n) continue
-      typeMap[n] = String(r.set_type || 'word')
+      typeMap[n] = normalizeSetType(r.set_type || 'word')
+      modesMap[n] = r.available_modes
     }
     const names = Object.keys(typeMap).sort((a, b) => a.localeCompare(b, 'ko'))
     setWordSetNames(names)
     setSetTypeByName(typeMap)
+    setAvailableModesBySetName(modesMap)
   }, [teacherId])
 
   const loadWords = useCallback(async () => {
@@ -205,8 +215,8 @@ export default function WordsManagePage() {
   const tableColumnPreset = useMemo(() => {
     const sn = setFilter.trim()
     if (!sn) return 'classic'
-    const t = setTypeByName[sn]
-    if (t === 'sentence' || t === 'image') return t
+    const t = normalizeSetType(setTypeByName[sn] || 'word')
+    if (t === 'sentence_writing' || t === 'sentence_speaking') return 'sentence'
     return 'word'
   }, [setFilter, setTypeByName])
 
@@ -354,17 +364,15 @@ export default function WordsManagePage() {
     if (!teacherId) return
     const id = String(row.id)
     const sn = String(row.set_name || '').trim() || String(setFilter || '').trim() || '토익 기본 단어'
-    const st = setTypeByName[sn] || 'word'
+    const st = normalizeSetType(setTypeByName[sn] || 'word')
     let word = String(row.word || '').trim()
     const meaning = String(row.meaning || '').trim()
     const ex = String(row.example_sentence || '').trim()
-    if (st === 'sentence') {
+    if (st === 'sentence_writing' || st === 'sentence_speaking') {
       if (!ex || !meaning) return
       if (!word) word = ex.length > 300 ? ex.slice(0, 300) : ex
-    } else if (st === 'image') {
-      if (!word || !meaning) return
-    } else {
-      if (!word || !meaning) return
+    } else if (!word || !meaning) {
+      return
     }
 
     const payload = {
@@ -711,50 +719,77 @@ export default function WordsManagePage() {
                     gap: 6,
                   }}
                 >
-                  <button
-                    type="button"
-                    onClick={() => changeSetFilter(n)}
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      textAlign: 'left',
-                      padding: '8px 10px',
-                      borderRadius: RADIUS.sm,
-                      border: `1px solid ${active ? COLORS.primary : COLORS.border}`,
-                      background: active ? COLORS.primarySoft : COLORS.bg,
-                      cursor: 'pointer',
-                      fontSize: 13,
-                      fontWeight: active ? 700 : 400,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title={n}
-                  >
-                    {n} ({cnt})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setSettingsSetName(n)
-                    }}
-                    style={{
-                      flexShrink: 0,
-                      padding: '6px 8px',
-                      borderRadius: RADIUS.sm,
-                      border: `1px solid ${COLORS.border}`,
-                      background: COLORS.bg,
-                      cursor: 'pointer',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: COLORS.accentText,
-                      whiteSpace: 'nowrap',
-                    }}
-                    title={`「${n}」세트 설정`}
-                  >
-                    설정
-                  </button>
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <button
+                      type="button"
+                      onClick={() => changeSetFilter(n)}
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '8px 10px',
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${active ? COLORS.primary : COLORS.border}`,
+                        background: active ? COLORS.primarySoft : COLORS.bg,
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        fontWeight: active ? 700 : 400,
+                        boxSizing: 'border-box',
+                      }}
+                      title={n}
+                    >
+                      <span
+                        style={{
+                          display: 'block',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {n} ({cnt})
+                      </span>
+                      <span
+                        style={{
+                          display: 'block',
+                          marginTop: 4,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: COLORS.textSecondary,
+                          lineHeight: 1.35,
+                          whiteSpace: 'normal',
+                          wordBreak: 'break-word',
+                        }}
+                      >
+                        {n in availableModesBySetName
+                          ? formatAvailableModesSummary(
+                              availableModesBySetName[n],
+                              normalizeSetType(setTypeByName[n] || 'word'),
+                            )
+                          : '—'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSettingsSetName(n)
+                      }}
+                      style={{
+                        alignSelf: 'stretch',
+                        padding: '6px 8px',
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.border}`,
+                        background: COLORS.bg,
+                        cursor: 'pointer',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: COLORS.accentText,
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={`「${n}」세트 설정`}
+                    >
+                      설정 변경
+                    </button>
+                  </div>
                 </div>
               )
             })}

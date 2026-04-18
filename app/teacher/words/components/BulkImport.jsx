@@ -17,10 +17,9 @@ const TABS = [
 const EXCEL_FILE_NAMES = {
   word: 'tokpass_단어양식.xlsx',
   sentence: 'tokpass_문장양식.xlsx',
-  image: 'tokpass_이미지양식.xlsx',
 }
 
-/** @param {'word' | 'sentence' | 'image'} t */
+/** @param {'word' | 'sentence'} t */
 function isPreviewRowValidForSetType(r, t) {
   const w = String(r.word || '').trim()
   const m = String(r.meaning || '').trim()
@@ -67,11 +66,16 @@ function isPlaceholderImageCell(s) {
   return false
 }
 
-/** @param {'word' | 'sentence' | 'image'} importSetType */
+/** importSetType: word | sentence* → 엑셀 양식 분기 */
 function downloadTokpassExcelTemplate(importSetType = 'word') {
   let aoa
   let cols
-  const t = importSetType === 'sentence' || importSetType === 'image' ? importSetType : 'word'
+  const t =
+    importSetType === 'sentence' ||
+    importSetType === 'sentence_writing' ||
+    importSetType === 'sentence_speaking'
+      ? 'sentence'
+      : 'word'
   const fileName = EXCEL_FILE_NAMES[t] || EXCEL_FILE_NAMES.word
   if (t === 'sentence') {
     aoa = [
@@ -80,13 +84,6 @@ function downloadTokpassExcelTemplate(importSetType = 'word') {
       ['She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '(선택)', '(선택)'],
     ]
     cols = [{ wch: 36 }, { wch: 22 }, { wch: 24 }, { wch: 28 }]
-  } else if (t === 'image') {
-    aoa = [
-      ['word', 'meaning', 'image_url', 'youtube_url'],
-      ['apple', '사과', '(예: https://...)', '(선택)'],
-      ['lend', '빌려주다', '(예: https://...)', '(선택)'],
-    ]
-    cols = [{ wch: 14 }, { wch: 14 }, { wch: 28 }, { wch: 28 }]
   } else {
     aoa = [
       ['word', 'meaning', 'example_sentence', 'image_url', 'youtube_url'],
@@ -113,7 +110,7 @@ function downloadTokpassExcelTemplate(importSetType = 'word') {
  *   initialSetName?: string
  *   teacherId?: string
  *   academyId?: string
- *   importSetType?: 'word' | 'sentence' | 'image'
+ *   importSetType?: 'word' | 'sentence' | 'sentence_writing' | 'sentence_speaking'
  * }} props
  */
 export default function BulkImport({
@@ -128,7 +125,12 @@ export default function BulkImport({
   academyId,
   importSetType = 'word',
 }) {
-  const setType = importSetType === 'sentence' || importSetType === 'image' ? importSetType : 'word'
+  const setType =
+    importSetType === 'sentence' ||
+    importSetType === 'sentence_writing' ||
+    importSetType === 'sentence_speaking'
+      ? 'sentence'
+      : 'word'
   const [tab, setTab] = useState('ai')
   const [aiPassage, setAiPassage] = useState('')
   const [pasteText, setPasteText] = useState('')
@@ -353,33 +355,6 @@ export default function BulkImport({
       }
       return rows
     }
-    if (setType === 'image') {
-      for (const raw of jsonRows) {
-        const word = getExcelCell(raw, 'word')
-        const meaning = getExcelCell(raw, 'meaning')
-        if (!word || !meaning) continue
-        const imgRaw = getExcelCell(raw, 'image_url')
-        const image_url = isPlaceholderImageCell(imgRaw) ? null : imgRaw
-        const ytRaw = getExcelCell(raw, 'youtube_url')
-        const youtube_url =
-          ytRaw && String(ytRaw).trim() && !isPlaceholderImageCell(ytRaw)
-            ? String(ytRaw).trim()
-            : null
-        rows.push({
-          id: `import-${stamp}-${idx}`,
-          word,
-          meaning,
-          example_sentence: '',
-          set_name: sn,
-          day: d,
-          image_url,
-          image_source: image_url ? 'upload' : 'none',
-          youtube_url,
-        })
-        idx += 1
-      }
-      return rows
-    }
     for (const raw of jsonRows) {
       const word = getExcelCell(raw, 'word')
       if (!word) continue
@@ -433,9 +408,7 @@ export default function BulkImport({
         alert(
           setType === 'sentence'
             ? '읽을 수 있는 문장(example_sentence·meaning) 행이 없습니다. 헤더와 열 이름을 확인해 주세요.'
-            : setType === 'image'
-              ? '읽을 수 있는 이미지(word·meaning) 행이 없습니다. 헤더와 열 이름을 확인해 주세요.'
-              : '읽을 수 있는 단어(word) 행이 없습니다. 헤더와 열 이름을 확인해 주세요.',
+            : '읽을 수 있는 단어(word) 행이 없습니다. 헤더와 열 이름을 확인해 주세요.',
         )
         return
       }
@@ -550,9 +523,7 @@ export default function BulkImport({
           <p style={{ fontSize: 12, color: COLORS.textHint, margin: '10px 0 0' }}>
             {setType === 'sentence'
               ? '컬럼: example_sentence · meaning · image_url(선택) · youtube_url(선택)'
-              : setType === 'image'
-                ? '컬럼: word · meaning · image_url · youtube_url(선택)'
-                : '컬럼: word · meaning · example_sentence · image_url(선택) · youtube_url(선택)'}
+              : '컬럼: word · meaning · example_sentence · image_url(선택) · youtube_url(선택)'}
             — 업로드 후 아래에서 미리보기·저장할 수 있어요.
           </p>
         </section>

@@ -7,15 +7,18 @@ import { assignDaysEqual, assignDaysChunk } from '../utils/dayAssign'
 import {
   ALL_MODE_KEYS,
   parseAvailableModes,
-  buildAvailableModesJson,
+  buildModesDataForWordSetSave,
   defaultRequiredForBaseKeys,
+  normalizeSetType,
 } from '../utils/learningModes'
 import LearningModesPicker from './LearningModesPicker'
 
 const SET_TYPE_LABELS = {
   word: '단어 세트',
-  sentence: '문장 세트',
-  image: '이미지 세트',
+  sentence_writing: '문장 세트 — 라이팅',
+  sentence_speaking: '문장 세트 — 스피킹',
+  sentence: '문장 세트 — 라이팅',
+  image: '단어 세트',
 }
 
 /**
@@ -30,6 +33,8 @@ const SET_TYPE_LABELS = {
  * }} props
  */
 export default function SetSettingsModal({ open, onClose, setName, teacherId, inferredSetType, hasImageWords, onSaved }) {
+  const isSentenceStyle = (st) => st === 'sentence_writing' || st === 'sentence_speaking'
+
   const [loading, setLoading] = useState(true)
   const [wordSetId, setWordSetId] = useState(null)
   const [setType, setSetType] = useState('word')
@@ -66,8 +71,7 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
       if (wsErr) console.warn('[SetSettingsModal] word_sets', wsErr.message)
       if (wErr) console.warn('[SetSettingsModal] words', wErr.message)
 
-      let st = String(ws?.set_type || inferredSetType || 'word').trim()
-      if (st !== 'sentence' && st !== 'image') st = 'word'
+      let st = normalizeSetType(ws?.set_type || inferredSetType || 'word')
       setSetType(st)
 
       const parsed = parseAvailableModes(ws?.available_modes, st)
@@ -127,11 +131,11 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
       const w = String(r.word || '').trim()
       const m = String(r.meaning || '').trim()
       const ex = String(r.example_sentence || '').trim()
-      if (setType === 'sentence') return Boolean(ex && m)
+      if (isSentenceStyle(setType)) return Boolean(ex && m)
       return Boolean(w && m)
     }).length
     if (validCount === 0) {
-      alert(setType === 'sentence' ? '예문·뜻이 있는 행이 없습니다.' : '영단어·뜻이 있는 행이 없습니다.')
+      alert(isSentenceStyle(setType) ? '예문·뜻이 있는 행이 없습니다.' : '영단어·뜻이 있는 행이 없습니다.')
       return
     }
     if (dayMode === 'equal' && totalDays < 1) {
@@ -152,7 +156,7 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
         const w = String(r.word || '').trim()
         const m = String(r.meaning || '').trim()
         const ex = String(r.example_sentence || '').trim()
-        const ok = setType === 'sentence' ? ex && m : w && m
+        const ok = isSentenceStyle(setType) ? ex && m : w && m
         if (!ok) return { ...r, day: r.day ?? 1 }
         const d = seq[vi++]
         return { ...r, day: d }
@@ -172,7 +176,7 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
       const w = String(r.word || '').trim()
       const m = String(r.meaning || '').trim()
       const ex = String(r.example_sentence || '').trim()
-      if (setType === 'sentence') return Boolean(ex && m)
+      if (isSentenceStyle(setType)) return Boolean(ex && m)
       return Boolean(w && m)
     })
     if (valid.length === 0) {
@@ -210,22 +214,34 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
       return
     }
     const sn = String(setName || '').trim()
-    const availableModes = buildAvailableModesJson(modes, requiredByMode, passScore, maxAttempts)
+    const modesData = buildModesDataForWordSetSave(modes, requiredByMode, passScore, maxAttempts)
     setSavingModes(true)
     try {
-      const { error } = await supabase.from('word_sets').upsert(
-        {
-          teacher_id: teacherId,
-          name: sn,
-          set_type: setType,
-          available_modes: availableModes,
-        },
-        { onConflict: 'teacher_id,name' },
-      )
-      if (error) throw error
-
-      const { data: row } = await supabase.from('word_sets').select('id').eq('teacher_id', teacherId).eq('name', sn).maybeSingle()
-      const wid = row?.id ? String(row.id) : wordSetId
+      let wid = wordSetId ? String(wordSetId) : null
+      if (wid) {
+        const { error } = await supabase
+          .from('word_sets')
+          .update({
+            available_modes: modesData,
+            set_type: setType,
+          })
+          .eq('id', wid)
+          .eq('teacher_id', teacherId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('word_sets').upsert(
+          {
+            teacher_id: teacherId,
+            name: sn,
+            set_type: setType,
+            available_modes: modesData,
+          },
+          { onConflict: 'teacher_id,name' },
+        )
+        if (error) throw error
+        const { data: row } = await supabase.from('word_sets').select('id').eq('teacher_id', teacherId).eq('name', sn).maybeSingle()
+        if (row?.id) wid = String(row.id)
+      }
 
       if (wid && modes.test) {
         const { error: e2 } = await supabase.from('vocab_test_settings').upsert(
@@ -239,6 +255,7 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
         if (e2) console.warn('[vocab_test_settings]', e2.message)
       }
 
+      if (wid) setWordSetId(String(wid))
       setHint('학습 모드가 저장되었습니다.')
       onSaved?.()
     } catch (e) {
