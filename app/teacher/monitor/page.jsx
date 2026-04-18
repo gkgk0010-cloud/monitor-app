@@ -453,12 +453,17 @@ export default function TeacherMonitorPage() {
       if (!d.isToeic) {
         lines.push('해당 없음');
       } else {
-        const today = kstYmdToday();
-        const j = d.toeicDetail?.recentJokboStats?.find((s) => s.date === today);
-        if (j) {
-          lines.push(`오늘 ${j.attempts}회 학습, 정답률 ${j.correctRate}%`);
-        } else {
+        const br = d.todayScore.todayJokboTagBreakdown ?? [];
+        const totalAtt = br.reduce((a, x) => a + x.attempts, 0);
+        if (totalAtt === 0) {
           lines.push('오늘 족보 학습 기록이 없어요.');
+        } else {
+          const totalCor = br.reduce((a, x) => a + x.correctCount, 0);
+          const rate = Math.round((totalCor / totalAtt) * 1000) / 10;
+          lines.push(`오늘 ${totalAtt}회 학습, 정답률 ${rate}%`);
+          br.forEach((row) => {
+            lines.push(`• ${row.tag} — ${row.attempts}건 (${row.correctRate}%)`);
+          });
         }
       }
       lines.push('');
@@ -1197,21 +1202,51 @@ export default function TeacherMonitorPage() {
                       {!reportData.isToeic ? (
                         <p style={styles.detailNa}>해당 없음</p>
                       ) : (() => {
-                        const j = reportData.toeicDetail?.recentJokboStats?.find((s) => s.date === kstYmdToday());
-                        if (j) {
-                          return (
+                        const br = reportData.todayScore.todayJokboTagBreakdown ?? [];
+                        const totalAtt = br.reduce((a, x) => a + x.attempts, 0);
+                        if (totalAtt === 0) {
+                          return <p style={styles.detailPlaceholder}>오늘 족보 학습 기록이 없어요.</p>;
+                        }
+                        const totalCor = br.reduce((a, x) => a + x.correctCount, 0);
+                        const rate = Math.round((totalCor / totalAtt) * 1000) / 10;
+                        return (
+                          <>
                             <p style={styles.detailScore}>
                               오늘
                               {' '}
-                              <strong>{j.attempts}</strong>
+                              <strong>{totalAtt}</strong>
                               회 학습, 정답률
                               {' '}
-                              <strong>{j.correctRate}</strong>
+                              <strong>{rate}</strong>
                               %
                             </p>
-                          );
-                        }
-                        return <p style={styles.detailPlaceholder}>오늘 족보 학습 기록이 없어요.</p>;
+                            <ul
+                              style={{
+                                margin: '10px 0 0',
+                                paddingLeft: 18,
+                                color: '#374151',
+                                fontSize: 14,
+                                lineHeight: 1.65,
+                                listStyle: 'none',
+                              }}
+                            >
+                              {br.map((row) => (
+                                <li key={row.tag}>
+                                  •
+                                  {' '}
+                                  {row.tag}
+                                  {' '}
+                                  —
+                                  {' '}
+                                  {row.attempts}
+                                  건 (
+                                  {row.correctRate}
+                                  %)
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        );
                       })()}
                     </div>
                   </>

@@ -128,6 +128,7 @@ async function fetchTodayAnswerStats(studentId: string): Promise<{
     .from('answer_logs')
     .select('correct')
     .eq('student_id', studentId)
+    .in('quiz_type', ['output', 'grammar'])
     .gte('created_at', startIso)
     .lte('created_at', endIso)
   if (error) return { rate: null, attempts: 0 }
@@ -166,6 +167,38 @@ async function fetchTopWrongTags(
     .sort((a, b) => b.wrongCount - a.wrongCount)
     .slice(0, 3)
   return list
+}
+
+/** KST 오늘 · 족보(input)만 · 태그별 집계 (시도 많은 순 상위 5) */
+async function fetchTodayJokboTagBreakdown(
+  studentId: string,
+): Promise<StudentReportData['todayScore']['todayJokboTagBreakdown']> {
+  const { startIso, endIso } = kstTodayRangeUtc()
+  const { data, error } = await supabase
+    .from('answer_logs')
+    .select('tag, correct')
+    .eq('student_id', studentId)
+    .eq('quiz_type', 'input')
+    .gte('created_at', startIso)
+    .lte('created_at', endIso)
+  if (error || !data?.length) return []
+  const byTag = new Map<string, { attempts: number; correct: number }>()
+  for (const r of data) {
+    const tag = (r.tag && String(r.tag).trim()) || '(태그없음)'
+    const cur = byTag.get(tag) || { attempts: 0, correct: 0 }
+    cur.attempts += 1
+    if (r.correct === true) cur.correct += 1
+    byTag.set(tag, cur)
+  }
+  const rows = [...byTag.entries()]
+    .map(([tag, v]) => ({
+      tag,
+      attempts: v.attempts,
+      correctCount: v.correct,
+      correctRate: v.attempts ? Math.round((v.correct / v.attempts) * 1000) / 10 : 0,
+    }))
+    .sort((a, b) => b.attempts - a.attempts)
+  return rows.slice(0, 5)
 }
 
 type RoutineRep = {
@@ -439,6 +472,7 @@ async function buildToeicDetail(studentId: string): Promise<NonNullable<StudentR
     .from('answer_logs')
     .select('created_at, correct, tag')
     .eq('student_id', studentId)
+    .eq('quiz_type', 'input')
     .gte('created_at', since)
     .limit(8000)
   const recentJokboStats: NonNullable<StudentReportData['toeicDetail']>['recentJokboStats'] = []
@@ -508,6 +542,8 @@ async function loadReport(rawStudentId: string): Promise<StudentReportData> {
     fetchPrimaryActiveRoutine(id),
   ])
 
+  const todayJokboTagBreakdown = isToeic ? await fetchTodayJokboTagBreakdown(id) : []
+
   const isToeicFinal = isToeic
 
   let todayRoutine: StudentReportData['todayRoutine'] = {
@@ -573,6 +609,7 @@ async function loadReport(rawStudentId: string): Promise<StudentReportData> {
       cumulativeScore: student.score,
       todayCorrectRate: todayAns.rate,
       todayAttempts: todayAns.attempts,
+      todayJokboTagBreakdown,
       topWrongTags: topWrong,
     },
     todayRoutine,

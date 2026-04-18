@@ -95,8 +95,10 @@ function getEncouragementMessageNoRoutineFromJokbo(avgJokboRate) {
   return '꾸준히 학습 중이나 기본기 보강이 필요합니다.';
 }
 
-function hasAnswerLogsOrModeActivity(todayAttempts, modeStats) {
+function hasAnswerLogsOrModeActivity(todayAttempts, modeStats, todayJokboTagBreakdown) {
   if (todayAttempts > 0) return true;
+  const jokboToday = (todayJokboTagBreakdown || []).reduce((a, x) => a + (x.attempts || 0), 0);
+  if (jokboToday > 0) return true;
   return Object.values(modeStats || {}).some((v) => v && v.totalAttempts > 0);
 }
 
@@ -106,8 +108,9 @@ function hasAnswerLogsOrModeActivity(todayAttempts, modeStats) {
  * @param {boolean} p.hasActiveRoutine — todayRoutine.hasActiveRoutine
  * @param {number} p.avgDayScore — DAY 평균 점수 (%)
  * @param {Array<{ date: string, attempts: number, correctRate: number }>|null|undefined} p.recentJokboStats
- * @param {number} p.todayAttempts — 오늘 answer_logs 시도 수
+ * @param {number} p.todayAttempts — 오늘 answer_logs 시도 수 (오늘의연구: output·grammar)
  * @param {Record<string, { totalAttempts?: number }>|undefined} p.modeStats
+ * @param {Array<{ attempts?: number }>|undefined} p.todayJokboTagBreakdown — 오늘 족보(input)
  */
 function getParentEncouragementMessage({
   hasActiveRoutine,
@@ -115,6 +118,7 @@ function getParentEncouragementMessage({
   recentJokboStats,
   todayAttempts,
   modeStats,
+  todayJokboTagBreakdown,
 }) {
   if (hasActiveRoutine) {
     return getEncouragementMessageFromRoutine(avgDayScore);
@@ -123,7 +127,7 @@ function getParentEncouragementMessage({
   if (avgJokbo != null) {
     return getEncouragementMessageNoRoutineFromJokbo(avgJokbo);
   }
-  if (!hasAnswerLogsOrModeActivity(todayAttempts, modeStats)) {
+  if (!hasAnswerLogsOrModeActivity(todayAttempts, modeStats, todayJokboTagBreakdown)) {
     return '학습 관심이 필요해 보입니다. 교사와 상담 권장.';
   }
   return '학습 활동이 기록되고 있습니다. 계속 응원합니다.';
@@ -227,6 +231,7 @@ export default function StudentReportLayer({
               recentJokboStats: data.toeicDetail?.recentJokboStats,
               todayAttempts: data.todayScore.todayAttempts,
               modeStats: ov.modeStats,
+              todayJokboTagBreakdown: data.todayScore.todayJokboTagBreakdown,
             })}
           </p>
         </section>

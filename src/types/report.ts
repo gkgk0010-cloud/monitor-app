@@ -26,6 +26,13 @@ export interface StudentReportData {
     cumulativeScore: string
     todayCorrectRate: number | null
     todayAttempts: number
+    /** KST 오늘, quiz_type=input(족보)만, 태그별 시도·정답 (시도 수 내림차순 상위) */
+    todayJokboTagBreakdown: Array<{
+      tag: string
+      attempts: number
+      correctCount: number
+      correctRate: number
+    }>
     topWrongTags: Array<{
       tag: string
       wrongCount: number
