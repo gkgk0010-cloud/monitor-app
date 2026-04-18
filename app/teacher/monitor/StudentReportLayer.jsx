@@ -527,7 +527,8 @@ export default function StudentReportLayer({
 
           @media print {
             html,
-            body {
+            body,
+            #__next {
               height: auto !important;
               min-height: 0 !important;
               max-height: none !important;
@@ -542,6 +543,13 @@ export default function StudentReportLayer({
               height: auto !important;
               background: #fff !important;
             }
+            .monitor-container,
+            .teacher-main-shell {
+              min-height: 0 !important;
+              height: auto !important;
+              flex: none !important;
+              display: block !important;
+            }
             .monitor-container > *:not(.sr-root) {
               display: none !important;
             }
@@ -555,6 +563,7 @@ export default function StudentReportLayer({
               height: auto !important;
               overflow: visible !important;
               display: block !important;
+              flex: none !important;
               background: #fff !important;
               color: #000 !important;
               font-size: 11pt !important;
@@ -575,39 +584,54 @@ export default function StudentReportLayer({
               overflow: visible !important;
               height: auto !important;
               min-height: 0 !important;
+              flex: none !important;
             }
             .sr-sticky-header {
               position: static !important;
               box-shadow: none !important;
               border-bottom: 1px solid #000 !important;
-              padding: 0 0 8pt 0 !important;
-              margin-bottom: 8pt !important;
+              padding: 0 0 6pt 0 !important;
+              margin-bottom: 6pt !important;
               background: #fff !important;
+              flex: none !important;
+              min-height: 0 !important;
+              height: auto !important;
             }
             .sr-no-print {
               display: none !important;
             }
             .sr-print-only {
               display: block !important;
-              margin: 6pt 0 0 0 !important;
+              margin: 4pt 0 0 0 !important;
               font-size: 9pt !important;
               font-weight: 500 !important;
               color: #000 !important;
             }
+            /* 강제 페이지 나눔 제거 — 본문이 1페이지에 이어지도록 */
             .sr-parent-summary {
-              page-break-after: always !important;
-              break-after: page !important;
+              page-break-after: auto !important;
+              break-after: auto !important;
+              page-break-inside: avoid !important;
+              break-inside: avoid !important;
               border: 1px solid #374151 !important;
               background: #fff !important;
-              padding: 10pt !important;
-              margin-bottom: 0 !important;
+              padding: 8pt !important;
+              margin-bottom: 10pt !important;
             }
             .sr-meta-bar {
-              page-break-after: avoid !important;
-              break-after: avoid !important;
+              page-break-after: auto !important;
+              break-after: auto !important;
+              margin-bottom: 10pt !important;
             }
             .sr-section-summary {
               page-break-inside: avoid !important;
+              break-inside: avoid !important;
+              margin-bottom: 12pt !important;
+            }
+            .sr-section-day,
+            .sr-section-mode,
+            .sr-section-toeic {
+              margin-bottom: 12pt !important;
             }
             .sr-section-day .sr-table-day thead,
             .sr-section-mode .sr-table-mode thead,
