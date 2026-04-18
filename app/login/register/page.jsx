@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabaseClient';
 import { ensureTeacherRowForSession } from '@/utils/teacherSignup';
+import { uploadAndAssignAcademyLogo } from '@/utils/academyStorage';
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens';
+import AcademyLogoDropzone from '@/app/teacher/components/AcademyLogoDropzone';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -13,6 +15,8 @@ export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
+  const [academyName, setAcademyName] = useState('');
+  const [logoFile, setLogoFile] = useState(null);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -61,11 +65,31 @@ export default function RegisterPage() {
 
       const session = data?.session;
       if (session) {
-        const ensured = await ensureTeacherRowForSession(session);
+        const ensured = await ensureTeacherRowForSession(session, {
+          academy_name: academyName.trim() || undefined,
+        });
         if (!ensured.ok) {
           setError(ensured.error?.message || '선생님 정보 등록에 실패했습니다. 관리자에게 문의하세요.');
           setSubmitting(false);
           return;
+        }
+        if (logoFile && ensured.created) {
+          let tid = ensured.teacherId;
+          if (!tid) {
+            const { data: row } = await supabase
+              .from('teachers')
+              .select('id')
+              .eq('email', email.trim())
+              .maybeSingle();
+            tid = row?.id;
+          }
+          if (tid) {
+            try {
+              await uploadAndAssignAcademyLogo(tid, logoFile, null);
+            } catch (logoErr) {
+              console.warn('[register] 학원 로고 업로드 실패:', logoErr);
+            }
+          }
         }
         router.replace('/teacher/monitor');
         router.refresh();
@@ -193,6 +217,46 @@ export default function RegisterPage() {
                 outline: 'none',
                 boxSizing: 'border-box',
               }}
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="reg-academy"
+              style={{ display: 'block', fontSize: 12, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 6 }}
+            >
+              학원명 (선택)
+            </label>
+            <input
+              id="reg-academy"
+              type="text"
+              autoComplete="organization"
+              value={academyName}
+              onChange={(e) => setAcademyName(e.target.value)}
+              disabled={submitting}
+              placeholder="예: 똑패스 영어학원"
+              style={{
+                width: '100%',
+                padding: '12px 14px',
+                fontSize: 15,
+                borderRadius: RADIUS.md,
+                border: `1px solid ${COLORS.border}`,
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div>
+            <span
+              style={{ display: 'block', fontSize: 12, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 8 }}
+            >
+              학원 로고 (선택)
+            </span>
+            <AcademyLogoDropzone
+              existingUrl={null}
+              pendingFile={logoFile}
+              onFileChange={setLogoFile}
+              disabled={submitting}
+              inputId="reg-academy-logo"
             />
           </div>
           <div>

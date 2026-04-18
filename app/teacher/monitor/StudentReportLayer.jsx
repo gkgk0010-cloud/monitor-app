@@ -147,6 +147,9 @@ export default function StudentReportLayer({
   loading,
   error,
   data,
+  teacherName,
+  teacherAcademyName,
+  teacherAcademyLogoUrl,
 }) {
   useEffect(() => {
     const onKey = (e) => {
@@ -157,6 +160,9 @@ export default function StudentReportLayer({
   }, [onClose]);
 
   const name = (studentDisplayName || '').trim() || '—';
+  const tn = (teacherName && String(teacherName).trim()) || '';
+  const an = (teacherAcademyName && String(teacherAcademyName).trim()) || '';
+  const reportMetaLine = an ? `${tn || '—'} · ${an}` : tn || '';
 
   let body = null;
   if (loading) {
@@ -215,7 +221,10 @@ export default function StudentReportLayer({
     body = (
       <>
         <section style={s.parentSummary} className="sr-parent-summary">
-          <h3 style={s.parentSummaryTitle}>학부모 요약</h3>
+          <h3 style={s.parentSummaryTitle}>월간 학생 개인 보고서</h3>
+          {reportMetaLine ? (
+            <p style={s.parentSummaryMeta}>{reportMetaLine}</p>
+          ) : null}
           <p style={s.parentSummaryLine}>
             <strong>{data.student.name}</strong>
             {' / '}
@@ -620,6 +629,11 @@ export default function StudentReportLayer({
               background: #fff !important;
               border: 1px solid #9ca3af !important;
             }
+            .sr-print-logo {
+              max-height: 40px !important;
+              width: auto !important;
+              object-fit: contain !important;
+            }
           }
         `}
       </style>
@@ -633,11 +647,29 @@ export default function StudentReportLayer({
             {' '}
             리포트
           </h2>
-          <p className="sr-print-only" style={s.printHeaderSub}>
-            똑패스 개인 리포트 | 인쇄일:
-            {' '}
-            {new Date().toLocaleDateString('ko-KR')}
-          </p>
+          <div className="sr-print-only" style={s.printHeaderBlock}>
+            <div style={s.printHeaderRow}>
+              {teacherAcademyLogoUrl ? (
+                <img
+                  src={teacherAcademyLogoUrl}
+                  alt=""
+                  className="sr-print-logo"
+                  style={s.printLogoImg}
+                />
+              ) : null}
+              <span style={s.printHeaderTitle}>똑패스 개인 맞춤 월간 보고서</span>
+            </div>
+            {reportMetaLine ? (
+              <div style={s.printHeaderMeta}>{reportMetaLine}</div>
+            ) : tn ? (
+              <div style={s.printHeaderMeta}>{tn}</div>
+            ) : null}
+            <div style={s.printHeaderDate}>
+              인쇄일:
+              {' '}
+              {new Date().toLocaleDateString('ko-KR')}
+            </div>
+          </div>
         </div>
         <div style={s.headerBtns}>
           <button
@@ -686,11 +718,35 @@ const s = {
     boxShadow: '0 1px 0 rgba(0,0,0,0.04)',
   },
   headerLeft: { flex: 1, minWidth: 0 },
-  printHeaderSub: {
+  printHeaderBlock: {
     margin: '8px 0 0',
+  },
+  printHeaderRow: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  printLogoImg: {
+    height: 40,
+    maxWidth: 140,
+    objectFit: 'contain',
+  },
+  printHeaderTitle: {
     fontSize: 12,
-    color: '#6b7280',
+    fontWeight: 700,
+    color: '#111827',
+  },
+  printHeaderMeta: {
+    marginTop: 6,
+    fontSize: 11,
+    color: '#4b5563',
     fontWeight: 500,
+  },
+  printHeaderDate: {
+    marginTop: 4,
+    fontSize: 11,
+    color: '#6b7280',
   },
   title: {
     margin: 0,
@@ -706,10 +762,16 @@ const s = {
     border: '1px solid #e9d5ff',
   },
   parentSummaryTitle: {
-    margin: '0 0 12px',
+    margin: '0 0 8px',
     fontSize: '1rem',
     fontWeight: 700,
     color: '#5b21b6',
+  },
+  parentSummaryMeta: {
+    margin: '0 0 12px',
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#6b21a8',
   },
   parentSummaryLine: {
     margin: '0 0 10px',

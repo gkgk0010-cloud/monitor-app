@@ -26,7 +26,11 @@ export function generateInviteCode() {
  * 로그인 세션 기준으로 teachers 행이 없으면 생성 (회원가입 직후·이메일 인증 후 첫 로그인)
  * @returns {Promise<{ ok: boolean, created?: boolean, error?: Error }>}
  */
-export async function ensureTeacherRowForSession(session) {
+/**
+ * @param {import('@supabase/supabase-js').Session} session
+ * @param {{ academy_name?: string }} [extra] 신규 insert 시에만 반영 (기존 행은 갱신하지 않음)
+ */
+export async function ensureTeacherRowForSession(session, extra = {}) {
   if (!session?.user?.email) {
     return { ok: false, error: new Error('이메일 정보가 없습니다.') };
   }
@@ -44,7 +48,7 @@ export async function ensureTeacherRowForSession(session) {
     return { ok: false, error: selErr };
   }
   if (existing?.id) {
-    return { ok: true, created: false };
+    return { ok: true, created: false, teacherId: existing.id };
   }
 
   const meta = session.user.user_metadata || {};
@@ -57,6 +61,10 @@ export async function ensureTeacherRowForSession(session) {
     email,
     name,
   };
+  const an = typeof extra.academy_name === 'string' ? extra.academy_name.trim() : '';
+  if (an) {
+    basePayload.academy_name = an;
+  }
   if (DEFAULT_ACADEMY_ID) {
     basePayload.academy_id = DEFAULT_ACADEMY_ID;
   }
@@ -67,9 +75,9 @@ export async function ensureTeacherRowForSession(session) {
       code: generateTeacherCode(),
       invite_code: generateInviteCode(),
     };
-    const { error: insErr } = await supabase.from('teachers').insert(payload);
+    const { data: inserted, error: insErr } = await supabase.from('teachers').insert(payload).select('id').single();
     if (!insErr) {
-      return { ok: true, created: true };
+      return { ok: true, created: true, teacherId: inserted?.id };
     }
     const msg = insErr.message || '';
     const duplicate = msg.includes('duplicate') || msg.includes('unique') || insErr.code === '23505';

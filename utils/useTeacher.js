@@ -24,7 +24,7 @@ export function useTeacher() {
 
     const { data, error: qErr } = await supabase
       .from('teachers')
-      .select('id, name, email, invite_code, academy_id, visible_menus')
+      .select('id, name, email, invite_code, academy_id, visible_menus, academy_name, academy_logo_url')
       .eq('email', email)
       .maybeSingle();
 

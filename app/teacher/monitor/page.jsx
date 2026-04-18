@@ -1282,6 +1282,9 @@ export default function TeacherMonitorPage() {
             loading={reportLoading}
             error={reportError}
             data={reportData}
+            teacherName={teacher?.name}
+            teacherAcademyName={teacher?.academy_name}
+            teacherAcademyLogoUrl={teacher?.academy_logo_url}
           />
         )}
       </div>

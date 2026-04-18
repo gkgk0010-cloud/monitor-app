@@ -32,11 +32,14 @@ export default function TeacherLayout({ children }) {
 
   const isMonitor = pathname === '/teacher/monitor';
   const isTest = pathname === '/teacher/test';
+  const isSettings = pathname === '/teacher/settings';
   const isWords =
     pathname === '/teacher/words' ||
     (pathname?.startsWith('/teacher/words/') && !pathname?.startsWith('/teacher/words/create'));
 
   const displayName = teacher?.name?.trim() || teacher?.email || '선생님';
+  const academyLabel = (teacher?.academy_name && String(teacher.academy_name).trim()) || '';
+  const academyLogo = (teacher?.academy_logo_url && String(teacher.academy_logo_url).trim()) || '';
 
   return (
     <div
@@ -96,11 +99,58 @@ export default function TeacherLayout({ children }) {
           <Link href="/teacher/test" style={navItemStyle(isTest)}>
             테스트지
           </Link>
+          <Link href="/teacher/settings" style={navItemStyle(isSettings)}>
+            설정
+          </Link>
         </nav>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.95)', maxWidth: 160 }} title={teacher?.email}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexShrink: 0,
+            flexWrap: 'nowrap',
+            maxWidth: 'min(420px, 100%)',
+          }}
+        >
+          {academyLogo ? (
+            <img
+              src={academyLogo}
+              alt=""
+              width={30}
+              height={30}
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 8,
+                objectFit: 'cover',
+                flexShrink: 0,
+                border: '1px solid rgba(255,255,255,0.35)',
+              }}
+            />
+          ) : null}
+          <span
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: 'rgba(255,255,255,0.95)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: 200,
+            }}
+            title={teacher?.email}
+          >
             {loading ? '…' : displayName}
+            {academyLabel ? (
+              <>
+                {' '}
+                <span style={{ opacity: 0.85 }}>|</span>
+                {' '}
+                <span style={{ fontWeight: 500 }}>{academyLabel}</span>
+              </>
+            ) : null}
           </span>
           <button
             type="button"
