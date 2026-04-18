@@ -20,6 +20,7 @@ const MODE_LABEL = {
   composition: '입영작',
   reading: '직독직해',
   vocabtest: '단어시험',
+  unknown: '분류 없음',
 };
 
 function modeLabel(key) {
@@ -45,6 +46,9 @@ function formatStartedAtKst(iso) {
 }
 
 function formatModeNote(mode, m) {
+  if (mode === 'unknown') {
+    return '구버전 기록';
+  }
   if (mode === 'matching') {
     const mx = m.maxScore != null ? m.maxScore : '—';
     const av = m.avgScore != null ? m.avgScore : '—';
@@ -58,11 +62,79 @@ function formatModeNote(mode, m) {
   return '';
 }
 
-function getEncouragementMessage(avgDayScore) {
+/** 루틴 보유 학생: DAY 평균 점수 기준 (기존과 동일) */
+function getEncouragementMessageFromRoutine(avgDayScore) {
   if (avgDayScore >= 90) return '훌륭합니다! 꾸준히 잘 해내고 있어요.';
   if (avgDayScore >= 70) return '성실히 진행 중입니다. 계속 응원합니다.';
   if (avgDayScore >= 50) return '꾸준한 참여가 중요합니다. 함께 노력해봐요.';
   return '학습 관심이 필요해 보입니다. 교사와 상담 권장.';
+}
+
+/**
+ * 최근 30일 족보 일자별 통계로부터 가중 평균 정답률(%).
+ * (일자별 correctRate·attempts로부터 sum(시도×정답률)/sum(시도) 와 동치)
+ */
+function computeAvgJokboRatePercent(recentJokboStats) {
+  if (!recentJokboStats?.length) return null;
+  let sumAttempts = 0;
+  let sumCorrectWeighted = 0;
+  for (const row of recentJokboStats) {
+    const a = Number(row.attempts) || 0;
+    if (a <= 0) continue;
+    sumAttempts += a;
+    sumCorrectWeighted += (a * (Number(row.correctRate) || 0)) / 100;
+  }
+  if (sumAttempts <= 0) return null;
+  return (sumCorrectWeighted / sumAttempts) * 100;
+}
+
+/** 루틴 없음 + 족보 30일 데이터가 있을 때 */
+function getEncouragementMessageNoRoutineFromJokbo(avgJokboRate) {
+  if (avgJokboRate >= 70) return '꾸준히 학습하고 있습니다.';
+  if (avgJokboRate >= 50) return '꾸준히 학습 중이며, 정답률 향상이 과제입니다.';
+  return '꾸준히 학습 중이나 기본기 보강이 필요합니다.';
+}
+
+function hasAnswerLogsOrModeActivity(todayAttempts, modeStats) {
+  if (todayAttempts > 0) return true;
+  return Object.values(modeStats || {}).some((v) => v && v.totalAttempts > 0);
+}
+
+/**
+ * 학부모 요약 격려 문구
+ * @param {object} p
+ * @param {boolean} p.hasActiveRoutine — todayRoutine.hasActiveRoutine
+ * @param {number} p.avgDayScore — DAY 평균 점수 (%)
+ * @param {Array<{ date: string, attempts: number, correctRate: number }>|null|undefined} p.recentJokboStats
+ * @param {number} p.todayAttempts — 오늘 answer_logs 시도 수
+ * @param {Record<string, { totalAttempts?: number }>|undefined} p.modeStats
+ */
+function getParentEncouragementMessage({
+  hasActiveRoutine,
+  avgDayScore,
+  recentJokboStats,
+  todayAttempts,
+  modeStats,
+}) {
+  if (hasActiveRoutine) {
+    return getEncouragementMessageFromRoutine(avgDayScore);
+  }
+  const avgJokbo = computeAvgJokboRatePercent(recentJokboStats);
+  if (avgJokbo != null) {
+    return getEncouragementMessageNoRoutineFromJokbo(avgJokbo);
+  }
+  if (!hasAnswerLogsOrModeActivity(todayAttempts, modeStats)) {
+    return '학습 관심이 필요해 보입니다. 교사와 상담 권장.';
+  }
+  return '학습 활동이 기록되고 있습니다. 계속 응원합니다.';
+}
+
+/** matching / vocabtest / test 는 is_correct 기반이 아니어서 정답률 % 대신 대시 */
+function formatModeCorrectRateDisplay(mode, correctRate) {
+  if (mode === 'matching' || mode === 'vocabtest' || mode === 'test') {
+    return '—';
+  }
+  return `${correctRate}%`;
 }
 
 export default function StudentReportLayer({
@@ -148,7 +220,15 @@ export default function StudentReportLayer({
             {hasRoutine && tr.currentDay != null ? tr.currentDay : '—'}
           </p>
           <p style={s.parentSummaryHighlight}>{summaryLine}</p>
-          <p style={s.parentSummaryEncourage}>{getEncouragementMessage(avgDayScore)}</p>
+          <p style={s.parentSummaryEncourage}>
+            {getParentEncouragementMessage({
+              hasActiveRoutine: tr.hasActiveRoutine,
+              avgDayScore,
+              recentJokboStats: data.toeicDetail?.recentJokboStats,
+              todayAttempts: data.todayScore.todayAttempts,
+              modeStats: ov.modeStats,
+            })}
+          </p>
         </section>
 
         <div style={s.metaBar} className="sr-meta-bar">
@@ -276,7 +356,7 @@ export default function StudentReportLayer({
                     <tr key={mode}>
                       <td style={s.td}>{modeLabel(mode)}</td>
                       <td style={s.td}>{m.totalAttempts}</td>
-                      <td style={s.td}>{m.correctRate}%</td>
+                      <td style={s.td}>{formatModeCorrectRateDisplay(mode, m.correctRate)}</td>
                       <td style={{ ...s.td, fontSize: 12, color: '#6b7280' }}>{formatModeNote(mode, m)}</td>
                     </tr>
                   ))}
