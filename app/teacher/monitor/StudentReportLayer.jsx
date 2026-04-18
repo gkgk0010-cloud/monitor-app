@@ -383,7 +383,7 @@ export default function StudentReportLayer({
           <section style={s.section} className="sr-section-toeic">
             <h3 style={s.h3}>📘 토익 상세</h3>
 
-            <h4 style={s.toeicBlockTitle}>━━━ 족보 ━━━</h4>
+            <h4 style={s.h4}>족보</h4>
             <h5 style={s.h5}>최근 30일 족보</h5>
             {jokboRows.length === 0 ? (
               <p style={s.muted}>기록이 없습니다.</p>
@@ -436,7 +436,7 @@ export default function StudentReportLayer({
               </div>
             )}
 
-            <h4 style={s.toeicBlockTitle}>━━━ 오늘의연구 ━━━</h4>
+            <h4 style={{ ...s.h4, marginTop: 22 }}>오늘의연구</h4>
             <h5 style={s.h5}>최근 30일 오늘의연구</h5>
             {researchRows.length === 0 ? (
               <p style={s.muted}>기록이 없습니다.</p>
@@ -517,13 +517,35 @@ export default function StudentReportLayer({
           }
 
           @media print {
+            html,
+            body {
+              height: auto !important;
+              min-height: 0 !important;
+              max-height: none !important;
+              overflow: visible !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              background: #fff !important;
+            }
+            /* 모니터 본문·상세 모달 등은 숨기고 리포트(.sr-root)만 인쇄 */
+            .monitor-page {
+              min-height: 0 !important;
+              height: auto !important;
+              background: #fff !important;
+            }
+            .monitor-container > *:not(.sr-root) {
+              display: none !important;
+            }
             .sr-root {
               position: static !important;
               inset: auto !important;
               z-index: auto !important;
+              width: 100% !important;
+              max-width: 100% !important;
               min-height: 0 !important;
               height: auto !important;
               overflow: visible !important;
+              display: block !important;
               background: #fff !important;
               color: #000 !important;
               font-size: 11pt !important;
@@ -532,6 +554,9 @@ export default function StudentReportLayer({
               print-color-adjust: exact;
               color-adjust: exact;
             }
+            .sr-root .sr-no-print {
+              display: none !important;
+            }
             .sr-scroll {
               max-width: none !important;
               width: 100% !important;
@@ -539,6 +564,8 @@ export default function StudentReportLayer({
               padding: 0 !important;
               background: #fff !important;
               overflow: visible !important;
+              height: auto !important;
+              min-height: 0 !important;
             }
             .sr-sticky-header {
               position: static !important;
@@ -583,9 +610,6 @@ export default function StudentReportLayer({
             .sr-section-toeic .sr-table-toeic tr {
               page-break-inside: avoid !important;
               break-inside: avoid !important;
-            }
-            .sr-section-toeic {
-              page-break-before: auto !important;
             }
             .sr-table-day,
             .sr-table-mode,
@@ -758,17 +782,6 @@ const s = {
     fontSize: '0.9rem',
     fontWeight: 600,
     color: '#4b5563',
-  },
-  /** 토익 상세: 족보 / 오늘의연구 구분 */
-  toeicBlockTitle: {
-    margin: '18px 0 12px',
-    padding: '10px 0 8px',
-    borderTop: '1px solid #e5e7eb',
-    borderBottom: '1px solid #e5e7eb',
-    fontSize: '0.88rem',
-    fontWeight: 700,
-    color: '#1f2937',
-    letterSpacing: '0.02em',
   },
   h5: {
     margin: '12px 0 8px',
