@@ -21,7 +21,7 @@ import {
   normalizeSetType,
 } from '../utils/learningModes'
 
-/** routines.review_modes JSON 배열에 들어가는 키 */
+/** 복습 방식 체크박스 키 (신규 루틴 INSERT에만 routines 컬럼이 있을 때 저장; 수정 저장 시에는 검증·폼 일관용) */
 const REVIEW_MODE_OPTIONS = [
   { key: 'test', label: '테스트로 복습' },
   { key: 'reading', label: '직독직해로 복습' },
@@ -209,9 +209,13 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
       setTotalDaysInput(String(d.totalDays ?? 28))
       setReviewCycleInput(d.reviewOffsets?.length ? `+${d.reviewOffsets.join('+')}` : '+1+3+7')
       setRestDaysInput(d.restDayNumbers?.length ? d.restDayNumbers.map((n) => `DAY${n}`).join(', ') : '')
+      const defaults = defaultReviewModePick()
       const pick = defaultReviewModePick()
       for (const o of REVIEW_MODE_OPTIONS) {
-        pick[o.key] = Array.isArray(d.reviewModes) && d.reviewModes.includes(o.key)
+        pick[o.key] =
+          Array.isArray(d.reviewModes) && d.reviewModes.length > 0
+            ? d.reviewModes.includes(o.key)
+            : defaults[o.key]
       }
       setReviewModePick(pick)
       setFormOpen(true)
@@ -779,7 +783,8 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
             <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.accentText }}>복습 방식 선택</div>
             <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary }}>(1개 이상 선택)</p>
             <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
-              선택한 방식이 <span style={{ fontWeight: 600 }}>routines.review_modes</span>(JSON)에 저장됩니다.
+              복습 간격·일차 태스크는 위 입력과 <span style={{ fontWeight: 600 }}>routine_days / routine_tasks</span>로
+              반영됩니다. (DB에 별도 복습 설정 컬럼이 없을 수 있습니다.)
             </p>
             {REVIEW_MODE_OPTIONS.map(({ key, label }) => (
               <label

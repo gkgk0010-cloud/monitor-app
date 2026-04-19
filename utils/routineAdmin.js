@@ -227,6 +227,7 @@ export async function createRoutineWithDaysAndTasks({
  *   reviewOffsets: number[],
  *   learningModeTasks: { task_type: string, is_required: boolean }[],
  * } }>}
+ * @description reviewModes: DB에 컬럼이 없으면 빈 배열 — UI는 기본 복습 체크값 사용
  */
 export async function fetchRoutineForEdit(routineId, teacherId) {
   if (!routineId || !teacherId) {
@@ -235,7 +236,7 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
 
   const { data: r, error: er } = await supabase
     .from('routines')
-    .select('id, title, set_name, total_days, review_modes, teacher_id')
+    .select('id, title, set_name, total_days, teacher_id')
     .eq('id', routineId)
     .eq('teacher_id', teacherId)
     .maybeSingle()
@@ -313,9 +314,6 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
     }
   }
 
-  const rm = r.review_modes
-  const reviewModes = Array.isArray(rm) ? rm.map((x) => String(x)) : []
-
   return {
     ok: true,
     data: {
@@ -323,7 +321,8 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
       title: r.title != null ? String(r.title) : '',
       setName: r.set_name != null ? String(r.set_name) : '',
       totalDays: Math.max(1, parseInt(String(r.total_days), 10) || 1),
-      reviewModes,
+      /** routines.review_modes 컬럼 없음 — 복습 간격·태스크는 routine_tasks에서 역산됨 */
+      reviewModes: [],
       restDayNumbers,
       reviewOffsets: reviewOffsets.length > 0 ? reviewOffsets : [1, 3, 7],
       learningModeTasks,
@@ -345,7 +344,6 @@ export async function updateRoutineWithDaysAndTasks(
     reviewOffsets,
     restDayNumbers,
     learningModeTasks = [],
-    reviewModes = ['test'],
   },
 ) {
   if (!routineId || !teacherId) {
@@ -368,7 +366,6 @@ export async function updateRoutineWithDaysAndTasks(
 
   const td = Math.max(1, parseInt(String(totalDays), 10) || 1)
   const restSet = new Set(restDayNumbers.filter((d) => d >= 1 && d <= td))
-  const review_modes = Array.isArray(reviewModes) && reviewModes.length > 0 ? reviewModes : ['test']
 
   const { data: existingDays, error: eDay } = await supabase
     .from('routine_days')
@@ -385,7 +382,6 @@ export async function updateRoutineWithDaysAndTasks(
       title: String(title).trim(),
       set_name: String(setName).trim(),
       total_days: td,
-      review_modes,
     })
     .eq('id', routineId)
     .eq('teacher_id', teacherId)
