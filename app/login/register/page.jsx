@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabaseClient';
+import { explainAuthEmailError } from '@/utils/authEmailHelp';
 import { ensureTeacherRowForSession } from '@/utils/teacherSignup';
 import { uploadAndAssignAcademyLogo } from '@/utils/academyStorage';
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens';
@@ -54,13 +55,15 @@ export default function RegisterPage() {
           data: {
             full_name: name.trim() || undefined,
             teaching_type: teachingType,
+            /** 이메일 인증 후 /auth/callback 에서 ensureTeacherRowForSession 이 학원 행 생성 시 사용 */
+            academy_name: academyName.trim() || undefined,
           },
           /** 메일 링크가 배포 도메인(또는 로컬)의 /auth/callback 으로 오도록 함 */
           emailRedirectTo: origin ? `${origin}/auth/callback` : undefined,
         },
       });
       if (signErr) {
-        setError(signErr.message || '회원가입에 실패했습니다.');
+        setError(explainAuthEmailError(signErr) || '회원가입에 실패했습니다.');
         setSubmitting(false);
         return;
       }
@@ -100,7 +103,7 @@ export default function RegisterPage() {
       }
 
       setInfo(
-        '가입 확인 메일을 보냈습니다. 받은편지함·스팸함을 확인해 주세요. 몇 분 걸릴 수 있습니다. 이미 가입된 주소면 보안상 메일이 가지 않을 수 있으니 로그인을 시도해 보세요.',
+        '가입 확인 메일을 보냈습니다. 받은편지함·스팸함을 확인해 주세요. 몇 분 걸릴 수 있습니다. 이미 가입된 주소면 보안상 메일이 가지 않을 수 있으니 로그인을 시도해 보세요. 메일이 자주 막히면 Supabase Authentication → SMTP 연동(Resend 등)을 권장합니다. 기본 메일만 쓰면 한도를 UI에서 잘 못 올립니다.',
       );
     } catch (err) {
       setError(err?.message || '회원가입 중 오류가 발생했습니다.');
@@ -125,11 +128,11 @@ export default function RegisterPage() {
         options: origin ? { emailRedirectTo: `${origin}/auth/callback` } : undefined,
       });
       if (resendErr) {
-        setError(resendErr.message || '재전송에 실패했습니다.');
+        setError(explainAuthEmailError(resendErr) || '재전송에 실패했습니다.');
         return;
       }
       setInfo(
-        '인증 메일을 다시 보냈습니다. 스팸함도 확인해 주세요. (Supabase 대시보드에서 이메일 발송·SMTP 설정을 확인할 수 있습니다.)',
+        '인증 메일을 다시 보냈습니다. 스팸함도 확인해 주세요. 안 오면 Rate limits 이메일 한도·SMTP 설정을 확인하세요.',
       );
       if (resendTickRef.current) window.clearInterval(resendTickRef.current);
       setResendCooldown(60);
@@ -486,6 +489,17 @@ export default function RegisterPage() {
           <Link href="/login" style={{ color: COLORS.primary, fontWeight: 600, textDecoration: 'none' }}>
             이미 계정이 있으신가요? 로그인
           </Link>
+        </p>
+        <p
+          style={{
+            marginTop: 16,
+            fontSize: 11,
+            lineHeight: 1.5,
+            color: COLORS.textSecondary,
+            textAlign: 'center',
+          }}
+        >
+          운영자: 기본 SMTP만 쓰면「이메일 발송」한도가 2/시간처럼 낮게 고정되고 Rate limits 숫자가 안 바뀌는 경우가 많습니다. Supabase 문서상 이메일 발송 한도 조정은 Custom SMTP 연동 후 가능합니다. Authentication → SMTP에 Resend 등을 넣은 뒤 한도·발송을 설정하세요.
         </p>
       </div>
     </div>

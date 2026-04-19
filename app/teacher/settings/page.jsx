@@ -7,6 +7,7 @@ import { useTeacher } from '@/utils/useTeacher';
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens';
 import AcademyLogoDropzone from '@/app/teacher/components/AcademyLogoDropzone';
 import { uploadAndAssignAcademyLogo, clearTeacherAcademyLogo } from '@/utils/academyStorage';
+import { insertAcademyRowForName, normalizeTeachingType } from '@/utils/teacherSignup';
 
 export default function TeacherSettingsPage() {
   const { teacher, loading, refresh } = useTeacher();
@@ -46,10 +47,31 @@ export default function TeacherSettingsPage() {
         setPendingLogoFile(null);
       }
 
-      const { error: upErr } = await supabase
-        .from('teachers')
-        .update({ academy_name: nameTrim || null })
-        .eq('id', teacher.id);
+      const teacherPayload = { academy_name: nameTrim || null };
+
+      if (nameTrim) {
+        if (teacher.academy_id) {
+          const { error: acUp } = await supabase
+            .from('academies')
+            .update({ name: nameTrim })
+            .eq('id', teacher.academy_id);
+          if (acUp) {
+            setError(acUp.message || '학원 이름 저장에 실패했습니다.');
+            setSaving(false);
+            return;
+          }
+        } else {
+          const ac = await insertAcademyRowForName(nameTrim, normalizeTeachingType(teacher.teaching_type));
+          if (!ac.ok) {
+            setError(ac.error?.message || '학원 등록에 실패했습니다.');
+            setSaving(false);
+            return;
+          }
+          teacherPayload.academy_id = ac.academyId;
+        }
+      }
+
+      const { error: upErr } = await supabase.from('teachers').update(teacherPayload).eq('id', teacher.id);
 
       if (upErr) {
         setError(upErr.message || '저장에 실패했습니다.');
