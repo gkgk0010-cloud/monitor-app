@@ -121,6 +121,30 @@ export default function TeacherSettingsPage() {
           학원명과 로고는 리포트·상단 메뉴에 표시됩니다. 로고는 저장 버튼을 눌러야 서버에 반영됩니다.
         </p>
 
+        <div
+          style={{
+            marginBottom: 20,
+            padding: '14px 16px',
+            borderRadius: RADIUS.md,
+            border: `1px solid ${COLORS.border}`,
+            background: COLORS.bg,
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 600, color: COLORS.textSecondary, marginBottom: 6 }}>
+            강의 유형
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: COLORS.textPrimary, lineHeight: 1.45 }}>
+            {teacher.teaching_type === 'toeic'
+              ? '토익 강의 위주 (토익 전용 메뉴)'
+              : teacher.teaching_type === 'general'
+                ? '일반 어학원 (단어 학습 중심)'
+                : '— (미설정 · 회원가입 이전 계정일 수 있음)'}
+          </div>
+          <p style={{ margin: '10px 0 0', fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.5 }}>
+            회원가입 시 선택한 유형입니다. 학생 앱 메뉴 노출은「단어 관리」→ 메뉴 설정에서 변경할 수 있습니다.
+          </p>
+        </div>
+
         <div style={{ marginBottom: 18 }}>
           <label
             htmlFor="academy-name"

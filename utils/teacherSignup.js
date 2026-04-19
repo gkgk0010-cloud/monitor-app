@@ -1,6 +1,8 @@
 import { supabase } from '@/utils/supabaseClient';
 import { DEFAULT_ACADEMY_ID } from '@/utils/defaults';
 
+/** @typedef {'toeic' | 'general'} TeachingType */
+
 const INVITE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_SUFFIX_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
@@ -23,12 +25,47 @@ export function generateInviteCode() {
 }
 
 /**
+ * 학생 앱 메뉴(JSON) — `MenuSettingsSection`·DB 기본값과 키를 맞춤 (`result` = 나의 성과).
+ * @param {TeachingType} teachingType
+ * @returns {Record<string, boolean>}
+ */
+export function visibleMenusForTeachingType(teachingType) {
+  if (teachingType === 'toeic') {
+    return {
+      vocab: true,
+      quiz: true,
+      result: true,
+      homework: true,
+      absence: true,
+      jokbo: true,
+    };
+  }
+  return {
+    vocab: true,
+    quiz: false,
+    result: false,
+    homework: false,
+    absence: false,
+    jokbo: false,
+  };
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {TeachingType}
+ */
+export function normalizeTeachingType(raw) {
+  if (raw === 'toeic' || raw === 'general') return raw;
+  return 'general';
+}
+
+/**
  * 로그인 세션 기준으로 teachers 행이 없으면 생성 (회원가입 직후·이메일 인증 후 첫 로그인)
  * @returns {Promise<{ ok: boolean, created?: boolean, error?: Error }>}
  */
 /**
  * @param {import('@supabase/supabase-js').Session} session
- * @param {{ academy_name?: string }} [extra] 신규 insert 시에만 반영 (기존 행은 갱신하지 않음)
+ * @param {{ academy_name?: string, teaching_type?: string }} [extra] 신규 insert 시에만 반영 (기존 행은 갱신하지 않음)
  */
 export async function ensureTeacherRowForSession(session, extra = {}) {
   if (!session?.user?.email) {
@@ -57,9 +94,15 @@ export async function ensureTeacherRowForSession(session, extra = {}) {
     (typeof meta.name === 'string' && meta.name.trim()) ||
     email.split('@')[0];
 
+  const teachingType = normalizeTeachingType(
+    typeof extra.teaching_type === 'string' ? extra.teaching_type : meta.teaching_type,
+  );
+
   const basePayload = {
     email,
     name,
+    teaching_type: teachingType,
+    visible_menus: visibleMenusForTeachingType(teachingType),
   };
   const an = typeof extra.academy_name === 'string' ? extra.academy_name.trim() : '';
   if (an) {

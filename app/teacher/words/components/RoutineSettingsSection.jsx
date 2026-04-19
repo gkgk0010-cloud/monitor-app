@@ -5,9 +5,11 @@ import { supabase } from '@/utils/supabaseClient'
 import { useTeacher } from '@/utils/useTeacher'
 import {
   createRoutineWithDaysAndTasks,
+  fetchRoutineForEdit,
   fetchTeacherRoutinesWithStats,
   parseRestDayNumbers,
   parseReviewOffsets,
+  updateRoutineWithDaysAndTasks,
 } from '@/utils/routineAdmin'
 import { COLORS, RADIUS } from '@/utils/tokens'
 import {
@@ -72,6 +74,9 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState(null)
   const [formOpen, setFormOpen] = useState(false)
+  /** 수정 중일 때만 설정 (신규 생성은 null) */
+  const [editingRoutineId, setEditingRoutineId] = useState(null)
+  const [editLoading, setEditLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
 
@@ -135,7 +140,7 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
       setOptionalModeKeys([])
       setIncludeOptional({})
       setCurrentSetType('word')
-      return
+      return { requiredKeys: [], optionalKeys: [] }
     }
     setModesLoading(true)
     try {
@@ -146,7 +151,7 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
         .eq('name', sn)
         .maybeSingle()
       setCurrentSetType(normalizeSetType(ws?.set_type))
-      const parsed = parseAvailableModes(ws?.available_modes, st)
+      const parsed = parseAvailableModes(ws?.available_modes, normalizeSetType(ws?.set_type))
       setTestPassScore(parsed.passScore ?? 80)
       setTestMaxAttempts(parsed.maxAttempts ?? 3)
       const { requiredKeys, optionalKeys } = splitModesForRoutine(parsed)
@@ -158,17 +163,20 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
         inc[k] = !!parsed.modes[k]
       }
       setIncludeOptional(inc)
+      return { requiredKeys, optionalKeys }
     } finally {
       setModesLoading(false)
     }
   }, [teacherId])
 
+  /** 신규 루틴 폼: 세트 선택 시 모드 로드. 편집 진입은 handleStartEdit에서만 로드해 덮어쓰기 방지 */
   useEffect(() => {
-    if (!formOpen || !selectedSet) return
+    if (!formOpen || !selectedSet || editingRoutineId) return
     void loadModesForSet(selectedSet)
-  }, [formOpen, selectedSet, loadModesForSet])
+  }, [formOpen, selectedSet, loadModesForSet, editingRoutineId])
 
   const resetForm = () => {
+    setEditingRoutineId(null)
     setRoutineName('')
     setSelectedSet(setNames[0] || '')
     setRequiredModeKeys([])
@@ -182,6 +190,43 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
     setReviewCycleInput('+1+3+7')
     setRestDaysInput('DAY7, DAY14, DAY21')
     setSaveError(null)
+  }
+
+  const handleStartEdit = async (routineId) => {
+    if (!teacherId || !routineId) return
+    setEditLoading(true)
+    setSaveError(null)
+    try {
+      const res = await fetchRoutineForEdit(routineId, teacherId)
+      if (!res.ok) {
+        setToast({ tone: 'err', message: formatRoutineError(res.error) })
+        return
+      }
+      const d = res.data
+      setEditingRoutineId(d.routineId)
+      setRoutineName(d.title || '')
+      setSelectedSet(d.setName || '')
+      setTotalDaysInput(String(d.totalDays ?? 28))
+      setReviewCycleInput(d.reviewOffsets?.length ? `+${d.reviewOffsets.join('+')}` : '+1+3+7')
+      setRestDaysInput(d.restDayNumbers?.length ? d.restDayNumbers.map((n) => `DAY${n}`).join(', ') : '')
+      const pick = defaultReviewModePick()
+      for (const o of REVIEW_MODE_OPTIONS) {
+        pick[o.key] = Array.isArray(d.reviewModes) && d.reviewModes.includes(o.key)
+      }
+      setReviewModePick(pick)
+      setFormOpen(true)
+      const keys = await loadModesForSet(d.setName)
+      const optionalKeys = keys?.optionalKeys ?? []
+      const inc = {}
+      for (const k of optionalKeys) {
+        inc[k] = d.learningModeTasks.some((t) => t.task_type === k)
+      }
+      setIncludeOptional(inc)
+    } catch (err) {
+      setToast({ tone: 'err', message: formatRoutineError(err) })
+    } finally {
+      setEditLoading(false)
+    }
   }
 
   const applyRecommendedModes = async (recommendedKeys, label) => {
@@ -231,7 +276,7 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
     }
   }
 
-  const handleCreate = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setSaveError(null)
     const title = routineName.trim()
@@ -266,16 +311,26 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
     ]
 
     setSaving(true)
-    const result = await createRoutineWithDaysAndTasks({
-      teacherId,
-      title,
-      setName,
-      totalDays,
-      reviewOffsets,
-      restDayNumbers,
-      learningModeTasks,
-      reviewModes: review_modes,
-    })
+    const result = editingRoutineId
+      ? await updateRoutineWithDaysAndTasks(editingRoutineId, teacherId, {
+          title,
+          setName,
+          totalDays,
+          reviewOffsets,
+          restDayNumbers,
+          learningModeTasks,
+          reviewModes: review_modes,
+        })
+      : await createRoutineWithDaysAndTasks({
+          teacherId,
+          title,
+          setName,
+          totalDays,
+          reviewOffsets,
+          restDayNumbers,
+          learningModeTasks,
+          reviewModes: review_modes,
+        })
     setSaving(false)
 
     if (!result.ok) {
@@ -285,7 +340,7 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
       return
     }
 
-    setToast({ tone: 'ok', message: '루틴이 저장되었습니다.' })
+    setToast({ tone: 'ok', message: editingRoutineId ? '루틴이 수정되었습니다.' : '루틴이 저장되었습니다.' })
     setFormOpen(false)
     resetForm()
     void load()
@@ -357,9 +412,14 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
         <button
           type="button"
           onClick={() => {
-            setFormOpen((o) => !o)
             setSaveError(null)
-            if (!formOpen) resetForm()
+            if (formOpen) {
+              setFormOpen(false)
+              resetForm()
+            } else {
+              resetForm()
+              setFormOpen(true)
+            }
           }}
           style={{
             padding: '10px 18px',
@@ -375,6 +435,9 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
         >
           {formOpen ? '닫기' : '새 루틴 만들기'}
         </button>
+        {editLoading ? (
+          <span style={{ fontSize: 13, color: COLORS.textSecondary }}>불러오는 중…</span>
+        ) : null}
       </div>
 
       {listError ? (
@@ -399,7 +462,7 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
                 background: 'rgba(255,255,255,0.88)',
                 boxShadow: '0 1px 3px rgba(91, 124, 250, 0.08)',
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                 gap: 10,
                 alignItems: 'center',
               }}
@@ -423,6 +486,44 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
                 </div>
               </div>
               <div style={{ fontSize: 12, color: COLORS.textHint }}>생성 {fmtDate(r.created_at)}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  disabled={editLoading || saving}
+                  onClick={() => void handleStartEdit(r.id)}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: RADIUS.sm,
+                    border: `1px solid ${COLORS.primary}`,
+                    background: 'rgba(102, 126, 234, 0.08)',
+                    color: COLORS.primary,
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: editLoading || saving ? 'wait' : 'pointer',
+                    opacity: editLoading || saving ? 0.65 : 1,
+                  }}
+                >
+                  수정
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {}}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: RADIUS.sm,
+                    border: `1px solid ${COLORS.border}`,
+                    background: 'rgba(249, 250, 251, 0.95)',
+                    color: COLORS.textSecondary,
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: 'not-allowed',
+                    opacity: 0.65,
+                  }}
+                  title="삭제 기능은 추후 제공 예정입니다"
+                >
+                  삭제
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -430,7 +531,7 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
 
       {formOpen ? (
         <form
-          onSubmit={handleCreate}
+          onSubmit={handleSubmit}
           style={{
             marginTop: 8,
             paddingTop: 20,
@@ -440,7 +541,27 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
             gap: 14,
           }}
         >
-          <div style={{ fontSize: 15, fontWeight: 700, color: COLORS.textPrimary }}>새 루틴</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: COLORS.textPrimary }}>
+              {editingRoutineId ? '루틴 수정' : '새 루틴'}
+            </div>
+            {editingRoutineId ? (
+              <span
+                style={{
+                  display: 'inline-block',
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  background: 'rgba(102, 126, 234, 0.12)',
+                  color: COLORS.primary,
+                  border: `1px solid rgba(102, 126, 234, 0.35)`,
+                }}
+              >
+                편집 중: {routineName.trim() || '루틴'}
+              </span>
+            ) : null}
+          </div>
 
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textSecondary }}>루틴 이름</span>
@@ -463,7 +584,11 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
             <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textSecondary }}>단어 세트 (words.set_name)</span>
             <select
               value={selectedSet}
-              onChange={(e) => setSelectedSet(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value
+                setSelectedSet(v)
+                if (teacherId && v.trim()) void loadModesForSet(v.trim())
+              }}
               required
               style={{
                 padding: '10px 12px',
@@ -739,7 +864,7 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button
               type="submit"
-              disabled={saving || setNames.length === 0}
+              disabled={saving || setNames.length === 0 || editLoading}
               style={{
                 padding: '12px 22px',
                 borderRadius: RADIUS.md,
@@ -748,11 +873,11 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
                 color: COLORS.textOnGreen,
                 fontWeight: 700,
                 fontSize: 15,
-                cursor: setNames.length === 0 ? 'not-allowed' : 'pointer',
+                cursor: setNames.length === 0 || editLoading ? 'not-allowed' : 'pointer',
                 boxShadow: setNames.length === 0 ? 'none' : '0 4px 16px rgba(102, 126, 234, 0.28)',
               }}
             >
-              {saving ? '저장 중…' : '저장 (routine_days + routine_tasks 생성)'}
+              {saving ? '저장 중…' : editingRoutineId ? '저장 (수정)' : '저장 (routine_days + routine_tasks 생성)'}
             </button>
             <button
               type="button"

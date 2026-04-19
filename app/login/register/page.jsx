@@ -16,6 +16,7 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [academyName, setAcademyName] = useState('');
+  const [teachingType, setTeachingType] = useState('general');
   const [logoFile, setLogoFile] = useState(null);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
@@ -52,6 +53,7 @@ export default function RegisterPage() {
         options: {
           data: {
             full_name: name.trim() || undefined,
+            teaching_type: teachingType,
           },
           /** 메일 링크가 배포 도메인(또는 로컬)의 /auth/callback 으로 오도록 함 */
           emailRedirectTo: origin ? `${origin}/auth/callback` : undefined,
@@ -67,6 +69,7 @@ export default function RegisterPage() {
       if (session) {
         const ensured = await ensureTeacherRowForSession(session, {
           academy_name: academyName.trim() || undefined,
+          teaching_type: teachingType,
         });
         if (!ensured.ok) {
           setError(ensured.error?.message || '선생님 정보 등록에 실패했습니다. 관리자에게 문의하세요.');
@@ -259,6 +262,88 @@ export default function RegisterPage() {
               inputId="reg-academy-logo"
             />
           </div>
+
+          <fieldset
+            disabled={submitting}
+            style={{
+              margin: 0,
+              padding: 0,
+              border: 'none',
+              minWidth: 0,
+            }}
+          >
+            <legend
+              style={{
+                display: 'block',
+                fontSize: 12,
+                fontWeight: 600,
+                color: COLORS.textPrimary,
+                marginBottom: 10,
+                padding: 0,
+              }}
+            >
+              강의 유형
+            </legend>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  cursor: submitting ? 'not-allowed' : 'pointer',
+                  fontSize: 14,
+                  color: COLORS.textPrimary,
+                  lineHeight: 1.45,
+                }}
+              >
+                <input
+                  type="radio"
+                  name="teaching-type"
+                  checked={teachingType === 'toeic'}
+                  onChange={() => setTeachingType('toeic')}
+                  style={{ marginTop: 3, flexShrink: 0 }}
+                />
+                <span>
+                  <strong style={{ fontWeight: 700 }}>토익 강의 위주</strong>
+                  <span style={{ color: COLORS.textSecondary }}> (토익 전용 메뉴 활성)</span>
+                </span>
+              </label>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  cursor: submitting ? 'not-allowed' : 'pointer',
+                  fontSize: 14,
+                  color: COLORS.textPrimary,
+                  lineHeight: 1.45,
+                }}
+              >
+                <input
+                  type="radio"
+                  name="teaching-type"
+                  checked={teachingType === 'general'}
+                  onChange={() => setTeachingType('general')}
+                  style={{ marginTop: 3, flexShrink: 0 }}
+                />
+                <span>
+                  <strong style={{ fontWeight: 700 }}>일반 어학원</strong>
+                  <span style={{ color: COLORS.textSecondary }}> (단어 학습 중심)</span>
+                </span>
+              </label>
+            </div>
+            <p
+              style={{
+                margin: '12px 0 0',
+                fontSize: 12,
+                color: COLORS.textSecondary,
+                lineHeight: 1.5,
+              }}
+            >
+              ※ 단어 학습은 공통이며, 토익 전용 메뉴는 설정에서 나중에 바꿀 수 있습니다.
+            </p>
+          </fieldset>
+
           <div>
             <label
               htmlFor="reg-email"

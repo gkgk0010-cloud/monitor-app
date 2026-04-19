@@ -214,3 +214,247 @@ export async function createRoutineWithDaysAndTasks({
 
   return { ok: true, routineId }
 }
+
+/**
+ * 수정 폼 채우기용 — 선생님 소유 루틴 + day/task에서 복습 주기·휴식일·첫날 학습모드 스냅샷
+ * @returns {Promise<{ ok: boolean, error?: string, data?: {
+ *   routineId: string,
+ *   title: string,
+ *   setName: string,
+ *   totalDays: number,
+ *   reviewModes: string[],
+ *   restDayNumbers: number[],
+ *   reviewOffsets: number[],
+ *   learningModeTasks: { task_type: string, is_required: boolean }[],
+ * } }>}
+ */
+export async function fetchRoutineForEdit(routineId, teacherId) {
+  if (!routineId || !teacherId) {
+    return { ok: false, error: '잘못된 요청입니다.' }
+  }
+
+  const { data: r, error: er } = await supabase
+    .from('routines')
+    .select('id, title, set_name, total_days, review_modes, teacher_id')
+    .eq('id', routineId)
+    .eq('teacher_id', teacherId)
+    .maybeSingle()
+
+  if (er) {
+    return { ok: false, error: errMessage(er) }
+  }
+  if (!r) {
+    return { ok: false, error: '루틴을 찾을 수 없습니다.' }
+  }
+
+  const { data: days, error: ed } = await supabase
+    .from('routine_days')
+    .select('id, day_number, is_rest, label')
+    .eq('routine_id', routineId)
+    .order('day_number', { ascending: true })
+
+  if (ed) {
+    return { ok: false, error: errMessage(ed) }
+  }
+
+  const dayList = days || []
+  const dayIds = dayList.map((d) => d.id)
+  let tasks = []
+  if (dayIds.length > 0) {
+    const { data: tt, error: et } = await supabase
+      .from('routine_tasks')
+      .select('routine_day_id, task_type, target_day, review_round, order_index, is_required, is_available')
+      .in('routine_day_id', dayIds)
+    if (et) {
+      return { ok: false, error: errMessage(et) }
+    }
+    tasks = tt || []
+  }
+
+  const tasksByDay = {}
+  for (const t of tasks) {
+    const id = t.routine_day_id
+    if (!tasksByDay[id]) tasksByDay[id] = []
+    tasksByDay[id].push(t)
+  }
+
+  const restDayNumbers = dayList
+    .filter((d) => d.is_rest)
+    .map((d) => Number(d.day_number))
+    .sort((a, b) => a - b)
+
+  const offsets = new Set()
+  for (const d of dayList) {
+    if (d.is_rest) continue
+    const dn = Number(d.day_number)
+    const list = (tasksByDay[d.id] || []).sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+    for (const t of list) {
+      const tt = String(t.task_type || '').toLowerCase()
+      if (tt === 'vocab_review' && t.target_day != null) {
+        const td = Number(t.target_day)
+        const off = dn - td
+        if (off > 0) offsets.add(off)
+      }
+    }
+  }
+  const reviewOffsets = [...offsets].sort((a, b) => a - b)
+
+  const firstStudy = dayList.find((d) => !d.is_rest)
+  const learningModeTasks = []
+  if (firstStudy) {
+    const list = (tasksByDay[firstStudy.id] || []).sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0))
+    for (const t of list) {
+      const tt = String(t.task_type || '').toLowerCase()
+      if (tt === 'vocab_new' || tt === 'vocab_review') continue
+      learningModeTasks.push({
+        task_type: String(t.task_type),
+        is_required: t.is_required !== false,
+      })
+    }
+  }
+
+  const rm = r.review_modes
+  const reviewModes = Array.isArray(rm) ? rm.map((x) => String(x)) : []
+
+  return {
+    ok: true,
+    data: {
+      routineId: String(r.id),
+      title: r.title != null ? String(r.title) : '',
+      setName: r.set_name != null ? String(r.set_name) : '',
+      totalDays: Math.max(1, parseInt(String(r.total_days), 10) || 1),
+      reviewModes,
+      restDayNumbers,
+      reviewOffsets: reviewOffsets.length > 0 ? reviewOffsets : [1, 3, 7],
+      learningModeTasks,
+    },
+  }
+}
+
+/**
+ * 기존 루틴 UPDATE + routine_days / routine_tasks 전체 재생성 (student_routines.current_day 유지)
+ * @returns {Promise<{ ok: boolean, error?: string }>}
+ */
+export async function updateRoutineWithDaysAndTasks(
+  routineId,
+  teacherId,
+  {
+    title,
+    setName,
+    totalDays,
+    reviewOffsets,
+    restDayNumbers,
+    learningModeTasks = [],
+    reviewModes = ['test'],
+  },
+) {
+  if (!routineId || !teacherId) {
+    return { ok: false, error: '잘못된 요청입니다.' }
+  }
+
+  const { data: owner, error: eo } = await supabase
+    .from('routines')
+    .select('id')
+    .eq('id', routineId)
+    .eq('teacher_id', teacherId)
+    .maybeSingle()
+
+  if (eo) {
+    return { ok: false, error: errMessage(eo) }
+  }
+  if (!owner) {
+    return { ok: false, error: '루틴을 찾을 수 없거나 권한이 없습니다.' }
+  }
+
+  const td = Math.max(1, parseInt(String(totalDays), 10) || 1)
+  const restSet = new Set(restDayNumbers.filter((d) => d >= 1 && d <= td))
+  const review_modes = Array.isArray(reviewModes) && reviewModes.length > 0 ? reviewModes : ['test']
+
+  const { data: existingDays, error: eDay } = await supabase
+    .from('routine_days')
+    .select('id')
+    .eq('routine_id', routineId)
+
+  if (eDay) {
+    return { ok: false, error: errMessage(eDay) }
+  }
+
+  const { error: eUp } = await supabase
+    .from('routines')
+    .update({
+      title: String(title).trim(),
+      set_name: String(setName).trim(),
+      total_days: td,
+      review_modes,
+    })
+    .eq('id', routineId)
+    .eq('teacher_id', teacherId)
+
+  if (eUp) {
+    return { ok: false, error: errMessage(eUp) || '루틴 정보를 갱신하지 못했습니다.' }
+  }
+
+  const oldDayIds = (existingDays || []).map((d) => d.id).filter(Boolean)
+  if (oldDayIds.length > 0) {
+    const { error: eDelT } = await supabase.from('routine_tasks').delete().in('routine_day_id', oldDayIds)
+    if (eDelT) {
+      return { ok: false, error: errMessage(eDelT) || '기존 태스크 삭제에 실패했습니다.' }
+    }
+  }
+
+  const { error: eDelD } = await supabase.from('routine_days').delete().eq('routine_id', routineId)
+  if (eDelD) {
+    return { ok: false, error: errMessage(eDelD) || '기존 일차 삭제에 실패했습니다.' }
+  }
+
+  const dayRows = []
+  for (let d = 1; d <= td; d++) {
+    const isRest = restSet.has(d)
+    dayRows.push({
+      routine_id: routineId,
+      day_number: d,
+      is_rest: isRest,
+      label: isRest ? '휴식' : null,
+    })
+  }
+
+  const { data: insertedDays, error: e2 } = await supabase.from('routine_days').insert(dayRows).select('id, day_number, is_rest')
+
+  if (e2 || !insertedDays?.length) {
+    return { ok: false, error: errMessage(e2) || 'routine_days 재생성에 실패했습니다.' }
+  }
+
+  const sortedDays = [...insertedDays].sort((a, b) => Number(a.day_number) - Number(b.day_number))
+
+  try {
+    for (const day of sortedDays) {
+      if (day.is_rest) continue
+      const dn = Number(day.day_number)
+      const taskDefs = buildTasksForStudyDay(dn, reviewOffsets, learningModeTasks)
+      if (taskDefs.length === 0) continue
+
+      const taskRows = taskDefs.map((t) => {
+        const row = {
+          routine_day_id: day.id,
+          task_type: t.task_type,
+          target_day: t.target_day,
+          review_round: t.review_round,
+          pass_score: t.pass_score,
+          order_index: t.order_index,
+          is_available: t.is_available,
+        }
+        if (Object.prototype.hasOwnProperty.call(t, 'is_required')) {
+          row.is_required = t.is_required
+        }
+        return row
+      })
+
+      const { error: e3 } = await supabase.from('routine_tasks').insert(taskRows)
+      if (e3) throw new Error(errMessage(e3))
+    }
+  } catch (err) {
+    return { ok: false, error: errMessage(err) }
+  }
+
+  return { ok: true }
+}
