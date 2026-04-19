@@ -21,7 +21,7 @@ const SET_TYPE_LABELS = {
 
 function emptyRow(setName) {
   return {
-    id: `temp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    id: `temp-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2, 11)}`,
     word: '',
     meaning: '',
     example_sentence: '',
@@ -46,6 +46,8 @@ function CreateWordSetPageContent() {
   const [totalDays, setTotalDays] = useState(7)
   const [perDay, setPerDay] = useState(20)
   const [hasDayPreview, setHasDayPreview] = useState(false)
+  /** Day 번호 → 해당 Day에 속한 단어 행에 일괄 적용할 유튜브 URL */
+  const [dayYoutubeByDay, setDayYoutubeByDay] = useState(() => ({}))
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState(null)
   /** none | day | chunk10 | day_chunk */
@@ -71,6 +73,21 @@ function CreateWordSetPageContent() {
   const isSentenceStyleCreate =
     createSetType === 'sentence_writing' || createSetType === 'sentence_speaking'
   const wordTableColumnPreset = isSentenceStyleCreate ? 'sentence' : 'word'
+
+  /** Day 미리보기 후 배정된 Day 목록 (유튜브 URL 입력란용) */
+  const uniqueDaysInPreview = useMemo(() => {
+    if (!hasDayPreview) return []
+    const s = new Set()
+    for (const r of rows) {
+      const w = String(r.word || '').trim()
+      const m = String(r.meaning || '').trim()
+      const ex = String(r.example_sentence || '').trim()
+      const ok = isSentenceStyleCreate ? ex && m : w && m
+      if (!ok) continue
+      s.add(Math.max(1, parseInt(String(r.day ?? 1), 10) || 1))
+    }
+    return [...s].sort((a, b) => a - b)
+  }, [rows, hasDayPreview, isSentenceStyleCreate])
 
   useEffect(() => {
     if (!hasDayPreview) {
@@ -184,10 +201,10 @@ function CreateWordSetPageContent() {
         if (isSentenceStyleCreate && !word) {
           word = ex.length > 300 ? ex.slice(0, 300) : ex
         }
-        const yt =
-          r.youtube_url != null && String(r.youtube_url).trim()
-            ? String(r.youtube_url).trim()
-            : null
+        const dnum = Math.max(1, parseInt(String(r.day ?? 1), 10) || 1)
+        const fromDayMap = String(dayYoutubeByDay[dnum] ?? '').trim()
+        const fromRow = r.youtube_url != null && String(r.youtube_url).trim() ? String(r.youtube_url).trim() : ''
+        const yt = (fromDayMap || fromRow) || null
         return {
           word,
           meaning: String(r.meaning).trim(),
@@ -207,10 +224,13 @@ function CreateWordSetPageContent() {
         defaultToNull: false,
       })
       if (error) throw error
-      setHint(`${valid.length}개를 저장했습니다. 단어 관리에서 확인할 수 있습니다.`)
-      setRows([emptyRow(sn)])
+      const savedMarked = valid.map((r) => ({ ...r, _localSaved: true }))
+      const tail = [emptyRow(sn), emptyRow(sn), emptyRow(sn)]
+      setRows([...savedMarked, ...tail])
       setSelectedIds(new Set())
-      setHasDayPreview(false)
+      setHint(
+        `${valid.length}개를 저장했습니다. 방금 저장한 행은 연한 배경으로 표시됩니다. 아래 빈 행에 이어서 입력한 뒤 다시 「DB에 저장」할 수 있어요.`,
+      )
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e))
     } finally {
@@ -452,6 +472,41 @@ function CreateWordSetPageContent() {
               {saving ? '저장 중…' : 'DB에 저장'}
             </button>
           </div>
+          {hasDayPreview && uniqueDaysInPreview.length > 0 ? (
+            <div style={{ display: 'grid', gap: 10, marginTop: 4 }}>
+              <div style={{ fontWeight: 700, color: COLORS.accentText, fontSize: 14 }}>Day별 강의 영상 URL (선택)</div>
+              <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
+                Day마다 다른 영상을 넣을 수 있어요. 저장 시 해당 Day의 모든 단어에 같은 <code>youtube_url</code>이
+                들어갑니다. 단어 관리 화면의 Day별 URL 저장과 동일한 방식입니다.
+              </p>
+              {uniqueDaysInPreview.map((d) => (
+                <label
+                  key={d}
+                  style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}
+                >
+                  <span style={{ minWidth: 56, fontWeight: 700, color: COLORS.textPrimary }}>Day {d}</span>
+                  <input
+                    type="url"
+                    inputMode="url"
+                    autoComplete="url"
+                    value={dayYoutubeByDay[d] ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setDayYoutubeByDay((prev) => ({ ...prev, [d]: v }))
+                    }}
+                    placeholder="https://www.youtube.com/watch?v=…"
+                    style={{
+                      flex: '1 1 240px',
+                      padding: '10px 12px',
+                      borderRadius: RADIUS.sm,
+                      border: `1px solid ${COLORS.border}`,
+                      fontSize: 14,
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          ) : null}
           {hint ? (
             <p style={{ margin: 0, fontSize: 14, color: COLORS.accentText, fontWeight: 600 }}>{hint}</p>
           ) : null}
@@ -508,6 +563,7 @@ function CreateWordSetPageContent() {
           onRowDelete={handleRowDelete}
           rowGroupMode={effectiveGroupMode}
           columnPreset={wordTableColumnPreset}
+          getRowBackground={(row) => (row._localSaved ? 'rgba(16, 185, 129, 0.11)' : undefined)}
         />
 
         <AutoFillPanel rows={autoFillRows} onFilled={handleAutoFilled} />

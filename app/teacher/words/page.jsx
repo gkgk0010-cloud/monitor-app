@@ -736,25 +736,10 @@ export default function WordsManagePage() {
           <div style={{ fontWeight: 800, color: COLORS.accentText, marginBottom: 10, fontSize: 15 }}>
             나의 세트 ({setNames.length})
           </div>
-          <button
-            type="button"
-            onClick={() => changeSetFilter('')}
-            style={{
-              width: '100%',
-              textAlign: 'left',
-              padding: '8px 10px',
-              marginBottom: 6,
-              borderRadius: RADIUS.sm,
-              border: `1px solid ${!setFilter.trim() ? COLORS.primary : COLORS.border}`,
-              background: !setFilter.trim() ? COLORS.primarySoft : COLORS.bg,
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: !setFilter.trim() ? 700 : 400,
-            }}
-          >
-            전체 보기
-          </button>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <p style={{ margin: '0 0 10px', fontSize: 11, color: COLORS.textSecondary, lineHeight: 1.4 }}>
+            세트를 눌러 필터합니다. 전체 목록은 상단 테이블에서 검색해 보세요.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {setNames.map((n) => {
               const cnt = setNameCounts.get(n) || 0
               const active = setFilter === n
@@ -762,59 +747,61 @@ export default function WordsManagePage() {
                 <div
                   key={n}
                   style={{
-                    display: 'flex',
-                    alignItems: 'stretch',
-                    gap: 6,
+                    borderRadius: RADIUS.md,
+                    border: `1px solid ${active ? COLORS.primary : COLORS.border}`,
+                    background: active ? COLORS.primarySoft : COLORS.surface,
+                    padding: '10px 10px 8px',
+                    boxSizing: 'border-box',
                   }}
                 >
-                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <button
-                      type="button"
-                      onClick={() => changeSetFilter(n)}
+                  <button
+                    type="button"
+                    onClick={() => changeSetFilter(n)}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '4px 2px 6px',
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      fontSize: 13,
+                      fontWeight: active ? 800 : 600,
+                      boxSizing: 'border-box',
+                      color: COLORS.textPrimary,
+                    }}
+                    title={n}
+                  >
+                    <span
                       style={{
-                        width: '100%',
-                        textAlign: 'left',
-                        padding: '8px 10px',
-                        borderRadius: RADIUS.sm,
-                        border: `1px solid ${active ? COLORS.primary : COLORS.border}`,
-                        background: active ? COLORS.primarySoft : COLORS.bg,
-                        cursor: 'pointer',
-                        fontSize: 13,
-                        fontWeight: active ? 700 : 400,
-                        boxSizing: 'border-box',
+                        display: 'block',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
                       }}
-                      title={n}
                     >
-                      <span
-                        style={{
-                          display: 'block',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {n} ({cnt})
-                      </span>
-                      <span
-                        style={{
-                          display: 'block',
-                          marginTop: 4,
-                          fontSize: 11,
-                          fontWeight: 600,
-                          color: COLORS.textSecondary,
-                          lineHeight: 1.35,
-                          whiteSpace: 'normal',
-                          wordBreak: 'break-word',
-                        }}
-                      >
-                        {n in availableModesBySetName
-                          ? formatAvailableModesSummary(
-                              availableModesBySetName[n],
-                              normalizeSetType(setTypeByName[n] || 'word'),
-                            )
-                          : '—'}
-                      </span>
-                    </button>
+                      {n} ({cnt})
+                    </span>
+                    <span
+                      style={{
+                        display: 'block',
+                        marginTop: 6,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: COLORS.textSecondary,
+                        lineHeight: 1.35,
+                        whiteSpace: 'normal',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {n in availableModesBySetName
+                        ? formatAvailableModesSummary(
+                            availableModesBySetName[n],
+                            normalizeSetType(setTypeByName[n] || 'word'),
+                          )
+                        : '—'}
+                    </span>
+                  </button>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -822,8 +809,9 @@ export default function WordsManagePage() {
                         setSettingsSetName(n)
                       }}
                       style={{
-                        alignSelf: 'stretch',
-                        padding: '6px 8px',
+                        flex: '1 1 auto',
+                        minWidth: 0,
+                        padding: '7px 8px',
                         borderRadius: RADIUS.sm,
                         border: `1px solid ${COLORS.border}`,
                         background: COLORS.bg,
@@ -831,7 +819,6 @@ export default function WordsManagePage() {
                         fontSize: 11,
                         fontWeight: 700,
                         color: COLORS.accentText,
-                        whiteSpace: 'nowrap',
                       }}
                       title={`「${n}」세트 설정`}
                     >
@@ -844,8 +831,9 @@ export default function WordsManagePage() {
                         void handleDeleteSet(n)
                       }}
                       style={{
-                        alignSelf: 'stretch',
-                        padding: '6px 8px',
+                        flex: '1 1 auto',
+                        minWidth: 0,
+                        padding: '7px 8px',
                         borderRadius: RADIUS.sm,
                         border: `1px solid ${COLORS.danger}`,
                         background: COLORS.dangerBg,
@@ -853,7 +841,6 @@ export default function WordsManagePage() {
                         fontSize: 11,
                         fontWeight: 700,
                         color: COLORS.danger,
-                        whiteSpace: 'nowrap',
                       }}
                       title={`「${n}」세트 전체 삭제 (복구 불가)`}
                     >

@@ -127,6 +127,7 @@ function DraftDayInput({ rowId, value, cellDraftsRef, onCommit, style }) {
  *   rowGroupMode?: 'none' | 'day' | 'chunk10' | 'day_chunk'
  *   chunkSize?: number
  *   columnPreset?: 'classic' | 'word' | 'sentence' | 'image'
+ *   getRowBackground?: (row: Record<string, unknown>) => string | undefined
  * }} props
  */
 function WordTable({
@@ -145,6 +146,7 @@ function WordTable({
   rowGroupMode = 'none',
   chunkSize = 10,
   columnPreset = 'classic',
+  getRowBackground,
 }) {
   const isSentence = columnPreset === 'sentence'
   const isImage = columnPreset === 'image'
@@ -802,6 +804,8 @@ function WordTable({
               const exampleEmpty = !example.trim()
               const img = row.image_url ? String(row.image_url).trim() : ''
               const rowNum = indexById.get(id) ?? 0
+              const tint = getRowBackground?.(row)
+              const rowBg = tint ?? (selectedIds.has(id) ? COLORS.successBg : COLORS.surface)
 
               return (
                 <div
@@ -812,7 +816,7 @@ function WordTable({
                   style={{
                     ...rowGridBase,
                     borderTop: `1px solid ${COLORS.border}`,
-                    background: selectedIds.has(id) ? COLORS.successBg : COLORS.surface,
+                    background: rowBg,
                     alignItems: 'start',
                   }}
                 >
