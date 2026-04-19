@@ -63,12 +63,15 @@ function formatModeNote(mode, m) {
   return '';
 }
 
-/** 루틴 보유 학생: DAY 평균 점수 기준 (기존과 동일) */
+/** 루틴 보유 학생: DAY 평균 점수 기준 (숫자·문자열 모두 대비) */
 function getEncouragementMessageFromRoutine(avgDayScore) {
-  if (avgDayScore >= 90) return '훌륭합니다! 꾸준히 잘 해내고 있어요.';
-  if (avgDayScore >= 70) return '성실히 진행 중입니다. 계속 응원합니다.';
-  if (avgDayScore >= 50) return '꾸준한 참여가 중요합니다. 함께 노력해봐요.';
-  return '학습 관심이 필요해 보입니다. 교사와 상담 권장.';
+  const n = Number(avgDayScore);
+  if (!Number.isFinite(n)) return '아직 학습 기록이 적어요. 지켜봐 주시길 권장드립니다.';
+  if (n >= 90) return '훌륭합니다! 꾸준히 잘 해내고 있어요.';
+  if (n >= 70) return '성실히 진행 중입니다. 계속 응원합니다.';
+  if (n >= 50) return '꾸준한 참여가 중요합니다. 함께 노력해봐요.';
+  if (n >= 11) return '꾸준한 참여가 중요합니다. 함께 지켜봐 주세요.';
+  return '아직 학습 기록이 적어요. 지켜봐 주시길 권장드립니다.';
 }
 
 /**

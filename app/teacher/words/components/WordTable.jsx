@@ -155,21 +155,21 @@ function WordTable({
     const parts = ['48px']
     if (showRowNumbers) parts.push('50px')
     if (isSentence) {
-      parts.push('minmax(200px, 1.4fr)', '200px', '150px', 'minmax(140px, 1fr)')
+      parts.push('minmax(200px, 1.4fr)', '200px', '150px')
       if (showDayColumn) parts.push('60px')
       if (onRowCommit) parts.push('76px')
       if (showDeleteColumn && onRowDelete) parts.push('70px')
       return parts.join(' ')
     }
     if (isImage) {
-      parts.push('150px', '200px', '150px', 'minmax(140px, 1fr)')
+      parts.push('150px', '200px', '150px')
       if (showDayColumn) parts.push('60px')
       if (onRowCommit) parts.push('76px')
       if (showDeleteColumn && onRowDelete) parts.push('70px')
       return parts.join(' ')
     }
     if (isTypedWord) {
-      parts.push('150px', '200px', '150px', 'minmax(160px, 1fr)', 'minmax(140px, 1fr)')
+      parts.push('150px', '200px', '150px', 'minmax(160px, 1fr)')
       if (showDayColumn) parts.push('60px')
       if (onRowCommit) parts.push('76px')
       if (showDeleteColumn && onRowDelete) parts.push('70px')
@@ -623,7 +623,7 @@ function WordTable({
         <div
           style={{
             width: '100%',
-            minWidth: 1260,
+            minWidth: 1120,
             fontSize: 14,
             boxSizing: 'border-box',
           }}
@@ -669,9 +669,6 @@ function WordTable({
                 <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
                   image
                 </div>
-                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
-                  youtube_url
-                </div>
               </>
             ) : isImage ? (
               <>
@@ -683,9 +680,6 @@ function WordTable({
                 </div>
                 <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
                   image
-                </div>
-                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
-                  youtube_url
                 </div>
               </>
             ) : isTypedWord ? (
@@ -701,9 +695,6 @@ function WordTable({
                 </div>
                 <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
                   example_sentence
-                </div>
-                <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
-                  youtube_url
                 </div>
               </>
             ) : (
@@ -948,26 +939,6 @@ function WordTable({
                         />
                       </div>
                       {renderImageBlock(id, row)}
-                      <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
-                        <DraftTextInput
-                          rowId={id}
-                          field="youtube_url"
-                          type="url"
-                          value={row.youtube_url != null ? String(row.youtube_url) : ''}
-                          cellDraftsRef={cellDraftsRef}
-                          onCommit={syncDraftField}
-                          placeholder="https://youtu.be/…"
-                          style={{
-                            width: '100%',
-                            minWidth: 0,
-                            maxWidth: '100%',
-                            padding: '6px 8px',
-                            borderRadius: RADIUS.sm,
-                            border: `1px solid ${COLORS.border}`,
-                            boxSizing: 'border-box',
-                          }}
-                        />
-                      </div>
                     </>
                   ) : isImage ? (
                     <>
@@ -1012,26 +983,6 @@ function WordTable({
                         />
                       </div>
                       {renderImageBlock(id, row)}
-                      <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
-                        <DraftTextInput
-                          rowId={id}
-                          field="youtube_url"
-                          type="url"
-                          value={row.youtube_url != null ? String(row.youtube_url) : ''}
-                          cellDraftsRef={cellDraftsRef}
-                          onCommit={syncDraftField}
-                          placeholder="https://youtu.be/…"
-                          style={{
-                            width: '100%',
-                            minWidth: 0,
-                            maxWidth: '100%',
-                            padding: '6px 8px',
-                            borderRadius: RADIUS.sm,
-                            border: `1px solid ${COLORS.border}`,
-                            boxSizing: 'border-box',
-                          }}
-                        />
-                      </div>
                     </>
                   ) : isTypedWord ? (
                     <>
@@ -1150,26 +1101,6 @@ function WordTable({
                             )}
                           </button>
                         </div>
-                      </div>
-                      <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
-                        <DraftTextInput
-                          rowId={id}
-                          field="youtube_url"
-                          type="url"
-                          value={row.youtube_url != null ? String(row.youtube_url) : ''}
-                          cellDraftsRef={cellDraftsRef}
-                          onCommit={syncDraftField}
-                          placeholder="https://youtu.be/…"
-                          style={{
-                            width: '100%',
-                            minWidth: 0,
-                            maxWidth: '100%',
-                            padding: '6px 8px',
-                            borderRadius: RADIUS.sm,
-                            border: `1px solid ${COLORS.border}`,
-                            boxSizing: 'border-box',
-                          }}
-                        />
                       </div>
                     </>
                   ) : (

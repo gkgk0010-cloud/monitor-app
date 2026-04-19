@@ -382,11 +382,11 @@ export default function TeacherMonitorPage() {
         document.execCommand('copy');
         document.body.removeChild(ta);
       }
-      setCopyToast('복사됨');
-      setTimeout(() => setCopyToast(null), 2000);
+      setCopyToast('✓ 복사되었습니다');
+      setTimeout(() => setCopyToast(null), 2500);
     } catch {
       setCopyToast('복사 실패');
-      setTimeout(() => setCopyToast(null), 2000);
+      setTimeout(() => setCopyToast(null), 2500);
     }
   };
 
@@ -811,6 +811,11 @@ export default function TeacherMonitorPage() {
 
   return (
     <div className="monitor-page" style={styles.page}>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: '@keyframes monitor-toast-in{from{opacity:0}to{opacity:1}}',
+        }}
+      />
       <div className="monitor-container" style={styles.container}>
         <header className="monitor-header" style={styles.header}>
           <h1 className="monitor-title" style={styles.title}>실시간 학생 모니터링</h1>
@@ -1318,7 +1323,21 @@ const styles = {
   copyBtn: { padding: '6px 12px', border: '1px solid rgba(107,114,128,0.3)', borderRadius: 12, background: 'rgba(255,255,255,0.9)', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 },
   liveBadge: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#ede9fe', borderRadius: 20, fontSize: 13, fontWeight: 600, color: '#5b21b6' },
   liveDot: { width: 8, height: 8, borderRadius: '50%', background: '#764ba2' },
-  toast: { position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', padding: '10px 20px', background: '#374151', color: '#fff', borderRadius: 12, fontSize: 14, zIndex: 9999, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' },
+  toast: {
+    position: 'fixed',
+    bottom: 24,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    padding: '10px 20px',
+    background: '#374151',
+    color: '#fff',
+    borderRadius: 12,
+    fontSize: 14,
+    zIndex: 10100,
+    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+    animation: 'monitor-toast-in 0.25s ease',
+    pointerEvents: 'none',
+  },
   summaryBar: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, padding: '12px 16px', marginBottom: 20, background: 'linear-gradient(90deg, rgba(106,17,203,0.08) 0%, rgba(37,117,252,0.06) 100%)', borderRadius: 16, border: '1px solid rgba(106,17,203,0.15)', fontSize: 14, color: '#374151', fontWeight: 500 },
   summaryIcon: { fontSize: 18 },
   summarySep: { color: '#9ca3af', fontWeight: 400 },

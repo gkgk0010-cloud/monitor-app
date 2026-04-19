@@ -43,11 +43,10 @@ export default function WordsManagePage() {
   const saveHintTimerRef = useRef(null)
   const rowSaveToastTimerRef = useRef(null)
   const inviteCopyMsgTimerRef = useRef(null)
-  const youtubeSaveMsgTimerRef = useRef(null)
-  /** 사이드바 DAY별 유튜브 URL 입력 (저장 전까지 로컬) */
+  /** Day 단위 강의 영상 URL (저장 전 로컬) — words.youtube_url 일괄 반영 */
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('')
-  const [youtubeSaveMsg, setYoutubeSaveMsg] = useState(null)
-  const [youtubeSaving, setYoutubeSaving] = useState(false)
+  /** null | 'save' | 'clear' */
+  const [dayYoutubeAction, setDayYoutubeAction] = useState(null)
 
   const { teacher, loading: teacherLoading, refresh: refreshTeacher } = useTeacher()
   const teacherId = teacher?.id
@@ -58,7 +57,6 @@ export default function WordsManagePage() {
       if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
       if (rowSaveToastTimerRef.current) clearTimeout(rowSaveToastTimerRef.current)
       if (inviteCopyMsgTimerRef.current) clearTimeout(inviteCopyMsgTimerRef.current)
-      if (youtubeSaveMsgTimerRef.current) clearTimeout(youtubeSaveMsgTimerRef.current)
     }
   }, [])
 
@@ -278,10 +276,6 @@ export default function WordsManagePage() {
     setYoutubeUrlInput(currentDayYoutubeUrl)
   }, [currentDayYoutubeUrl])
 
-  useEffect(() => {
-    setYoutubeSaveMsg(null)
-  }, [setFilter, dayFilter])
-
   const changeSetFilter = (v) => {
     setSetFilter(v)
     setDayFilter(null)
@@ -299,7 +293,7 @@ export default function WordsManagePage() {
       return
     }
     const url = youtubeUrlInput.trim() ? String(youtubeUrlInput).trim() : null
-    setYoutubeSaving(true)
+    setDayYoutubeAction('save')
     try {
       const { error } = await supabase
         .from('words')
@@ -316,11 +310,42 @@ export default function WordsManagePage() {
           String(w.set_name || '').trim() === sn && Number(w.day) === d ? { ...w, youtube_url: url } : w,
         ),
       )
-      if (youtubeSaveMsgTimerRef.current) clearTimeout(youtubeSaveMsgTimerRef.current)
-      setYoutubeSaveMsg('저장됐습니다 ✓')
-      youtubeSaveMsgTimerRef.current = setTimeout(() => setYoutubeSaveMsg(null), 3000)
+      if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
+      setSaveHint(`Day ${d} 영상 URL이 저장되었습니다`)
+      saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 3500)
     } finally {
-      setYoutubeSaving(false)
+      setDayYoutubeAction(null)
+    }
+  }
+
+  const handleClearDayYoutube = async () => {
+    if (!teacherId || !setFilter.trim() || dayFilter == null) return
+    const sn = setFilter.trim()
+    const d = Number(dayFilter)
+    if (!window.confirm(`Day ${d}의 영상 URL을 모두 지우시겠습니까?`)) return
+    setDayYoutubeAction('clear')
+    try {
+      const { error } = await supabase
+        .from('words')
+        .update({ youtube_url: null })
+        .eq('teacher_id', teacherId)
+        .eq('set_name', sn)
+        .eq('day', d)
+      if (error) {
+        alert(`초기화 실패: ${error.message}`)
+        return
+      }
+      setWords((prev) =>
+        prev.map((w) =>
+          String(w.set_name || '').trim() === sn && Number(w.day) === d ? { ...w, youtube_url: null } : w,
+        ),
+      )
+      setYoutubeUrlInput('')
+      if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
+      setSaveHint('삭제되었습니다')
+      saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2500)
+    } finally {
+      setDayYoutubeAction(null)
     }
   }
 
@@ -353,6 +378,45 @@ export default function WordsManagePage() {
     if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
     saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2000)
   }, [teacherId])
+
+  const handleDeleteSet = useCallback(
+    async (setName) => {
+      const sn = String(setName || '').trim()
+      if (!teacherId || !sn) return
+      const msg =
+        `'${sn}' 전체를 삭제하시겠습니까?\n\n` +
+        `이 세트의 모든 단어가 함께 삭제됩니다.\n` +
+        `이 작업은 되돌릴 수 없습니다.`
+      if (!window.confirm(msg)) return
+
+      const { error: errWords } = await supabase
+        .from('words')
+        .delete()
+        .eq('teacher_id', teacherId)
+        .eq('set_name', sn)
+      if (errWords) {
+        alert(`단어 삭제 실패: ${errWords.message}`)
+        return
+      }
+
+      const { error: errSets } = await supabase.from('word_sets').delete().eq('teacher_id', teacherId).eq('name', sn)
+      if (errSets) {
+        console.warn('[word_sets delete]', errSets.message)
+      }
+
+      if (setFilter === sn) {
+        setSetFilter('')
+        setDayFilter(null)
+      }
+      setSettingsSetName((prev) => (prev === sn ? null : prev))
+      void loadWords()
+      void loadWordSetNames()
+      setSaveHint('세트가 삭제되었습니다')
+      if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
+      saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2500)
+    },
+    [teacherId, setFilter, loadWords, loadWordSetNames],
+  )
 
   const flashRowSaveToast = useCallback((ok) => {
     if (rowSaveToastTimerRef.current) clearTimeout(rowSaveToastTimerRef.current)
@@ -789,6 +853,28 @@ export default function WordsManagePage() {
                     >
                       설정 변경
                     </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void handleDeleteSet(n)
+                      }}
+                      style={{
+                        alignSelf: 'stretch',
+                        padding: '6px 8px',
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.danger}`,
+                        background: COLORS.dangerBg,
+                        cursor: 'pointer',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: COLORS.danger,
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={`「${n}」세트 전체 삭제 (복구 불가)`}
+                    >
+                      세트 삭제
+                    </button>
                   </div>
                 </div>
               )
@@ -836,65 +922,6 @@ export default function WordsManagePage() {
                   </button>
                 ))}
               </div>
-              {dayFilter != null ? (
-                <div
-                  style={{
-                    marginTop: 14,
-                    padding: '12px',
-                    borderRadius: RADIUS.md,
-                    border: `1px solid ${COLORS.border}`,
-                    background: COLORS.bg,
-                    boxShadow: SHADOW.card,
-                  }}
-                >
-                  <div style={{ fontWeight: 800, color: COLORS.accentText, marginBottom: 4, fontSize: 13 }}>
-                    관련 강의 영상 (선택)
-                  </div>
-                  <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 8 }}>
-                    DAY{dayFilter} 영상
-                  </div>
-                  <input
-                    type="url"
-                    name="day-youtube-url"
-                    placeholder="https://www.youtube.com/watch?v=..."
-                    value={youtubeUrlInput}
-                    onChange={(e) => setYoutubeUrlInput(e.target.value)}
-                    style={{
-                      width: '100%',
-                      boxSizing: 'border-box',
-                      padding: '8px 10px',
-                      borderRadius: RADIUS.sm,
-                      border: `1px solid ${COLORS.border}`,
-                      fontSize: 12,
-                      marginBottom: 8,
-                    }}
-                  />
-                  <button
-                    type="button"
-                    disabled={youtubeSaving}
-                    onClick={() => void handleSaveDayYoutube()}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: RADIUS.sm,
-                      border: 'none',
-                      background: COLORS.headerGradient,
-                      color: COLORS.textOnGreen,
-                      fontWeight: 700,
-                      fontSize: 12,
-                      cursor: youtubeSaving ? 'wait' : 'pointer',
-                      opacity: youtubeSaving ? 0.85 : 1,
-                    }}
-                  >
-                    {youtubeSaving ? '저장 중…' : '저장'}
-                  </button>
-                  {youtubeSaveMsg ? (
-                    <p role="status" style={{ margin: '8px 0 0', fontSize: 12, fontWeight: 600, color: COLORS.accentText }}>
-                      {youtubeSaveMsg}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
           ) : null}
         </aside>
@@ -996,6 +1023,106 @@ export default function WordsManagePage() {
             </select>
           </label>
         </div>
+
+        {setFilter.trim() && dayFilter != null ? (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: 16,
+              borderRadius: RADIUS.lg,
+              border: `1px solid ${COLORS.border}`,
+              background: COLORS.surface,
+              boxShadow: SHADOW.card,
+            }}
+          >
+            <div style={{ fontWeight: 800, color: COLORS.accentText, marginBottom: 10, fontSize: 15 }}>
+              📺 Day {dayFilter} 강의 영상
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 10,
+                alignItems: 'stretch',
+                marginBottom: 10,
+              }}
+            >
+              <input
+                type="url"
+                name="day-youtube-url-main"
+                placeholder="https://www.youtube.com/watch?v=..."
+                value={youtubeUrlInput}
+                onChange={(e) => setYoutubeUrlInput(e.target.value)}
+                disabled={dayYoutubeAction != null}
+                style={{
+                  flex: '1 1 240px',
+                  minWidth: 0,
+                  boxSizing: 'border-box',
+                  padding: '10px 12px',
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  fontSize: 14,
+                }}
+              />
+              <button
+                type="button"
+                disabled={dayYoutubeAction != null}
+                onClick={() => void handleSaveDayYoutube()}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: RADIUS.sm,
+                  border: 'none',
+                  background: COLORS.headerGradient,
+                  color: COLORS.textOnGreen,
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: dayYoutubeAction != null ? 'wait' : 'pointer',
+                  opacity: dayYoutubeAction != null ? 0.85 : 1,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {dayYoutubeAction === 'save' ? '저장 중…' : '저장'}
+              </button>
+            </div>
+            <button
+              type="button"
+              disabled={dayYoutubeAction != null}
+              onClick={() => void handleClearDayYoutube()}
+              style={{
+                padding: '8px 14px',
+                borderRadius: RADIUS.sm,
+                border: `1px solid ${COLORS.danger}`,
+                background: COLORS.dangerBg,
+                color: COLORS.danger,
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: dayYoutubeAction != null ? 'wait' : 'pointer',
+                marginBottom: 8,
+              }}
+            >
+              {dayYoutubeAction === 'clear' ? '초기화 중…' : '초기화'}
+            </button>
+            <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.5 }}>
+              이 DAY에 속한 모든 단어 행의 <code style={{ fontSize: 12 }}>youtube_url</code>에 같은 주소가 저장됩니다. 학생
+              앱은 Day당 하나의 영상만 재생합니다.
+            </p>
+          </div>
+        ) : setFilter.trim() && dayFilter == null ? (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: 12,
+              borderRadius: RADIUS.md,
+              border: `1px dashed ${COLORS.border}`,
+              background: COLORS.bg,
+              fontSize: 13,
+              color: COLORS.textSecondary,
+            }}
+          >
+            Day를 하나 선택하면 위에서 강의 영상 URL을 지정할 수 있습니다. (전체 Day 보기에서는 Day별 URL 편집을 할 수
+            없습니다.)
+          </div>
+        ) : null}
 
         {saveHint ? (
           <div
