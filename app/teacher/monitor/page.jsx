@@ -426,7 +426,7 @@ export default function TeacherMonitorPage() {
       }
       lines.push('');
 
-      lines.push('📊 오늘의 약점 (Worst 3)');
+      lines.push('📊 극복 과제들');
       if (!d.isToeic) {
         lines.push('해당 없음');
       } else if (d.todayScore.topWrongTags.length > 0) {
@@ -1127,7 +1127,7 @@ export default function TeacherMonitorPage() {
                     </div>
 
                     <div style={styles.detailBlock}>
-                      <h3 style={styles.detailBlockTitle}>📊 오늘의 약점 (Worst 3)</h3>
+                      <h3 style={styles.detailBlockTitle}>📊 극복 과제들</h3>
                       {!reportData.isToeic ? (
                         <p style={styles.detailNa}>해당 없음</p>
                       ) : reportData.todayScore.topWrongTags.length > 0 ? (

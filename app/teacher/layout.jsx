@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabaseClient';
 import { useTeacher } from '@/utils/useTeacher';
+import { formatTeacherName } from '@/utils/formatTeacherName';
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens';
 
 function navItemStyle(active) {
@@ -37,7 +38,10 @@ export default function TeacherLayout({ children }) {
     pathname === '/teacher/words' ||
     (pathname?.startsWith('/teacher/words/') && !pathname?.startsWith('/teacher/words/create'));
 
-  const displayName = teacher?.name?.trim() || teacher?.email || '선생님';
+  const rawTeacherName = teacher?.name?.trim();
+  const displayName = rawTeacherName
+    ? formatTeacherName(rawTeacherName)
+    : teacher?.email || '선생님';
   const academyLabel = (teacher?.academy_name && String(teacher.academy_name).trim()) || '';
   const academyLogo = (teacher?.academy_logo_url && String(teacher.academy_logo_url).trim()) || '';
 

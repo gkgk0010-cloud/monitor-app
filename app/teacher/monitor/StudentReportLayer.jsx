@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { formatTeacherName } from '@/utils/formatTeacherName';
 
 const Z_LAYER = 10050;
 
@@ -128,7 +129,7 @@ function getParentEncouragementMessage({
     return getEncouragementMessageNoRoutineFromJokbo(avgJokbo);
   }
   if (!hasAnswerLogsOrModeActivity(todayAttempts, modeStats, todayJokboTagBreakdown)) {
-    return '학습 관심이 필요해 보입니다. 교사와 상담 권장.';
+    return '아직 학습 기록이 적어요. 지켜봐 주시길 권장드립니다.';
   }
   return '학습 활동이 기록되고 있습니다. 계속 응원합니다.';
 }
@@ -160,9 +161,10 @@ export default function StudentReportLayer({
   }, [onClose]);
 
   const name = (studentDisplayName || '').trim() || '—';
-  const tn = (teacherName && String(teacherName).trim()) || '';
+  const tnRaw = (teacherName && String(teacherName).trim()) || '';
+  const tnDisplay = formatTeacherName(tnRaw);
   const an = (teacherAcademyName && String(teacherAcademyName).trim()) || '';
-  const reportMetaLine = an ? `${tn || '—'} · ${an}` : tn || '';
+  const reportMetaLine = an ? `${tnDisplay || '—'} · ${an}` : tnDisplay || '';
 
   let body = null;
   if (loading) {
@@ -685,8 +687,8 @@ export default function StudentReportLayer({
             </div>
             {reportMetaLine ? (
               <div style={s.printHeaderMeta}>{reportMetaLine}</div>
-            ) : tn ? (
-              <div style={s.printHeaderMeta}>{tn}</div>
+            ) : tnDisplay ? (
+              <div style={s.printHeaderMeta}>{tnDisplay}</div>
             ) : null}
             <div style={s.printHeaderDate}>
               인쇄일:
