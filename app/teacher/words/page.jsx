@@ -80,17 +80,20 @@ export default function WordsManagePage() {
   const [setTypeByName, setSetTypeByName] = useState({})
   /** 세트명 → word_sets.available_modes (요약 표시용) */
   const [availableModesBySetName, setAvailableModesBySetName] = useState({})
+  /** 세트명 → invite_code (학생 세트 초대) */
+  const [inviteCodeBySetName, setInviteCodeBySetName] = useState({})
 
   const loadWordSetNames = useCallback(async () => {
     if (!teacherId) {
       setWordSetNames([])
       setSetTypeByName({})
       setAvailableModesBySetName({})
+      setInviteCodeBySetName({})
       return
     }
     const { data, error } = await supabase
       .from('word_sets')
-      .select('name, set_type, available_modes')
+      .select('name, set_type, available_modes, invite_code')
       .eq('teacher_id', teacherId)
     if (error) {
       console.warn('[word_sets]', error.message)
@@ -98,17 +101,31 @@ export default function WordsManagePage() {
     }
     const typeMap = {}
     const modesMap = {}
+    const inviteMap = {}
     for (const r of data || []) {
       const n = String(r.name || '').trim()
       if (!n) continue
       typeMap[n] = normalizeSetType(r.set_type || 'word')
       modesMap[n] = r.available_modes
+      inviteMap[n] = r.invite_code != null ? String(r.invite_code).trim() : ''
     }
     const names = Object.keys(typeMap).sort((a, b) => a.localeCompare(b, 'ko'))
     setWordSetNames(names)
     setSetTypeByName(typeMap)
     setAvailableModesBySetName(modesMap)
+    setInviteCodeBySetName(inviteMap)
   }, [teacherId])
+
+  const copyWordSetInviteCode = useCallback(async (code) => {
+    const c = String(code ?? '').trim()
+    if (!c) return
+    try {
+      await navigator.clipboard.writeText(c)
+      showToast('초대코드가 복사되었어요', 'success', 2500)
+    } catch {
+      showToast('복사에 실패했어요. 코드를 직접 선택해 주세요', 'error', 3000)
+    }
+  }, [])
 
   const loadWords = useCallback(async () => {
     if (teacherLoading) return
@@ -743,6 +760,7 @@ export default function WordsManagePage() {
             {setNames.map((n) => {
               const cnt = setNameCounts.get(n) || 0
               const active = setFilter === n
+              const invite = String(inviteCodeBySetName[n] ?? '').trim()
               return (
                 <div
                   key={n}
@@ -801,6 +819,81 @@ export default function WordsManagePage() {
                         : '—'}
                     </span>
                   </button>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: '8px 8px 10px',
+                      borderRadius: RADIUS.sm,
+                      border: `1px solid ${COLORS.border}`,
+                      background: COLORS.bg,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: COLORS.textSecondary,
+                        marginBottom: 6,
+                        letterSpacing: '0.02em',
+                      }}
+                    >
+                      학생 초대코드
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'stretch',
+                        gap: 8,
+                        minWidth: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          flex: '1 1 120px',
+                          minWidth: 0,
+                          padding: '8px 10px',
+                          borderRadius: RADIUS.sm,
+                          border: `1px solid ${COLORS.border}`,
+                          background: COLORS.surface,
+                          fontFamily: 'ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace',
+                          fontSize: 14,
+                          fontWeight: 700,
+                          letterSpacing: '0.08em',
+                          color: COLORS.textPrimary,
+                          lineHeight: 1.35,
+                          wordBreak: 'break-all',
+                        }}
+                      >
+                        {invite || '—'}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!invite}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void copyWordSetInviteCode(invite)
+                        }}
+                        style={{
+                          flex: '0 0 auto',
+                          padding: '8px 12px',
+                          borderRadius: RADIUS.sm,
+                          border: `1px solid ${COLORS.border}`,
+                          background: COLORS.surface,
+                          cursor: invite ? 'pointer' : 'not-allowed',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: COLORS.textSecondary,
+                          opacity: invite ? 1 : 0.45,
+                          whiteSpace: 'nowrap',
+                          alignSelf: 'stretch',
+                        }}
+                        title={invite ? '클립보드에 복사' : '초대코드 없음'}
+                      >
+                        복사
+                      </button>
+                    </div>
+                  </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                     <button
                       type="button"
