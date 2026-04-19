@@ -17,6 +17,7 @@ import SetSettingsModal from './components/SetSettingsModal'
 import { normalizeWordDifficulty } from './utils/parsers'
 import { filterWordRows } from './utils/wordFilters'
 import { formatAvailableModesSummary, normalizeSetType } from './utils/learningModes'
+import { showToast } from '@/utils/toastBus'
 
 export default function WordsManagePage() {
   const router = useRouter()
@@ -31,17 +32,12 @@ export default function WordsManagePage() {
   const [emptyOnly, setEmptyOnly] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkOpen, setBulkOpen] = useState(false)
-  const [saveHint, setSaveHint] = useState(null)
-  /** 단어 행 [저장] 결과 — 자동 저장 제거 후 버튼 전용 */
-  const [rowSaveToast, setRowSaveToast] = useState(null)
   /** 테이블 접기: 10개 단위 (Day는 사이드바에서 이미 필터) */
   const [tableGroupMode, setTableGroupMode] = useState('chunk10')
   const [inviteCopyMsg, setInviteCopyMsg] = useState(null)
   const [newSetModalOpen, setNewSetModalOpen] = useState(false)
   /** 사이드바 세트별 [설정] 모달 — 세트 이름 또는 null */
   const [settingsSetName, setSettingsSetName] = useState(null)
-  const saveHintTimerRef = useRef(null)
-  const rowSaveToastTimerRef = useRef(null)
   const inviteCopyMsgTimerRef = useRef(null)
   /** Day 단위 강의 영상 URL (저장 전 로컬) — words.youtube_url 일괄 반영 */
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('')
@@ -54,8 +50,6 @@ export default function WordsManagePage() {
 
   useEffect(() => {
     return () => {
-      if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
-      if (rowSaveToastTimerRef.current) clearTimeout(rowSaveToastTimerRef.current)
       if (inviteCopyMsgTimerRef.current) clearTimeout(inviteCopyMsgTimerRef.current)
     }
   }, [])
@@ -302,7 +296,7 @@ export default function WordsManagePage() {
         .eq('set_name', sn)
         .eq('day', d)
       if (error) {
-        alert(`저장 실패: ${error.message}`)
+        showToast(`저장 실패: ${error.message}`, 'error', 3500)
         return
       }
       setWords((prev) =>
@@ -310,9 +304,7 @@ export default function WordsManagePage() {
           String(w.set_name || '').trim() === sn && Number(w.day) === d ? { ...w, youtube_url: url } : w,
         ),
       )
-      if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
-      setSaveHint(`Day ${d} 영상 URL이 저장되었습니다`)
-      saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 3500)
+      showToast(`✓ Day ${d} 영상 URL이 저장되었습니다`, 'success', 2500)
     } finally {
       setDayYoutubeAction(null)
     }
@@ -332,7 +324,7 @@ export default function WordsManagePage() {
         .eq('set_name', sn)
         .eq('day', d)
       if (error) {
-        alert(`초기화 실패: ${error.message}`)
+        showToast(`초기화 실패: ${error.message}`, 'error', 3500)
         return
       }
       setWords((prev) =>
@@ -341,9 +333,7 @@ export default function WordsManagePage() {
         ),
       )
       setYoutubeUrlInput('')
-      if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
-      setSaveHint('삭제되었습니다')
-      saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2500)
+      showToast(`✓ Day ${d} 영상 URL이 초기화되었습니다`, 'success', 2500)
     } finally {
       setDayYoutubeAction(null)
     }
@@ -374,9 +364,7 @@ export default function WordsManagePage() {
       next.delete(id)
       return next
     })
-    setSaveHint('삭제했습니다.')
-    if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
-    saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2000)
+    showToast('✓ 삭제되었습니다', 'success', 2500)
   }, [teacherId])
 
   const handleDeleteSet = useCallback(
@@ -411,17 +399,13 @@ export default function WordsManagePage() {
       setSettingsSetName((prev) => (prev === sn ? null : prev))
       void loadWords()
       void loadWordSetNames()
-      setSaveHint('세트가 삭제되었습니다')
-      if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
-      saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 2500)
+      showToast(`✓ '${sn}' 세트가 삭제되었습니다`, 'success', 3000)
     },
     [teacherId, setFilter, loadWords, loadWordSetNames],
   )
 
   const flashRowSaveToast = useCallback((ok) => {
-    if (rowSaveToastTimerRef.current) clearTimeout(rowSaveToastTimerRef.current)
-    setRowSaveToast(ok ? 'success' : 'error')
-    rowSaveToastTimerRef.current = setTimeout(() => setRowSaveToast(null), 3200)
+    showToast(ok ? '✓ 저장되었습니다' : '저장 실패', ok ? 'success' : 'error', 2500)
   }, [])
 
   const handleRowCommit = useCallback(async (row) => {
@@ -1001,6 +985,31 @@ export default function WordsManagePage() {
               ))}
             </select>
           </label>
+          {setFilter.trim() ? (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: COLORS.textSecondary, fontSize: 14 }}>Day</span>
+              <select
+                value={dayFilter == null ? '' : String(dayFilter)}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setDayFilter(v === '' ? null : Number(v))
+                }}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  minWidth: 120,
+                }}
+              >
+                <option value="">전체 Day</option>
+                {daysInSelectedSet.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
             <input type="checkbox" checked={emptyOnly} onChange={(e) => setEmptyOnly(e.target.checked)} />
             <span style={{ fontSize: 14, color: COLORS.textPrimary }}>빈 필드만 보기</span>
@@ -1124,42 +1133,6 @@ export default function WordsManagePage() {
           </div>
         ) : null}
 
-        {saveHint ? (
-          <div
-            role="status"
-            style={{
-              marginBottom: 12,
-              padding: '10px 14px',
-              borderRadius: RADIUS.md,
-              background: COLORS.successBg,
-              border: `1px solid ${COLORS.border}`,
-              color: COLORS.textPrimary,
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            {saveHint}
-          </div>
-        ) : null}
-
-        {rowSaveToast ? (
-          <div
-            role="status"
-            style={{
-              marginBottom: 12,
-              padding: '10px 14px',
-              borderRadius: RADIUS.md,
-              border: `1px solid ${rowSaveToast === 'success' ? '#86efac' : COLORS.danger}`,
-              background: rowSaveToast === 'success' ? '#ecfdf5' : COLORS.dangerBg,
-              color: rowSaveToast === 'success' ? '#15803d' : COLORS.danger,
-              fontSize: 14,
-              fontWeight: 700,
-            }}
-          >
-            {rowSaveToast === 'success' ? '저장됐습니다 ✓' : '저장 실패'}
-          </div>
-        ) : null}
-
         {loading ? (
           <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
         ) : (
@@ -1244,9 +1217,7 @@ export default function WordsManagePage() {
           setNewSetModalOpen(false)
           const n = String(name || '').trim()
           const st = String(setType || 'word').trim() || 'word'
-          if (saveHintTimerRef.current) clearTimeout(saveHintTimerRef.current)
-          setSaveHint('세트가 생성됐습니다. 단어를 추가해보세요')
-          saveHintTimerRef.current = setTimeout(() => setSaveHint(null), 6000)
+          showToast('세트가 생성됐습니다. 단어를 추가해보세요', 'success', 6000)
           if (n) {
             changeSetFilter(n)
             setWordSetNames((prev) => {

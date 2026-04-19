@@ -14,6 +14,7 @@ import {
 } from '@/utils/teacherQueries';
 import { useStudentReport, normalizeReportStudentId } from '@/src/hooks/useStudentReport';
 import StudentReportLayer from './StudentReportLayer';
+import { showToast } from '@/utils/toastBus';
 
 const COLOR_ORDER = { gold: 0, red: 1, orange: 2, blue: 3, green: 4, purple: 5, white: 6 };
 const MAIN_ZONE_MAX = 30;
@@ -328,7 +329,6 @@ export default function TeacherMonitorPage() {
   const [absent2Open, setAbsent2Open] = useState(false);
   const [fetchError, setFetchError] = useState(null);
   const [legendOpen, setLegendOpen] = useState(false);
-  const [copyToast, setCopyToast] = useState(null);
   const [detailStudent, setDetailStudent] = useState(null);
   const [reportOpen, setReportOpen] = useState(false);
   /** 집중관리존: 10초 후 정답/오답 → 대기 전환을 위해 1초마다 리렌더 */
@@ -367,8 +367,10 @@ export default function TeacherMonitorPage() {
     if (!detailStudent) setReportOpen(false);
   }, [detailStudent]);
 
-  const copyToClipboard = async (text) => {
-    if (!text) return;
+  /** @param {{ skipToast?: boolean }} [options] — 출석 N차 등에서 별도 메시지를 쓸 때 */
+  const copyToClipboard = async (text, options = {}) => {
+    if (!text) return false;
+    const skipToast = Boolean(options.skipToast);
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
@@ -382,11 +384,11 @@ export default function TeacherMonitorPage() {
         document.execCommand('copy');
         document.body.removeChild(ta);
       }
-      setCopyToast('✓ 복사되었습니다');
-      setTimeout(() => setCopyToast(null), 2500);
+      if (!skipToast) showToast('✓ 복사되었습니다', 'success');
+      return true;
     } catch {
-      setCopyToast('복사 실패');
-      setTimeout(() => setCopyToast(null), 2500);
+      showToast('복사 실패', 'error');
+      return false;
     }
   };
 
@@ -631,8 +633,7 @@ export default function TeacherMonitorPage() {
     if (!teacher?.id) return;
     const { data: list, error } = await fetchStudentStatusNamesForTeacher(teacher.id);
     if (error) {
-      setCopyToast('조회 실패. 다시 눌러주세요.');
-      setTimeout(() => setCopyToast(null), 3000);
+      showToast('조회 실패. 다시 눌러주세요.', 'error', 3000);
       return;
     }
     const rows = Array.isArray(list) ? list : [];
@@ -664,8 +665,7 @@ export default function TeacherMonitorPage() {
     if (ref.names === null || ref.chunk * COPY_CHUNK_SIZE >= ref.names.length) {
       const { data: list, error } = await fetchStudentStatusNamesForTeacher(teacher.id);
       if (error) {
-        setCopyToast('조회 실패. 다시 눌러주세요.');
-        setTimeout(() => setCopyToast(null), 3000);
+        showToast('조회 실패. 다시 눌러주세요.', 'error', 3000);
         return;
       }
       const rows = Array.isArray(list) ? list : [];
@@ -676,8 +676,7 @@ export default function TeacherMonitorPage() {
     const names = ref.names;
     const total = names.length;
     if (total === 0) {
-      setCopyToast('오늘 출석 0명');
-      setTimeout(() => setCopyToast(null), 2000);
+      showToast('오늘 출석 0명', 'success', 2000);
       ref.names = null;
       ref.chunk = 0;
       return;
@@ -694,16 +693,22 @@ export default function TeacherMonitorPage() {
       '',
       '💬 "숙제 끝내고 꿀잠 예약 🛌 진짜 고생했어!"',
     ];
-    copyToClipboard(parts.join('\n'));
+    const copied = await copyToClipboard(parts.join('\n'), { skipToast: true });
+    if (!copied) return;
     ref.chunk += 1;
     if (ref.chunk * COPY_CHUNK_SIZE >= total) {
       ref.names = null;
       ref.chunk = 0;
-      setCopyToast(isLast && total > COPY_CHUNK_SIZE ? `마지막 차수 복사됨 (${chunkNames.length}명). 다음에 클릭하면 1차부터` : '복사됨');
+      showToast(
+        isLast && total > COPY_CHUNK_SIZE
+          ? `마지막 차수 복사됨 (${chunkNames.length}명). 다음에 클릭하면 1차부터`
+          : '복사됨',
+        'success',
+        3000,
+      );
     } else {
-      setCopyToast(`${ref.chunk}차 복사됨 (${chunkNames.length}명). 다음 차수는 다시 클릭`);
+      showToast(`${ref.chunk}차 복사됨 (${chunkNames.length}명). 다음 차수는 다시 클릭`, 'success', 3000);
     }
-    setTimeout(() => setCopyToast(null), 3000);
   };
 
   /** 오늘 미접속만 복사 (40명 초과 시 N차로 나눠 복사) */
@@ -713,8 +718,7 @@ export default function TeacherMonitorPage() {
     if (ref.initials === null || ref.chunk * COPY_CHUNK_SIZE >= ref.initials.length) {
       const { data: list, error } = await fetchStudentStatusNamesForTeacher(teacher.id);
       if (error) {
-        setCopyToast('조회 실패. 다시 눌러주세요.');
-        setTimeout(() => setCopyToast(null), 3000);
+        showToast('조회 실패. 다시 눌러주세요.', 'error', 3000);
         return;
       }
       const rows = Array.isArray(list) ? list : [];
@@ -725,8 +729,7 @@ export default function TeacherMonitorPage() {
     const initials = ref.initials;
     const total = initials.length;
     if (total === 0) {
-      setCopyToast('오늘 미접속 0명');
-      setTimeout(() => setCopyToast(null), 2000);
+      showToast('오늘 미접속 0명', 'success', 2000);
       ref.initials = null;
       ref.chunk = 0;
       return;
@@ -743,23 +746,28 @@ export default function TeacherMonitorPage() {
       '',
       '💬 "나 다 싶으면... 조용히 앱 켜기 (아직 안 늦음 😉)"',
     ];
-    copyToClipboard(parts.join('\n'));
+    const copiedAbs = await copyToClipboard(parts.join('\n'), { skipToast: true });
+    if (!copiedAbs) return;
     ref.chunk += 1;
     if (ref.chunk * COPY_CHUNK_SIZE >= total) {
       ref.initials = null;
       ref.chunk = 0;
-      setCopyToast(isLast && total > COPY_CHUNK_SIZE ? `마지막 차수 복사됨 (${chunkInitials.length}명). 다음에 클릭하면 1차부터` : '복사됨');
+      showToast(
+        isLast && total > COPY_CHUNK_SIZE
+          ? `마지막 차수 복사됨 (${chunkInitials.length}명). 다음에 클릭하면 1차부터`
+          : '복사됨',
+        'success',
+        3000,
+      );
     } else {
-      setCopyToast(`${ref.chunk}차 복사됨 (${chunkInitials.length}명). 다음 차수는 다시 클릭`);
+      showToast(`${ref.chunk}차 복사됨 (${chunkInitials.length}명). 다음 차수는 다시 클릭`, 'success', 3000);
     }
-    setTimeout(() => setCopyToast(null), 3000);
   };
 
   /** 이틀 미접속 학생들에게 보낼 멘트 복사 (이름 목록 + 공통 멘트) */
   const handleCopyAbsent2Ment = () => {
     if (absent2Days.length === 0) {
-      setCopyToast('이틀 미접속 학생이 없습니다.');
-      setTimeout(() => setCopyToast(null), 2000);
+      showToast('이틀 미접속 학생이 없습니다.', 'success', 2000);
       return;
     }
     const names = absent2Days.map((r) => (r.student_name || '').trim() || '(이름없음)').filter(Boolean);
@@ -811,11 +819,6 @@ export default function TeacherMonitorPage() {
 
   return (
     <div className="monitor-page" style={styles.page}>
-      <style
-        dangerouslySetInnerHTML={{
-          __html: '@keyframes monitor-toast-in{from{opacity:0}to{opacity:1}}',
-        }}
-      />
       <div className="monitor-container" style={styles.container}>
         <header className="monitor-header" style={styles.header}>
           <h1 className="monitor-title" style={styles.title}>실시간 학생 모니터링</h1>
@@ -852,8 +855,6 @@ export default function TeacherMonitorPage() {
           <span style={styles.summarySep}>·</span>
           <span>오늘 사건 <strong>{todayEventsCount}건</strong></span>
         </div>
-        {copyToast && <div style={styles.toast}>{copyToast}</div>}
-
         {legendOpen && (
           <div style={styles.legendPanel}>
             {['gold', 'blue', 'green', 'purple', 'red', 'white'].map((key) => (
@@ -1323,21 +1324,6 @@ const styles = {
   copyBtn: { padding: '6px 12px', border: '1px solid rgba(107,114,128,0.3)', borderRadius: 12, background: 'rgba(255,255,255,0.9)', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 },
   liveBadge: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#ede9fe', borderRadius: 20, fontSize: 13, fontWeight: 600, color: '#5b21b6' },
   liveDot: { width: 8, height: 8, borderRadius: '50%', background: '#764ba2' },
-  toast: {
-    position: 'fixed',
-    bottom: 24,
-    left: '50%',
-    transform: 'translateX(-50%)',
-    padding: '10px 20px',
-    background: '#374151',
-    color: '#fff',
-    borderRadius: 12,
-    fontSize: 14,
-    zIndex: 10100,
-    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-    animation: 'monitor-toast-in 0.25s ease',
-    pointerEvents: 'none',
-  },
   summaryBar: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, padding: '12px 16px', marginBottom: 20, background: 'linear-gradient(90deg, rgba(106,17,203,0.08) 0%, rgba(37,117,252,0.06) 100%)', borderRadius: 16, border: '1px solid rgba(106,17,203,0.15)', fontSize: 14, color: '#374151', fontWeight: 500 },
   summaryIcon: { fontSize: 18 },
   summarySep: { color: '#9ca3af', fontWeight: 400 },

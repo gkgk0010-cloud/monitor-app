@@ -6,6 +6,7 @@ import { supabase } from '@/utils/supabaseClient';
 import { useTeacher } from '@/utils/useTeacher';
 import { formatTeacherName } from '@/utils/formatTeacherName';
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens';
+import TeacherToastPortal from '@/components/TeacherToastPortal';
 
 function navItemStyle(active) {
   return {
@@ -178,6 +179,7 @@ export default function TeacherLayout({ children }) {
       <main className="teacher-main-shell" style={{ flex: 1, minHeight: 0, width: '100%', maxWidth: '100%' }}>
         {children}
       </main>
+      <TeacherToastPortal />
     </div>
   );
 }

@@ -180,3 +180,13 @@ html, body {
     padding-top: 16px;
   }
 }
+
+/* TeacherToastPortal — body 포털 토스트 */
+@keyframes monitor-toast-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
