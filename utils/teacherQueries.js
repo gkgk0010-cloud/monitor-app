@@ -258,3 +258,120 @@ export async function fetchStudentRoutineSummariesForTeacher(teacherId) {
 
   return out;
 }
+
+/**
+ * general 학원 집중관리존 카드 불빛용: 학생당 활성 루틴 중 `last_activity_at` 최신 1행의
+ * `last_completed_date` · `last_activity_at`
+ * (student_status.student_id / User ID 키와 동일 규칙으로 맵핑)
+ * @returns {Promise<Record<string, { last_completed_date: string | null, last_activity_at: string | null } | null>>}
+ */
+export async function fetchStudentRoutineLightStateForTeacher(teacherId) {
+  const empty = {};
+  if (!teacherId) return empty;
+
+  const { data: studentRows, error: stuErr } = await supabase
+    .from('students')
+    .select('*')
+    .eq('teacher_id', teacherId);
+
+  if (stuErr) {
+    console.warn('[teacherQueries] students(루틴 불빛) 조회 실패:', stuErr.message);
+    return empty;
+  }
+
+  const displayKeys = new Set();
+  const idQuerySet = new Set();
+
+  for (const row of studentRows || []) {
+    const uid = row['User ID'] != null ? normalizeMonitorStudentKey(row['User ID']) : '';
+    const uAlt = row.user_id != null ? normalizeMonitorStudentKey(row.user_id) : '';
+    const pk = row.id != null ? normalizeMonitorStudentKey(row.id) : '';
+    const canonical = uid || uAlt || pk;
+    if (canonical) {
+      displayKeys.add(canonical);
+      idQuerySet.add(canonical);
+    }
+    if (pk) idQuerySet.add(pk);
+  }
+
+  const ids = [...idQuerySet];
+  if (ids.length === 0) return empty;
+
+  const selectCols = `
+    student_id,
+    last_completed_date,
+    last_activity_at,
+    is_active
+  `;
+
+  let { data, error } = await supabase
+    .from('student_routines')
+    .select(selectCols)
+    .in('student_id', ids)
+    .eq('is_active', true);
+
+  if (error) {
+    const msg = error.message || '';
+    if (msg.includes('is_active') || msg.includes('column')) {
+      const fb = await supabase.from('student_routines').select(selectCols).in('student_id', ids);
+      data = fb.data;
+      error = fb.error;
+    }
+  }
+
+  if (error) {
+    console.warn('[teacherQueries] student_routines(불빛) 조회 실패:', error.message);
+    return empty;
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  const bySid = new Map();
+  for (const row of rows) {
+    const sid = row.student_id != null ? normalizeMonitorStudentKey(row.student_id) : '';
+    if (!sid) continue;
+    if (row.is_active === false) continue;
+    if (!bySid.has(sid)) bySid.set(sid, []);
+    bySid.get(sid).push(row);
+  }
+
+  const pkWhenCanonicalIsUid = new Map();
+  for (const row of studentRows || []) {
+    const uid = row['User ID'] != null ? normalizeMonitorStudentKey(row['User ID']) : '';
+    const uAlt = row.user_id != null ? normalizeMonitorStudentKey(row.user_id) : '';
+    const pk = row.id != null ? normalizeMonitorStudentKey(row.id) : '';
+    const keyU = uid || uAlt;
+    if (keyU && pk && keyU !== pk && !pkWhenCanonicalIsUid.has(keyU)) {
+      pkWhenCanonicalIsUid.set(keyU, pk);
+    }
+  }
+
+  /** @type {Record<string, { last_completed_date: string | null, last_activity_at: string | null } | null>} */
+  const out = {};
+
+  for (const displayKey of displayKeys) {
+    let list = bySid.get(displayKey) || [];
+    if (list.length === 0) {
+      const altPk = pkWhenCanonicalIsUid.get(displayKey);
+      if (altPk) list = bySid.get(altPk) || [];
+    }
+
+    if (list.length === 0) {
+      out[displayKey] = null;
+      continue;
+    }
+
+    list.sort((a, b) => {
+      const ta = a.last_activity_at ? new Date(a.last_activity_at).getTime() : 0;
+      const tb = b.last_activity_at ? new Date(b.last_activity_at).getTime() : 0;
+      return tb - ta;
+    });
+
+    const rep = list[0];
+    out[displayKey] = {
+      last_completed_date: rep.last_completed_date != null ? String(rep.last_completed_date) : null,
+      last_activity_at: rep.last_activity_at != null ? String(rep.last_activity_at) : null,
+    };
+  }
+
+  return out;
+}

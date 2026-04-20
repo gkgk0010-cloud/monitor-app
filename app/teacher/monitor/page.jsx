@@ -10,6 +10,7 @@ import {
   fetchStatusLogsForTeacher,
   fetchStudentStatusNamesForTeacher,
   fetchStudentRoutineSummariesForTeacher,
+  fetchStudentRoutineLightStateForTeacher,
   routineLastStudyParts,
 } from '@/utils/teacherQueries';
 import { useStudentReport, normalizeReportStudentId } from '@/src/hooks/useStudentReport';
@@ -220,7 +221,7 @@ function isRecentAnswer(row) {
   }
 }
 
-/** 집중관리존 카드용: 정답=파란불, 오답=빨간불, 그 외=대기(회색) */
+/** 집중관리존 카드용: 정답=파란불, 오답=빨간불, 그 외=대기(회색) — teaching_type=toeic */
 function getAnswerLightStyle(row) {
   const recent = isRecentAnswer(row);
   const result = (row?.last_answer_result || '').toLowerCase();
@@ -231,6 +232,68 @@ function getAnswerLightStyle(row) {
     return { border: '#dc2626', bg: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)', label: '오답', badge: '#dc2626' };
   }
   return { border: '#94a3b8', bg: 'rgba(248, 250, 252, 0.98)', label: '대기', badge: '#94a3b8' };
+}
+
+/** `last_completed_date`(date/문자) → KST 기준 YYYY-MM-DD */
+function routineCompletedYmdKst(val) {
+  if (val == null || val === '') return '';
+  const s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  return getKstDateString(s);
+}
+
+/**
+ * teaching_type=general: 활성 루틴 행 기준 (최신 last_activity_at 1행).
+ * last_answer_result 는 사용하지 않음.
+ */
+function getGeneralRoutineLightStyle(row, routineLightMap) {
+  const sid = normalizeReportStudentId(row?.student_id);
+  const st = sid ? routineLightMap[sid] : undefined;
+
+  if (st == null) {
+    return {
+      border: '#9ca3af',
+      bg: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+      label: '없음',
+      badge: '#9ca3af',
+    };
+  }
+
+  const today = kstYmdToday();
+  const completedYmd = routineCompletedYmdKst(st.last_completed_date);
+  if (completedYmd && completedYmd === today) {
+    return {
+      border: '#2563eb',
+      bg: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+      label: '완료',
+      badge: '#2563eb',
+    };
+  }
+
+  const actToday = Boolean(st.last_activity_at && isTodayKorea(st.last_activity_at));
+  if (actToday && completedYmd !== today) {
+    return {
+      border: 'rgba(255,255,255,0.6)',
+      bg: 'rgba(255, 255, 255, 0.92)',
+      label: '진행',
+      badge: '#64748b',
+    };
+  }
+
+  return {
+    border: '#dc2626',
+    bg: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)',
+    label: '미시작',
+    badge: '#dc2626',
+  };
+}
+
+function getMonitorCardLightStyle(row, teachingType, routineLightMap) {
+  const tt = (teachingType || '').toLowerCase();
+  if (tt === 'general') {
+    return getGeneralRoutineLightStyle(row, routineLightMap);
+  }
+  return getAnswerLightStyle(row);
 }
 
 /** 최근 N분 이내 활동(한국시간 기준) → "지금 접속 중"으로 셈 */
@@ -347,6 +410,8 @@ export default function TeacherMonitorPage() {
 
   /** student_id → { line1, lastParts } */
   const [routineSummaries, setRoutineSummaries] = useState({});
+  /** general 집중관리존 카드 불빛 — student_id → 루틴 완료/활동 시각 */
+  const [routineLightByStudentId, setRoutineLightByStudentId] = useState({});
 
   const { teacher, loading: teacherLoading } = useTeacher();
 
@@ -520,6 +585,17 @@ export default function TeacherMonitorPage() {
         console.warn('[monitor] 루틴 요약 실패:', e);
         setRoutineSummaries({});
       }
+      if ((teacher?.teaching_type || '').toLowerCase() === 'general') {
+        try {
+          const lights = await fetchStudentRoutineLightStateForTeacher(teacherId);
+          setRoutineLightByStudentId(lights);
+        } catch (e) {
+          console.warn('[monitor] 루틴 불빛 상태 실패:', e);
+          setRoutineLightByStudentId({});
+        }
+      } else {
+        setRoutineLightByStudentId({});
+      }
     };
     refetchStudentsRef.current = fetchStudents;
 
@@ -536,6 +612,11 @@ export default function TeacherMonitorPage() {
         fetchStudentRoutineSummariesForTeacher(teacherId)
           .then((map) => setRoutineSummaries(map))
           .catch(() => setRoutineSummaries({}));
+        if ((teacher?.teaching_type || '').toLowerCase() === 'general') {
+          fetchStudentRoutineLightStateForTeacher(teacherId)
+            .then((lights) => setRoutineLightByStudentId(lights))
+            .catch(() => setRoutineLightByStudentId({}));
+        }
         return;
       }
       void fetchStudents();
@@ -572,7 +653,7 @@ export default function TeacherMonitorPage() {
       if (channel) supabase.removeChannel(channel);
       if (channelRoutines) supabase.removeChannel(channelRoutines);
     };
-  }, [teacher?.id, teacherLoading]);
+  }, [teacher?.id, teacher?.teaching_type, teacherLoading]);
 
   useEffect(() => {
     if (teacherLoading || !teacher?.id) return undefined;
@@ -877,10 +958,14 @@ export default function TeacherMonitorPage() {
               🔄 갱신
             </button>
           </div>
-          <p style={{ marginTop: -8, marginBottom: 12, fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>최근에 문제 푼 사람이 맨 위. 문제 풀면 위로 올라오고, 31번째는 안전 보관함으로 내려감 · 정답=파란불 / 오답=빨간불</p>
+          <p style={{ marginTop: -8, marginBottom: 12, fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>
+            {(teacher?.teaching_type || '').toLowerCase() === 'general'
+              ? '최근에 학습한 사람이 맨 위. 파란=오늘 DAY 완료 · 흰색=오늘 진행 중 · 빨강=오늘 미시작 · 회색=루틴 없음'
+              : '최근에 문제 푼 사람이 맨 위. 문제 풀면 위로 올라오고, 31번째는 안전 보관함으로 내려감 · 정답=파란불 / 오답=빨간불'}
+          </p>
           <div className="monitor-card-grid" style={styles.cardGrid}>
             {main.map((row) => {
-              const light = getAnswerLightStyle(row);
+              const light = getMonitorCardLightStyle(row, teacher?.teaching_type, routineLightByStudentId);
               const s = style[row.student_color] || style.white;
               return (
                 <div
@@ -908,9 +993,20 @@ export default function TeacherMonitorPage() {
                   <MonitorRoutineLines studentId={row.student_id} map={routineSummaries} />
                   {row.last_active != null && <div className="monitor-card-time" style={styles.cardTime} title="마지막 활동 시각 (한국시간)">{formatActive(row.last_active)}</div>}
                   <div className="monitor-card-info" style={styles.cardInfo}>
-                    {light.label === '정답' && (row.last_answer_tag ? `✅ 정답 · ${row.last_answer_tag}` : '✅ 정답')}
-                    {light.label === '오답' && (row.last_answer_tag ? `❌ 오답 · ${row.last_answer_tag}` : '❌ 오답')}
-                    {light.label === '대기' && '⏳ 대기'}
+                    {(teacher?.teaching_type || '').toLowerCase() === 'general' ? (
+                      <>
+                        {light.label === '완료' && '✅ 오늘 DAY 완료'}
+                        {light.label === '진행' && '⏳ 진행 중'}
+                        {light.label === '미시작' && '🔴 오늘 미시작'}
+                        {light.label === '없음' && '— 루틴 미배정'}
+                      </>
+                    ) : (
+                      <>
+                        {light.label === '정답' && (row.last_answer_tag ? `✅ 정답 · ${row.last_answer_tag}` : '✅ 정답')}
+                        {light.label === '오답' && (row.last_answer_tag ? `❌ 오답 · ${row.last_answer_tag}` : '❌ 오답')}
+                        {light.label === '대기' && '⏳ 대기'}
+                      </>
+                    )}
                   </div>
                   <button
                     type="button"
