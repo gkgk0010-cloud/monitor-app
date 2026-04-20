@@ -120,14 +120,52 @@ function pickRoutine(r) {
 }
 
 /**
+ * useStudentReport / student_status 와 동일하게 로그인 uid 기준 키로 정규화
+ * @param {unknown} raw
+ */
+function normalizeMonitorStudentKey(raw) {
+  return String(raw ?? '')
+    .replace(/\s+/g, '')
+    .trim();
+}
+
+/**
  * 학생별 루틴 요약 (활성 루틴만). 안 B: 대표 1개 + 「외 N개」
+ * 카드는 student_status.student_id(= students."User ID" 등)로 조회하므로 students.id(PK)만 쓰면 루틴이 안 잡힘.
  * @returns {Promise<Record<string, { line1: string | null, lastParts: { text: string, urgent: boolean, muted: boolean } }>>}
  */
 export async function fetchStudentRoutineSummariesForTeacher(teacherId) {
   const empty = {};
   if (!teacherId) return empty;
 
-  const ids = await fetchStudentIdsForTeacher(teacherId);
+  const { data: studentRows, error: stuErr } = await supabase
+    .from('students')
+    .select('*')
+    .eq('teacher_id', teacherId);
+
+  if (stuErr) {
+    console.warn('[teacherQueries] students(루틴 매칭) 조회 실패:', stuErr.message);
+    return empty;
+  }
+
+  /** 카드·student_status 조회 키 (한 명당 하나) — User ID 우선 */
+  const displayKeys = new Set();
+  /** student_routines.in()용 — uid·PK 양쪽 (레거시 호환) */
+  const idQuerySet = new Set();
+
+  for (const row of studentRows || []) {
+    const uid = row['User ID'] != null ? normalizeMonitorStudentKey(row['User ID']) : '';
+    const uAlt = row.user_id != null ? normalizeMonitorStudentKey(row.user_id) : '';
+    const pk = row.id != null ? normalizeMonitorStudentKey(row.id) : '';
+    const canonical = uid || uAlt || pk;
+    if (canonical) {
+      displayKeys.add(canonical);
+      idQuerySet.add(canonical);
+    }
+    if (pk) idQuerySet.add(pk);
+  }
+
+  const ids = [...idQuerySet];
   if (ids.length === 0) return empty;
 
   const selectCols = `
@@ -159,22 +197,40 @@ export async function fetchStudentRoutineSummariesForTeacher(teacherId) {
   }
 
   const rows = Array.isArray(data) ? data : [];
+  /** 정규화된 student_id → 행 목록 */
   const bySid = new Map();
   for (const row of rows) {
-    const sid = row.student_id != null ? String(row.student_id) : '';
+    const sid = row.student_id != null ? normalizeMonitorStudentKey(row.student_id) : '';
     if (!sid) continue;
     if (row.is_active === false) continue;
     if (!bySid.has(sid)) bySid.set(sid, []);
     bySid.get(sid).push(row);
   }
 
+  /** canonical(uid) → 해당 월 행의 PK (루틴이 PK에만 묶인 경우 조회) */
+  const pkWhenCanonicalIsUid = new Map();
+  for (const row of studentRows || []) {
+    const uid = row['User ID'] != null ? normalizeMonitorStudentKey(row['User ID']) : '';
+    const uAlt = row.user_id != null ? normalizeMonitorStudentKey(row.user_id) : '';
+    const pk = row.id != null ? normalizeMonitorStudentKey(row.id) : '';
+    const keyU = uid || uAlt;
+    if (keyU && pk && keyU !== pk && !pkWhenCanonicalIsUid.has(keyU)) {
+      pkWhenCanonicalIsUid.set(keyU, pk);
+    }
+  }
+
   /** @type {Record<string, { line1: string | null, lastParts: ReturnType<typeof routineLastStudyParts> }>} */
   const out = {};
 
-  for (const sid of ids) {
-    const list = bySid.get(sid) || [];
+  for (const displayKey of displayKeys) {
+    let list = bySid.get(displayKey) || [];
     if (list.length === 0) {
-      out[sid] = {
+      const altPk = pkWhenCanonicalIsUid.get(displayKey);
+      if (altPk) list = bySid.get(altPk) || [];
+    }
+
+    if (list.length === 0) {
+      out[displayKey] = {
         line1: null,
         lastParts: routineLastStudyParts(null),
       };
@@ -194,7 +250,7 @@ export async function fetchStudentRoutineSummariesForTeacher(teacherId) {
     const line1 =
       rest > 0 ? `${name} · DAY${cd} 진행중 · 외 ${rest}개` : `${name} · DAY${cd} 진행중`;
 
-    out[sid] = {
+    out[displayKey] = {
       line1,
       lastParts: routineLastStudyParts(rep.last_activity_at),
     };
