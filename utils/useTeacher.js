@@ -12,23 +12,45 @@ export function useTeacher() {
 
   const load = useCallback(async () => {
     setError(null);
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+
+    /** 클라이언트 세션이 아직 storage에 안 올라온 직후(회원가입→라우트 전환) 대비 */
+    let session = null;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const {
+        data: { session: s },
+      } = await supabase.auth.getSession();
+      session = s;
+      if (session?.user?.email) break;
+      await new Promise((r) => setTimeout(r, 80 * (attempt + 1)));
+    }
+
     const email = session?.user?.email?.trim();
     if (!email) {
+      if (typeof window !== 'undefined') {
+        console.warn('[useTeacher] session email 없음 — getSession 재시도 후에도 비어 있음');
+      }
       setTeacher(null);
       setLoading(false);
       return;
     }
 
-    const { data, error: qErr } = await supabase
-      .from('teachers')
-      .select(
-        'id, name, email, invite_code, academy_id, visible_menus, academy_name, academy_logo_url, teaching_type',
-      )
-      .eq('email', email)
-      .maybeSingle();
+    /** insert 직후 RLS/세션 타이밍 — teachers 행이 잠깐 비는 경우 재시도 */
+    let data = null;
+    let qErr = null;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const res = await supabase
+        .from('teachers')
+        .select(
+          'id, name, email, invite_code, academy_id, visible_menus, academy_name, academy_logo_url, teaching_type',
+        )
+        .eq('email', email)
+        .maybeSingle();
+      qErr = res.error;
+      data = res.data;
+      if (qErr) break;
+      if (data) break;
+      await new Promise((r) => setTimeout(r, 120 * (attempt + 1)));
+    }
 
     if (qErr) {
       console.warn('[useTeacher] teachers 조회 실패:', qErr.message);
@@ -36,6 +58,10 @@ export function useTeacher() {
       setTeacher(null);
       setLoading(false);
       return;
+    }
+
+    if (!data) {
+      console.warn('[useTeacher] teachers 행 없음 (재시도 후)', { email });
     }
 
     setTeacher(data ?? null);

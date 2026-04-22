@@ -37,8 +37,11 @@ export default function LoginPage() {
           return;
         }
       }
-      router.replace('/teacher/monitor');
-      router.refresh();
+      if (typeof window !== 'undefined') {
+        window.location.replace(`${window.location.origin}/teacher/monitor`);
+      } else {
+        router.replace('/teacher/monitor');
+      }
     } catch (err) {
       setError(err?.message || '로그인 중 오류가 발생했습니다.');
     } finally {

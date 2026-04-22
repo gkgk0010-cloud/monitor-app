@@ -97,8 +97,11 @@ export default function RegisterPage() {
             }
           }
         }
-        router.replace('/teacher/monitor');
-        router.refresh();
+        if (typeof window !== 'undefined') {
+          window.location.replace(`${window.location.origin}/teacher/monitor`);
+        } else {
+          router.replace('/teacher/monitor');
+        }
         return;
       }
 

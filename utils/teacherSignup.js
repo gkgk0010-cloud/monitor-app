@@ -111,6 +111,29 @@ export function authModeForTeachingType(teachingType) {
 }
 
 /**
+ * academies/teachers insert 직후 모니터 진입 시 "teachers 없음" 디버깅용 — 동일 클라로 재조회 성공 여부
+ * @param {string} label 'existing_row' | 'after_insert'
+ */
+async function logTeachersVerifyRead(email, expectedTeacherId, label) {
+  const em = String(email || '').trim();
+  if (!em) {
+    console.warn('[teacherSignup] teachers verify skipped: empty email', { label });
+    return;
+  }
+  const { data, error } = await supabase.from('teachers').select('id').eq('email', em).maybeSingle();
+  const vid = data?.id != null ? String(data.id) : null;
+  const exp = expectedTeacherId != null ? String(expectedTeacherId) : null;
+  console.log('[teacherSignup] teachers verify (read-after-write)', {
+    label,
+    email: em,
+    expectedTeacherId: exp,
+    verifyTeacherId: vid,
+    idsMatch: Boolean(exp && vid && exp === vid),
+    error: error?.message,
+  });
+}
+
+/**
  * 로그인 세션 기준으로 teachers 행이 없으면 생성 (회원가입 직후·이메일 인증 후 첫 로그인)
  * @returns {Promise<{ ok: boolean, created?: boolean, error?: Error }>}
  */
@@ -137,6 +160,7 @@ export async function ensureTeacherRowForSession(session, extra = {}) {
     return { ok: false, error: selErr };
   }
   if (existing?.id) {
+    await logTeachersVerifyRead(email, existing.id, 'existing_row');
     return { ok: true, created: false, teacherId: existing.id };
   }
 
@@ -180,6 +204,7 @@ export async function ensureTeacherRowForSession(session, extra = {}) {
     };
     const { data: inserted, error: insErr } = await supabase.from('teachers').insert(payload).select('id').single();
     if (!insErr) {
+      await logTeachersVerifyRead(email, inserted?.id, 'after_insert');
       return { ok: true, created: true, teacherId: inserted?.id };
     }
     const msg = insErr.message || '';
