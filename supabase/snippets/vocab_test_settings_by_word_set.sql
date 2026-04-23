@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS public.vocab_test_settings (
   word_set_id uuid PRIMARY KEY REFERENCES public.word_sets (id) ON DELETE CASCADE,
   pass_score integer NOT NULL DEFAULT 80 CHECK (pass_score >= 0 AND pass_score <= 100),
   max_attempts integer NOT NULL DEFAULT 3 CHECK (max_attempts >= 1),
+  test_question_types text[] NOT NULL DEFAULT ARRAY['word_to_meaning']::text[],
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 

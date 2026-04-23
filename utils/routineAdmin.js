@@ -314,7 +314,8 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
   }
 
   const rawRm = r.review_modes
-  const reviewModes = Array.isArray(rawRm) ? rawRm.map((x) => String(x)).filter(Boolean) : []
+  /** @type {unknown[]} 문자열 / {mode,wrongOnly?} / {mode:wrong_note} 혼용 */
+  const reviewModes = Array.isArray(rawRm) ? rawRm : []
 
   return {
     ok: true,

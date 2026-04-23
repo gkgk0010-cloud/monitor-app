@@ -28,15 +28,37 @@ const REVIEW_MODE_OPTIONS = [
   { key: 'shadowing', label: '쉐도잉으로 복습' },
   { key: 'writing', label: '라이팅으로 복습' },
   { key: 'scramble', label: '스크램블로 복습' },
+  { key: 'memorize', label: '암기(플래시카드)' },
+  { key: 'recall', label: '리콜' },
+  { key: 'wrong_note', label: '오답노트' },
 ]
 
-const defaultReviewModePick = () => ({
-  test: true,
-  reading: false,
-  shadowing: false,
-  writing: false,
-  scramble: false,
-})
+/** 루틴 복습 단계 편집(순서 유지) — 드롭다운에 나올 옵션 */
+const REVIEW_STEP_ADD_OPTIONS = [...REVIEW_MODE_OPTIONS]
+
+/**
+ * @param {unknown} rm routines.review_modes
+ * @returns {{ id: string, key: string, wrongOnly: boolean }[]}
+ */
+function normalizeReviewModesToSteps(rm) {
+  if (!Array.isArray(rm) || rm.length === 0) {
+    return [{ id: `r-${Date.now()}`, key: 'test', wrongOnly: false }]
+  }
+  return rm.map((x, i) => {
+    if (typeof x === 'string') {
+      const k = x.trim().toLowerCase() || 'test'
+      return { id: `r-${i}-${k}`, key: k, wrongOnly: false }
+    }
+    if (x && typeof x === 'object' && 'mode' in x) {
+      const m = String(/** @type {{ mode?: unknown }} */ (x).mode ?? '')
+        .trim()
+        .toLowerCase()
+      if (m === 'wrong_note') return { id: `r-${i}-wn`, key: 'wrong_note', wrongOnly: false }
+      return { id: `r-${i}-${m}`, key: m || 'test', wrongOnly: Boolean(/** @type {{ wrongOnly?: unknown }} */ (x).wrongOnly) }
+    }
+    return { id: `r-${i}-f`, key: 'test', wrongOnly: false }
+  })
+}
 
 /** UI/서버 메시지 — 객체가 그대로 나가면 [object Object] 방지 */
 function formatRoutineError(err) {
@@ -89,7 +111,10 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
   const [requiredModeKeys, setRequiredModeKeys] = useState([])
   const [optionalModeKeys, setOptionalModeKeys] = useState([])
   const [includeOptional, setIncludeOptional] = useState({})
-  const [reviewModePick, setReviewModePick] = useState(defaultReviewModePick)
+  /** 루틴 복습 모드 단계(순서 = 실행 순서) */
+  const [reviewSteps, setReviewSteps] = useState(() => [
+    { id: 'n1', key: 'test', wrongOnly: false },
+  ])
   const [toast, setToast] = useState(null)
   const [recommendSaving, setRecommendSaving] = useState(false)
   const [totalDaysInput, setTotalDaysInput] = useState('28')
@@ -185,7 +210,7 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
     setCurrentSetType('word')
     setTestPassScore(80)
     setTestMaxAttempts(3)
-    setReviewModePick(defaultReviewModePick())
+    setReviewSteps([{ id: `n-${Date.now()}`, key: 'test', wrongOnly: false }])
     setTotalDaysInput('28')
     setReviewCycleInput('+1+3+7')
     setRestDaysInput('DAY7, DAY14, DAY21')
@@ -209,15 +234,7 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
       setTotalDaysInput(String(d.totalDays ?? 28))
       setReviewCycleInput(d.reviewOffsets?.length ? `+${d.reviewOffsets.join('+')}` : '+1+3+7')
       setRestDaysInput(d.restDayNumbers?.length ? d.restDayNumbers.map((n) => `DAY${n}`).join(', ') : '')
-      const defaults = defaultReviewModePick()
-      const pick = defaultReviewModePick()
-      for (const o of REVIEW_MODE_OPTIONS) {
-        pick[o.key] =
-          Array.isArray(d.reviewModes) && d.reviewModes.length > 0
-            ? d.reviewModes.includes(o.key)
-            : defaults[o.key]
-      }
-      setReviewModePick(pick)
+      setReviewSteps(normalizeReviewModesToSteps(d.reviewModes))
       setFormOpen(true)
       const keys = await loadModesForSet(d.setName)
       const optionalKeys = keys?.optionalKeys ?? []
@@ -303,11 +320,13 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
     const reviewOffsets = parseReviewOffsets(reviewCycleInput)
     const restDayNumbers = parseRestDayNumbers(restDaysInput, totalDays)
 
-    const review_modes = REVIEW_MODE_OPTIONS.map((o) => o.key).filter((k) => reviewModePick[k])
-    if (review_modes.length === 0) {
-      setSaveError('복습 방식을 1개 이상 선택하세요.')
+    if (!reviewSteps.length) {
+      setSaveError('복습 방식(단계)을 1개 이상 추가하세요.')
       return
     }
+    const review_modes = reviewSteps.map((s) =>
+      s.key === 'wrong_note' ? { mode: 'wrong_note' } : { mode: s.key, wrongOnly: Boolean(s.wrongOnly) },
+    )
 
     const learningModeTasks = [
       ...requiredModeKeys.map((k) => ({ task_type: k, is_required: true })),
@@ -780,35 +799,124 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
               gap: 10,
             }}
           >
-            <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.accentText }}>복습 방식 선택</div>
-            <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary }}>(1개 이상 선택)</p>
+            <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.accentText }}>복습 단계 구성 (순서대로 실행)</div>
+            <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary }}>(1단계 이상 · 위에서 아래 순서)</p>
             <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
-              선택 값은 <span style={{ fontWeight: 600 }}>routines.review_modes</span>(JSON)에 저장되며, 학생 앱 복습
-              화면 라벨·진입 모드에 반영됩니다. 복습 간격·일차 태스크는{' '}
-              <span style={{ fontWeight: 600 }}>routine_days / routine_tasks</span>로 생성됩니다.
+              값은 <span style={{ fontWeight: 600 }}>routines.review_modes</span>(JSON 배열)에 저장됩니다. 모드·오답노트·&quot;틀린
+              단어만&quot; 옵션을 사용할 수 있어요.
             </p>
-            {REVIEW_MODE_OPTIONS.map(({ key, label }) => (
-              <label
-                key={key}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color: COLORS.textPrimary,
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={!!reviewModePick[key]}
-                  onChange={() => setReviewModePick((prev) => ({ ...prev, [key]: !prev[key] }))}
-                  style={{ width: 18, height: 18, accentColor: COLORS.primary }}
-                />
-                <span>{label}</span>
-              </label>
-            ))}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {reviewSteps.map((row, idx) => (
+                <div
+                  key={row.id}
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '10px 12px',
+                    borderRadius: RADIUS.sm,
+                    border: `1px solid ${COLORS.border}`,
+                    background: '#fff',
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.textHint, minWidth: 24 }}>{idx + 1}.</span>
+                  <select
+                    value={row.key}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setReviewSteps((prev) =>
+                        prev.map((r) => (r.id === row.id ? { ...r, key: v, wrongOnly: v === 'wrong_note' ? false : r.wrongOnly } : r)),
+                      )
+                    }}
+                    style={{ flex: 1, minWidth: 160, padding: '8px 10px', fontSize: 14, fontWeight: 600 }}
+                  >
+                    {REVIEW_STEP_ADD_OPTIONS.map((o) => (
+                      <option key={o.key} value={o.key}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  {row.key !== 'wrong_note' ? (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
+                      <input
+                        type="checkbox"
+                        checked={!!row.wrongOnly}
+                        onChange={() =>
+                          setReviewSteps((prev) => prev.map((r) => (r.id === row.id ? { ...r, wrongOnly: !r.wrongOnly } : r)))
+                        }
+                      />
+                      틀린 단어만
+                    </label>
+                  ) : null}
+                  <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                    <button
+                      type="button"
+                      disabled={idx === 0}
+                      onClick={() => {
+                        if (idx === 0) return
+                        setReviewSteps((prev) => {
+                          const next = [...prev]
+                          const t = next[idx - 1]
+                          next[idx - 1] = next[idx]
+                          next[idx] = t
+                          return next
+                        })
+                      }}
+                      style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700 }}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      disabled={idx >= reviewSteps.length - 1}
+                      onClick={() => {
+                        if (idx >= reviewSteps.length - 1) return
+                        setReviewSteps((prev) => {
+                          const next = [...prev]
+                          const t = next[idx + 1]
+                          next[idx + 1] = next[idx]
+                          next[idx] = t
+                          return next
+                        })
+                      }}
+                      style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700 }}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReviewSteps((prev) => prev.filter((r) => r.id !== row.id))}
+                      style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700, color: '#b91c1c' }}
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setReviewSteps((prev) => [
+                  ...prev,
+                  { id: `a-${Date.now()}`, key: 'test', wrongOnly: false },
+                ])
+              }
+              style={{
+                alignSelf: 'flex-start',
+                marginTop: 4,
+                padding: '8px 14px',
+                fontSize: 13,
+                fontWeight: 700,
+                borderRadius: RADIUS.sm,
+                border: `1px dashed ${COLORS.border}`,
+                background: 'white',
+                cursor: 'pointer',
+              }}
+            >
+              + 단계 추가
+            </button>
           </div>
 
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
