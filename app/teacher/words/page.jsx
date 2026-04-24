@@ -54,6 +54,16 @@ export default function WordsManagePage() {
     }
   }, [])
 
+  /** 새 세트 저장 후 `...#routine-settings` 로 올 때 해당 섹션으로 스크롤 */
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (window.location.hash !== '#routine-settings') return
+    const t = window.setTimeout(() => {
+      document.getElementById('routine-settings')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
+    return () => window.clearTimeout(t)
+  }, [])
+
   const handleCopyInviteCode = async () => {
     const code = String(teacher?.invite_code ?? '').trim()
     if (inviteCopyMsgTimerRef.current) clearTimeout(inviteCopyMsgTimerRef.current)

@@ -380,6 +380,7 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
 
   return (
     <section
+      id="routine-settings"
       aria-label="루틴 설정"
       style={{
         width: '100%',

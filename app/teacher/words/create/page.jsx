@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback, useRef, Suspense } from 'react'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/utils/supabaseClient'
 import { DEFAULT_ACADEMY_ID } from '@/utils/defaults'
 import { useTeacher } from '@/utils/useTeacher'
@@ -12,6 +12,7 @@ import BulkImport from '../components/BulkImport'
 import AutoFillPanel from '../components/AutoFillPanel'
 import { normalizeWordDifficulty } from '../utils/parsers'
 import { assignDaysEqual, assignDaysChunk } from '../utils/dayAssign'
+import WorkflowSuccessModal from '../components/WorkflowSuccessModal'
 
 const SET_TYPE_LABELS = {
   word: '단어 세트',
@@ -36,7 +37,14 @@ function emptyRow(setName) {
 
 function CreateWordSetPageContent() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const queryAppliedRef = useRef(false)
+  const skipWordsGuideEffectRef = useRef(false)
+  const prevValidWordCountRef = useRef(0)
+  /** 'words' | 'day' | 'saved' | null */
+  const [workflowModal, setWorkflowModal] = useState(null)
+  /** applyDayPreview 성공 시 unique day 수 (모달 문구) */
+  const [daySplitCount, setDaySplitCount] = useState(0)
 
   const [setName, setSetName] = useState('')
   const [rows, setRows] = useState(() => [emptyRow('')])
@@ -74,6 +82,17 @@ function CreateWordSetPageContent() {
     createSetType === 'sentence_writing' || createSetType === 'sentence_speaking'
   const wordTableColumnPreset = isSentenceStyleCreate ? 'sentence' : 'word'
 
+  const isRowValidForCreate = useCallback(
+    (r) => {
+      const w = String(r.word || '').trim()
+      const m = String(r.meaning || '').trim()
+      const ex = String(r.example_sentence || '').trim()
+      if (isSentenceStyleCreate) return Boolean(ex && m)
+      return Boolean(w && m)
+    },
+    [isSentenceStyleCreate],
+  )
+
   /** Day 미리보기 후 배정된 Day 목록 (유튜브 URL 입력란용) */
   const uniqueDaysInPreview = useMemo(() => {
     if (!hasDayPreview) return []
@@ -94,6 +113,24 @@ function CreateWordSetPageContent() {
       setTableGroupMode((m) => (m === 'day' || m === 'day_chunk' ? 'none' : m))
     }
   }, [hasDayPreview])
+
+  /** 수동 입력으로 첫 유효 행이 생기면 Step1 모달 (가져오기와 별개) */
+  useEffect(() => {
+    const validCount = rows.filter((r) => isRowValidForCreate(r)).length
+    if (skipWordsGuideEffectRef.current) {
+      skipWordsGuideEffectRef.current = false
+      prevValidWordCountRef.current = validCount
+      return
+    }
+    if (hasDayPreview) {
+      prevValidWordCountRef.current = validCount
+      return
+    }
+    if (validCount >= 1 && prevValidWordCountRef.current < 1) {
+      setWorkflowModal('words')
+    }
+    prevValidWordCountRef.current = validCount
+  }, [rows, hasDayPreview, isRowValidForCreate])
 
   const syncSetName = (name) => {
     const v = String(name)
@@ -126,13 +163,7 @@ function CreateWordSetPageContent() {
   }
 
   const applyDayPreview = () => {
-    const validCount = rows.filter((r) => {
-      const w = String(r.word || '').trim()
-      const m = String(r.meaning || '').trim()
-      const ex = String(r.example_sentence || '').trim()
-      if (isSentenceStyleCreate) return Boolean(ex && m)
-      return Boolean(w && m)
-    }).length
+    const validCount = rows.filter((r) => isRowValidForCreate(r)).length
     if (validCount === 0) {
       alert(isSentenceStyleCreate ? '예문·뜻이 있는 행이 없습니다.' : '영단어·뜻이 있는 행이 없습니다.')
       return
@@ -151,6 +182,9 @@ function CreateWordSetPageContent() {
         ? assignDaysEqual(validCount, Math.max(1, totalDays))
         : assignDaysChunk(validCount, Math.max(1, perDay))
 
+    const uniqueDays = new Set(seq).size
+    setDaySplitCount(uniqueDays)
+
     let vi = 0
     setRows((prev) =>
       prev.map((r) => {
@@ -165,6 +199,7 @@ function CreateWordSetPageContent() {
     )
     setHasDayPreview(true)
     setHint('Day가 배정되었습니다. 확인 후 「DB에 저장」을 누르세요.')
+    setWorkflowModal('day')
   }
 
   const saveAll = async () => {
@@ -181,13 +216,7 @@ function CreateWordSetPageContent() {
       alert('먼저 「Day 미리보기」로 day를 배정하세요.')
       return
     }
-    const valid = rows.filter((r) => {
-      const w = String(r.word || '').trim()
-      const m = String(r.meaning || '').trim()
-      const ex = String(r.example_sentence || '').trim()
-      if (isSentenceStyleCreate) return Boolean(ex && m)
-      return Boolean(w && m)
-    })
+    const valid = rows.filter((r) => isRowValidForCreate(r))
     if (valid.length === 0) {
       alert(isSentenceStyleCreate ? '저장할 행이 없습니다. 예문·뜻을 확인하세요.' : '저장할 단어가 없습니다.')
       return
@@ -228,6 +257,7 @@ function CreateWordSetPageContent() {
       const tail = [emptyRow(sn), emptyRow(sn), emptyRow(sn)]
       setRows([...savedMarked, ...tail])
       setSelectedIds(new Set())
+      setWorkflowModal('saved')
       setHint(
         `${valid.length}개를 저장했습니다. 방금 저장한 행은 연한 배경으로 표시됩니다. 아래 빈 행에 이어서 입력한 뒤 다시 「DB에 저장」할 수 있어요.`,
       )
@@ -380,6 +410,7 @@ function CreateWordSetPageContent() {
         </div>
 
         <div
+          id="day-split-section"
           style={{
             marginBottom: 16,
             padding: 16,
@@ -579,12 +610,58 @@ function CreateWordSetPageContent() {
           academyId={academyId}
           importSetType={createSetType}
           onLocalImported={(imported) => {
+            skipWordsGuideEffectRef.current = true
             setHasDayPreview(false)
             setRows((prev) => [...imported.map((r) => ({ ...r, set_name: setName })), ...prev])
             setBulkOpen(false)
+            setWorkflowModal('words')
           }}
         />
       </div>
+
+      <WorkflowSuccessModal
+        open={workflowModal === 'words'}
+        onClose={() => setWorkflowModal(null)}
+        title="✓ 단어가 추가됐어요"
+        nextStepDescription="Day별로 단어를 나눠야 학생 앱에서 학습이 가능해요."
+        primaryLabel="Day 자동 나누기"
+        onPrimary={() => {
+          const el = document.getElementById('day-split-section')
+          el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          applyDayPreview()
+        }}
+        secondaryLabel="나중에 하기"
+      />
+
+      <WorkflowSuccessModal
+        open={workflowModal === 'day'}
+        onClose={() => setWorkflowModal(null)}
+        title={`✓ Day ${daySplitCount}개로 나뉘었어요`}
+        nextStepDescription="DB에 저장해야 학생 앱에 반영돼요."
+        primaryLabel="DB 저장하기"
+        onPrimary={() => {
+          setWorkflowModal(null)
+          void saveAll()
+        }}
+        secondaryLabel="미리보기 계속 보기"
+      />
+
+      <WorkflowSuccessModal
+        open={workflowModal === 'saved'}
+        onClose={() => setWorkflowModal(null)}
+        title="✓ 저장 완료!"
+        nextStepDescription="단어 관리로 돌아가서 학생들이 학습할 루틴을 설정해주세요."
+        primaryLabel="루틴 관리로 이동"
+        onPrimary={() => {
+          setWorkflowModal(null)
+          router.push('/teacher/words#routine-settings')
+        }}
+        secondaryLabel="단어 관리로 돌아가기"
+        onSecondary={() => {
+          setWorkflowModal(null)
+          router.push('/teacher/words')
+        }}
+      />
     </div>
   )
 }
