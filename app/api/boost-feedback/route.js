@@ -1,7 +1,28 @@
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+const OPTIONS_HEADERS = {
+  ...CORS_HEADERS,
+  'Access-Control-Max-Age': '86400',
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: OPTIONS_HEADERS,
+  })
+}
+
 export async function POST(req) {
   const key = process.env.ANTHROPIC_API_KEY
   if (!key) {
-    return Response.json({ text: '', error: 'ANTHROPIC_API_KEY missing' }, { status: 500 })
+    return Response.json(
+      { text: '', error: 'ANTHROPIC_API_KEY missing' },
+      { status: 500, headers: CORS_HEADERS },
+    )
   }
 
   const body = await req.json()
@@ -33,5 +54,8 @@ export async function POST(req) {
   })
 
   const data = await res.json()
-  return Response.json({ text: data.content?.[0]?.text || '' })
+  return Response.json(
+    { text: data.content?.[0]?.text || '' },
+    { headers: CORS_HEADERS },
+  )
 }
