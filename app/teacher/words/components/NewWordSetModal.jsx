@@ -12,9 +12,9 @@ import {
 import LearningModesPicker from './LearningModesPicker'
 
 const SET_TYPE_OPTIONS = [
-  { id: 'word', label: '단어 세트', hint: 'word + meaning 중심' },
-  { id: 'sentence_writing', label: '문장 세트 — 라이팅', hint: 'reading · dictation · writing · scramble' },
-  { id: 'sentence_speaking', label: '문장 세트 — 스피킹', hint: 'dictation · listening · shadowing · scramble' },
+  { id: 'word', label: '단어 (암기, 매칭 중심)', hint: '기본: 암기·리콜·매칭·테스트' },
+  { id: 'sentence_writing', label: '문장 (직독직해 중심)', hint: '기본: 직독직해·테스트' },
+  { id: 'sentence_speaking', label: '스피킹 (낭독, 쉐도잉 중심)', hint: '기본: 직독직해·쉐도잉' },
 ]
 
 /**

@@ -11,7 +11,7 @@ import WordTable from '../components/WordTable'
 import BulkImport from '../components/BulkImport'
 import AutoFillPanel from '../components/AutoFillPanel'
 import { normalizeWordDifficulty } from '../utils/parsers'
-import { assignDaysEqual, assignDaysChunk } from '../utils/dayAssign'
+import { assignDaysEqual, assignDaysChunk, assignDaysFromManualCounts } from '../utils/dayAssign'
 import WorkflowSuccessModal from '../components/WorkflowSuccessModal'
 import WordAddedDaySplitModal from '../components/WordAddedDaySplitModal'
 
@@ -51,9 +51,14 @@ function CreateWordSetPageContent() {
   const [rows, setRows] = useState(() => [emptyRow('')])
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkOpen, setBulkOpen] = useState(false)
+  /** equal | chunk | csv_day | manual */
   const [dayMode, setDayMode] = useState('equal')
   const [totalDays, setTotalDays] = useState(7)
   const [perDay, setPerDay] = useState(20)
+  /** 페이지 'Day 나누기'에서 manual 모드용 (모달과 별도) */
+  const [pageManualSegs, setPageManualSegs] = useState(() => [{ day: 1, count: 0 }])
+  /** 가져오기(local)로 day 컬럼이 모두 채워진 경우에만 csv_day 옵션 활성 */
+  const [importCanUseCsvDay, setImportCanUseCsvDay] = useState(false)
   const [hasDayPreview, setHasDayPreview] = useState(false)
   /** Day 번호 → 해당 Day에 속한 단어 행에 일괄 적용할 유튜브 URL */
   const [dayYoutubeByDay, setDayYoutubeByDay] = useState(() => ({}))
@@ -93,6 +98,21 @@ function CreateWordSetPageContent() {
     },
     [isSentenceStyleCreate],
   )
+
+  const createValidCount = useMemo(
+    () => rows.filter((r) => isRowValidForCreate(r)).length,
+    [rows, isRowValidForCreate],
+  )
+
+  const pageManualSum = useMemo(
+    () =>
+      pageManualSegs.reduce(
+        (a, s) => a + Math.max(0, Math.floor(parseInt(String(s.count), 10) || 0)),
+        0,
+      ),
+    [pageManualSegs],
+  )
+  const pageManualMismatch = createValidCount > 0 && pageManualSum !== createValidCount
 
   /** Day 미리보기 후 배정된 Day 목록 (유튜브 URL 입력란용) */
   const uniqueDaysInPreview = useMemo(() => {
@@ -164,8 +184,12 @@ function CreateWordSetPageContent() {
   }
 
   /**
-   * @param {{ dayMode?: 'equal' | 'chunk', totalDays?: number, perDay?: number } | undefined} overrides
-   * 모달에서 넘긴 값으로 미리보기 시 페이지의 dayMode·N·M 상태도 맞춤
+   * @param {{
+   *   dayMode?: 'equal' | 'chunk' | 'csv_day' | 'manual'
+   *   totalDays?: number
+   *   perDay?: number
+   *   manualSegments?: { day: number, count: number }[]
+   * } | undefined} overrides
    */
   const applyDayPreview = (overrides) => {
     const mode = overrides?.dayMode ?? dayMode
@@ -182,6 +206,66 @@ function CreateWordSetPageContent() {
       alert(isSentenceStyleCreate ? '예문·뜻이 있는 행이 없습니다.' : '영단어·뜻이 있는 행이 없습니다.')
       return
     }
+
+    if (mode === 'csv_day') {
+      if (!importCanUseCsvDay) {
+        alert('CSV에 day 컬럼이 없어요. 엑셀 양식으로 day를 채운 뒤 다시 가져오기 하세요.')
+        return
+      }
+      const ds = rows
+        .filter((r) => isRowValidForCreate(r))
+        .map((r) => Math.max(1, parseInt(String(r.day ?? 1), 10) || 1))
+      setDaySplitCount(new Set(ds).size)
+      setRows((prev) =>
+        prev.map((r) => {
+          if (!isRowValidForCreate(r)) return { ...r, day: r.day ?? 1 }
+          const d = Math.max(1, parseInt(String(r.day ?? 1), 10) || 1)
+          return { ...r, day: d }
+        }),
+      )
+      setHasDayPreview(true)
+      setHint('CSV에 입력한 Day로 배정했습니다. 확인 후 「DB에 저장」을 누르세요.')
+      setWorkflowModal('day')
+      return
+    }
+
+    if (mode === 'manual') {
+      const segs =
+        overrides?.manualSegments ??
+        pageManualSegs.map((s) => ({
+          day: Math.max(1, Math.floor(parseInt(String(s.day), 10) || 1)),
+          count: Math.max(0, Math.floor(parseInt(String(s.count), 10) || 0)),
+        }))
+      const res = assignDaysFromManualCounts(validCount, segs)
+      if (!res.ok) {
+        if (res.sum < res.expected) {
+          alert(
+            `⚠️ 입력 합계(${res.sum})와 총 개수(${res.expected})가 다릅니다. 남은 ${res.expected - res.sum}개는 직접 조정해주세요.`,
+          )
+        } else {
+          alert(
+            `⚠️ 입력 합계(${res.sum})와 총 개수(${res.expected})가 다릅니다. ${res.sum - res.expected}개를 줄여 주세요.`,
+          )
+        }
+        return
+      }
+      const seq = res.seq
+      const uniqueDays = new Set(seq).size
+      setDaySplitCount(uniqueDays)
+      let vi = 0
+      setRows((prev) =>
+        prev.map((r) => {
+          if (!isRowValidForCreate(r)) return { ...r, day: r.day ?? 1 }
+          const d = seq[vi++]
+          return { ...r, day: d }
+        }),
+      )
+      setHasDayPreview(true)
+      setHint('Day가 배정되었습니다. 확인 후 「DB에 저장」을 누르세요.')
+      setWorkflowModal('day')
+      return
+    }
+
     if (mode === 'equal' && td < 1) {
       alert('총 일수는 1 이상이어야 합니다.')
       return
@@ -192,9 +276,7 @@ function CreateWordSetPageContent() {
     }
 
     const seq = mode === 'equal' ? assignDaysEqual(validCount, td) : assignDaysChunk(validCount, pd)
-
-    const uniqueDays = new Set(seq).size
-    setDaySplitCount(uniqueDays)
+    setDaySplitCount(new Set(seq).size)
 
     let vi = 0
     setRows((prev) =>
@@ -453,7 +535,14 @@ function CreateWordSetPageContent() {
                 min={1}
                 value={totalDays}
                 onChange={(e) => setTotalDays(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                style={{ width: 72, padding: 8, borderRadius: RADIUS.sm, border: `1px solid ${COLORS.border}` }}
+                disabled={dayMode !== 'equal'}
+                style={{
+                  width: 72,
+                  padding: 8,
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  opacity: dayMode === 'equal' ? 1 : 0.6,
+                }}
               />
             </label>
           </div>
@@ -477,9 +566,123 @@ function CreateWordSetPageContent() {
                 min={1}
                 value={perDay}
                 onChange={(e) => setPerDay(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                style={{ width: 72, padding: 8, borderRadius: RADIUS.sm, border: `1px solid ${COLORS.border}` }}
+                disabled={dayMode !== 'chunk'}
+                style={{
+                  width: 72,
+                  padding: 8,
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  opacity: dayMode === 'chunk' ? 1 : 0.6,
+                }}
               />
             </label>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: importCanUseCsvDay ? 'pointer' : 'not-allowed',
+                opacity: importCanUseCsvDay ? 1 : 0.65,
+              }}
+            >
+              <input
+                type="radio"
+                name="dayMode"
+                checked={dayMode === 'csv_day'}
+                disabled={!importCanUseCsvDay}
+                onChange={() => {
+                  if (!importCanUseCsvDay) return
+                  setDayMode('csv_day')
+                  setHasDayPreview(false)
+                }}
+              />
+              <span>CSV의 day 컬럼 사용</span>
+            </label>
+            {!importCanUseCsvDay ? (
+              <span style={{ fontSize: 12, color: COLORS.textHint, fontWeight: 600 }}>CSV에 day 컬럼이 없어요</span>
+            ) : null}
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="dayMode"
+                checked={dayMode === 'manual'}
+                onChange={() => {
+                  setDayMode('manual')
+                  setHasDayPreview(false)
+                }}
+              />
+              <span>Day별 개수 직접 입력</span>
+            </label>
+            {dayMode === 'manual' ? (
+              <div
+                style={{
+                  marginLeft: 28,
+                  padding: 12,
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.surface,
+                  display: 'grid',
+                  gap: 8,
+                  maxWidth: 360,
+                }}
+              >
+                {pageManualSegs.map((s, i) => (
+                  <div key={`p-${s.day}-${i}`} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                    <span style={{ minWidth: 48, fontSize: 13, fontWeight: 700, color: COLORS.accentText }}>
+                      Day {s.day}
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={s.count}
+                      onChange={(e) => {
+                        const c = Math.max(0, parseInt(e.target.value, 10) || 0)
+                        setPageManualSegs((prev) => prev.map((x, j) => (j === i ? { ...x, count: c } : x)))
+                      }}
+                      style={{ width: 64, padding: 6, borderRadius: RADIUS.sm, border: `1px solid ${COLORS.border}` }}
+                    />
+                    <span style={{ fontSize: 13, color: COLORS.textSecondary }}>개</span>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const maxD = Math.max(1, ...pageManualSegs.map((x) => x.day), 0)
+                    setPageManualSegs((prev) => [...prev, { day: maxD + 1, count: 0 }])
+                  }}
+                  style={{
+                    justifySelf: 'start',
+                    padding: '6px 12px',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    borderRadius: RADIUS.sm,
+                    border: `1px dashed ${COLORS.border}`,
+                    background: COLORS.bg,
+                    cursor: 'pointer',
+                    color: COLORS.accentText,
+                  }}
+                >
+                  + Day 추가
+                </button>
+                {createValidCount > 0 ? (
+                  <div style={{ fontSize: 13, color: COLORS.textPrimary, fontWeight: 600 }}>
+                    합계: {pageManualSum} / {createValidCount}
+                  </div>
+                ) : null}
+                {pageManualMismatch ? (
+                  <p style={{ margin: 0, fontSize: 12, color: '#b45309', lineHeight: 1.4, fontWeight: 600 }}>
+                    ⚠️ 입력 합계({pageManualSum})와 총 개수({createValidCount})가 다릅니다.{' '}
+                    {pageManualSum < createValidCount
+                      ? `남은 ${createValidCount - pageManualSum}개는 직접 조정해주세요.`
+                      : `${pageManualSum - createValidCount}개를 줄여 주세요.`}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
             <button
@@ -620,9 +823,15 @@ function CreateWordSetPageContent() {
           teacherId={teacherId}
           academyId={academyId}
           importSetType={createSetType}
-          onLocalImported={(imported) => {
+          onLocalImported={(imported, meta) => {
             skipWordsGuideEffectRef.current = true
             setHasDayPreview(false)
+            setImportCanUseCsvDay(Boolean(meta?.canUseCsvDay))
+            if (meta?.canUseCsvDay && isSentenceStyleCreate) {
+              setDayMode('csv_day')
+            } else {
+              setDayMode('equal')
+            }
             setRows((prev) => [...imported.map((r) => ({ ...r, set_name: setName })), ...prev])
             setBulkOpen(false)
             setWorkflowModal('words')
@@ -633,11 +842,14 @@ function CreateWordSetPageContent() {
       <WordAddedDaySplitModal
         open={workflowModal === 'words'}
         onClose={() => setWorkflowModal(null)}
-        initialMode={dayMode}
+        initialMode={importCanUseCsvDay && isSentenceStyleCreate ? 'csv_day' : dayMode}
         initialTotalDays={totalDays}
         initialPerDay={perDay}
-        onExecute={({ dayMode: m, totalDays: td, perDay: pd }) => {
-          applyDayPreview({ dayMode: m, totalDays: td, perDay: pd })
+        canUseCsvDay={importCanUseCsvDay}
+        isSentenceStyleCreate={isSentenceStyleCreate}
+        validCount={createValidCount}
+        onExecute={(p) => {
+          applyDayPreview(p)
         }}
       />
 

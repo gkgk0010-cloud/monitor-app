@@ -1,19 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
+import { assignDaysFromManualCounts } from '../utils/dayAssign'
 
 const SUCCESS_EMERALD = '#10b981'
 
 /**
- * 모달 1 — 단어 추가 후 Day 나누기 옵션을 모달 안에서 선택·실행
  * @param {{
  *   open: boolean
  *   onClose: () => void
- *   initialMode: 'equal' | 'chunk'
+ *   initialMode: 'equal' | 'chunk' | 'csv_day' | 'manual'
  *   initialTotalDays: number
  *   initialPerDay: number
- *   onExecute: (p: { dayMode: 'equal' | 'chunk', totalDays: number, perDay: number }) => void
+ *   initialManualSegments?: { day: number, count: number }[]
+ *   canUseCsvDay?: boolean
+ *   isSentenceStyleCreate?: boolean
+ *   validCount: number
+ *   onExecute: (p: {
+ *     dayMode: 'equal' | 'chunk' | 'csv_day' | 'manual'
+ *     totalDays: number
+ *     perDay: number
+ *     manualSegments?: { day: number, count: number }[]
+ *   }) => void
  * }} props
  */
 export default function WordAddedDaySplitModal({
@@ -22,18 +31,37 @@ export default function WordAddedDaySplitModal({
   initialMode = 'equal',
   initialTotalDays = 7,
   initialPerDay = 20,
+  initialManualSegments,
   onExecute,
+  canUseCsvDay = false,
+  isSentenceStyleCreate = false,
+  validCount = 0,
 }) {
   const [mode, setMode] = useState(initialMode)
   const [nDays, setNDays] = useState(initialTotalDays)
   const [nPer, setNPer] = useState(initialPerDay)
+  const [manualSegs, setManualSegs] = useState(() => initialManualSegments || [{ day: 1, count: 0 }])
 
   useEffect(() => {
     if (!open) return
     setMode(initialMode)
     setNDays(Math.max(1, Number(initialTotalDays) || 1))
     setNPer(Math.max(1, Number(initialPerDay) || 1))
-  }, [open, initialMode, initialTotalDays, initialPerDay])
+    setManualSegs(
+      initialManualSegments && initialManualSegments.length > 0
+        ? initialManualSegments.map((s) => ({
+            day: Math.max(1, Math.floor(parseInt(String(s?.day), 10) || 1)),
+            count: Math.max(0, Math.floor(parseInt(String(s?.count), 10) || 0)),
+          }))
+        : [{ day: 1, count: 0 }],
+    )
+  }, [open, initialMode, initialTotalDays, initialPerDay, initialManualSegments])
+
+  const manualSum = useMemo(
+    () => manualSegs.reduce((a, s) => a + (Math.max(0, Math.floor(parseInt(String(s.count), 10) || 0)) || 0), 0),
+    [manualSegs],
+  )
+  const manualMismatch = useMemo(() => validCount > 0 && manualSum !== validCount, [manualSum, validCount])
 
   useEffect(() => {
     if (!open) return
@@ -45,6 +73,48 @@ export default function WordAddedDaySplitModal({
   }, [open, onClose])
 
   if (!open) return null
+
+  const addManualDay = () => {
+    const maxD = Math.max(1, ...manualSegs.map((s) => s.day), 0)
+    setManualSegs((prev) => [...prev, { day: maxD + 1, count: 0 }])
+  }
+
+  const runExecute = () => {
+    if (mode === 'csv_day') {
+      onExecute({ dayMode: 'csv_day', totalDays: 1, perDay: 1 })
+      return
+    }
+    if (mode === 'manual') {
+      const segs = manualSegs.map((s) => ({
+        day: s.day,
+        count: Math.max(0, Math.floor(parseInt(String(s.count), 10) || 0)),
+      }))
+      if (validCount < 1) {
+        onClose()
+        return
+      }
+      const res = assignDaysFromManualCounts(validCount, segs)
+      if (!res.ok) {
+        if (res.sum < res.expected) {
+          alert(
+            `⚠️ 입력 합계(${res.sum})와 총 개수(${res.expected})가 다릅니다. 남은 ${res.expected - res.sum}개는 직접 조정해주세요.`,
+          )
+        } else {
+          alert(
+            `⚠️ 입력 합계(${res.sum})와 총 개수(${res.expected})가 다릅니다. ${res.sum - res.expected}개를 줄여 주세요.`,
+          )
+        }
+        return
+      }
+      onExecute({ dayMode: 'manual', totalDays: 1, perDay: 1, manualSegments: segs })
+      return
+    }
+    onExecute({
+      dayMode: mode,
+      totalDays: Math.max(1, nDays),
+      perDay: Math.max(1, nPer),
+    })
+  }
 
   return (
     <div
@@ -68,7 +138,7 @@ export default function WordAddedDaySplitModal({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 'min(440px, 100%)',
+          width: 'min(480px, 100%)',
           maxWidth: '100%',
           maxHeight: 'min(92vh, 100%)',
           overflow: 'auto',
@@ -104,12 +174,12 @@ export default function WordAddedDaySplitModal({
             id="word-day-split-title"
             style={{ fontSize: 18, fontWeight: 800, color: COLORS.accentText, margin: 0, lineHeight: 1.4 }}
           >
-            ✓ 단어가 추가됐어요
+            {isSentenceStyleCreate ? '✓ 문장/스피킹이 추가됐어요' : '✓ 단어가 추가됐어요'}
           </h2>
         </div>
 
         <p style={{ margin: '0 0 12px', fontSize: 15, color: COLORS.textPrimary, lineHeight: 1.5, fontWeight: 500 }}>
-          Day별로 단어를 나눠야 학습이 가능해요.
+          Day별로 나눠야 학습이 가능해요.
         </p>
 
         <div
@@ -133,10 +203,10 @@ export default function WordAddedDaySplitModal({
           }}
         >
           <span aria-hidden>💡</span>
-          아래 두 방식 중 하나를 선택해서 입력하세요
+          Day 나누기 방식을 선택하세요
         </p>
 
-        <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
+        <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
           <div
             style={{
               padding: 12,
@@ -254,18 +324,151 @@ export default function WordAddedDaySplitModal({
               </div>
             </label>
           </div>
+
+          <div
+            style={{
+              padding: 12,
+              borderRadius: RADIUS.md,
+              border: `1px solid ${mode === 'csv_day' && canUseCsvDay ? COLORS.primary : COLORS.border}`,
+              background: mode === 'csv_day' && canUseCsvDay ? COLORS.primarySoft : COLORS.bg,
+              opacity: canUseCsvDay ? 1 : 0.65,
+            }}
+          >
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                cursor: canUseCsvDay ? 'pointer' : 'not-allowed',
+              }}
+            >
+              <input
+                type="radio"
+                name="day-split-mode"
+                checked={mode === 'csv_day'}
+                disabled={!canUseCsvDay}
+                onChange={() => {
+                  if (canUseCsvDay) setMode('csv_day')
+                }}
+                style={{ marginTop: 3 }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, color: COLORS.accentText, fontSize: 14, marginBottom: 4 }}>
+                  CSV의 day 컬럼 사용
+                </div>
+                <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
+                  업로드한 표에 day가 있으면 그대로 씁니다. 문장/스피킹에 기본 권장.
+                </p>
+                {!canUseCsvDay ? (
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: COLORS.textHint, fontWeight: 600 }}>
+                    CSV에 day 컬럼이 없어요
+                  </p>
+                ) : null}
+              </div>
+            </label>
+          </div>
+
+          <div
+            style={{
+              padding: 12,
+              borderRadius: RADIUS.md,
+              border: `1px solid ${mode === 'manual' ? COLORS.primary : COLORS.border}`,
+              background: mode === 'manual' ? COLORS.primarySoft : COLORS.bg,
+            }}
+          >
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="day-split-mode"
+                checked={mode === 'manual'}
+                onChange={() => setMode('manual')}
+                style={{ marginTop: 3 }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, color: COLORS.accentText, fontSize: 14, marginBottom: 4 }}>
+                  Day별 개수 직접 입력
+                </div>
+                <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
+                  문장/스피킹에서 Day당 개수를 직접 맞출 때 유용해요.
+                </p>
+              </div>
+            </label>
+            {mode === 'manual' ? (
+              <div
+                style={{
+                  marginTop: 10,
+                  paddingTop: 10,
+                  borderTop: `1px solid ${COLORS.border}`,
+                  display: 'grid',
+                  gap: 8,
+                }}
+              >
+                {manualSegs.map((s, i) => (
+                  <div
+                    key={`${s.day}-${i}`}
+                    style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}
+                  >
+                    <span style={{ minWidth: 48, fontSize: 13, fontWeight: 700, color: COLORS.textPrimary }}>
+                      Day {s.day}
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={s.count}
+                      onChange={(e) => {
+                        const c = Math.max(0, parseInt(e.target.value, 10) || 0)
+                        setManualSegs((prev) => prev.map((x, j) => (j === i ? { ...x, count: c } : x)))
+                      }}
+                      style={{
+                        width: 64,
+                        padding: '6px 8px',
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.border}`,
+                        fontSize: 14,
+                      }}
+                    />
+                    <span style={{ fontSize: 13, color: COLORS.textSecondary }}>개</span>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addManualDay}
+                  style={{
+                    alignSelf: 'flex-start',
+                    padding: '6px 12px',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    borderRadius: RADIUS.sm,
+                    border: `1px dashed ${COLORS.border}`,
+                    background: COLORS.surface,
+                    cursor: 'pointer',
+                    color: COLORS.accentText,
+                  }}
+                >
+                  + Day 추가
+                </button>
+                {validCount > 0 ? (
+                  <div style={{ fontSize: 13, color: COLORS.textPrimary, fontWeight: 600 }}>
+                    합계: {manualSum} / {validCount}
+                  </div>
+                ) : null}
+                {manualMismatch ? (
+                  <p style={{ margin: 0, fontSize: 12, color: '#b45309', lineHeight: 1.4, fontWeight: 600 }}>
+                    ⚠️ 입력 합계({manualSum})와 총 개수({validCount})가 다릅니다.{' '}
+                    {manualSum < validCount
+                      ? `남은 ${validCount - manualSum}개는 직접 조정해주세요.`
+                      : `${manualSum - validCount}개를 줄여 주세요.`}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button
             type="button"
-            onClick={() =>
-              onExecute({
-                dayMode: mode,
-                totalDays: Math.max(1, nDays),
-                perDay: Math.max(1, nPer),
-              })
-            }
+            onClick={runExecute}
             style={{
               width: '100%',
               padding: '14px 18px',

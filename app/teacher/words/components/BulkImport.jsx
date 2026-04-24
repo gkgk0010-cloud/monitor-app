@@ -19,13 +19,24 @@ const EXCEL_FILE_NAMES = {
   sentence: 'tokpass_문장양식.xlsx',
 }
 
-/** @param {'word' | 'sentence'} t */
-function isPreviewRowValidForSetType(r, t) {
+/**
+ * @param {'word' | 'sentence'} t
+ * @param {{ excelDayColumn?: boolean } | undefined} opts
+ */
+function isPreviewRowValidForSetType(r, t, opts) {
   const w = String(r.word || '').trim()
   const m = String(r.meaning || '').trim()
   const ex = String(r.example_sentence || '').trim()
-  if (t === 'sentence') return Boolean(ex && m)
-  return Boolean(w && m)
+  if (t === 'sentence') {
+    if (!ex || !m) return false
+    if (opts?.excelDayColumn) {
+      const dn = Math.max(0, parseInt(String(r.day ?? 0), 10) || 0)
+      if (dn < 1) return false
+    }
+    return true
+  }
+  if (!w || !m) return false
+  return true
 }
 
 function normalizeExcelHeaderKey(k) {
@@ -79,18 +90,18 @@ function downloadTokpassExcelTemplate(importSetType = 'word') {
   const fileName = EXCEL_FILE_NAMES[t] || EXCEL_FILE_NAMES.word
   if (t === 'sentence') {
     aoa = [
-      ['example_sentence', 'meaning', 'image_url', 'youtube_url'],
-      ['I ate an apple.', '나는 사과를 먹었다.', '(선택)', '(선택)'],
-      ['She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '(선택)', '(선택)'],
+      ['example_sentence', 'meaning', 'day', 'image_url', 'youtube_url'],
+      ['I ate an apple.', '나는 사과를 먹었다.', '1', '(선택)', '(선택)'],
+      ['She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '1', '(선택)', '(선택)'],
     ]
-    cols = [{ wch: 36 }, { wch: 22 }, { wch: 24 }, { wch: 28 }]
+    cols = [{ wch: 36 }, { wch: 22 }, { wch: 6 }, { wch: 24 }, { wch: 28 }]
   } else {
     aoa = [
-      ['word', 'meaning', 'example_sentence', 'image_url', 'youtube_url'],
-      ['apple', '사과', 'I ate an apple.', '(선택)', '(선택)'],
-      ['lend', '빌려주다', 'She lent me a book.', '(선택)', '(선택)'],
+      ['word', 'meaning', 'example_sentence', 'day', 'image_url', 'youtube_url'],
+      ['apple', '사과', 'I ate an apple.', '1', '(선택)', '(선택)'],
+      ['lend', '빌려주다', 'She lent me a book.', '1', '(선택)', '(선택)'],
     ]
-    cols = [{ wch: 14 }, { wch: 14 }, { wch: 32 }, { wch: 24 }, { wch: 28 }]
+    cols = [{ wch: 14 }, { wch: 14 }, { wch: 32 }, { wch: 6 }, { wch: 24 }, { wch: 28 }]
   }
   const ws = XLSX.utils.aoa_to_sheet(aoa)
   ws['!cols'] = cols
@@ -106,7 +117,7 @@ function downloadTokpassExcelTemplate(importSetType = 'word') {
  *   onSaved: () => void
  *   existingSetNames: string[]
  *   localOnly?: boolean
- *   onLocalImported?: (rows: Array<Record<string, unknown>>) => void
+ *   onLocalImported?: (rows: Array<Record<string, unknown>>, meta?: { canUseCsvDay: boolean }) => void
  *   initialSetName?: string
  *   teacherId?: string
  *   academyId?: string
@@ -142,6 +153,8 @@ export default function BulkImport({
   const [saving, setSaving] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
   const [excelParseBusy, setExcelParseBusy] = useState(false)
+  /** 마지막 엑셀 첫 시트에 `day` 헤더가 있었는지 (문장/스피킹 day 누락 검증·CSV day 옵션) */
+  const [excelDayColumnInSheet, setExcelDayColumnInSheet] = useState(false)
   const xlsxInputRef = useRef(null)
 
   useEffect(() => {
@@ -151,6 +164,7 @@ export default function BulkImport({
     } else {
       setSetName('')
     }
+    setExcelDayColumnInSheet(false)
   }, [open, initialSetName])
 
   const handlePreviewRowDelete = (row) => {
@@ -179,6 +193,7 @@ export default function BulkImport({
       example_sentence: p.example_sentence || '',
       set_name: setName,
       day,
+      dayExplicit: false,
       image_url: null,
       image_source: 'none',
       youtube_url: null,
@@ -226,8 +241,25 @@ export default function BulkImport({
     }
   }
 
+  const validOpts = { excelDayColumn: excelDayColumnInSheet }
+
   const handleSave = async () => {
-    const valid = previewRows.filter((r) => isPreviewRowValidForSetType(r, setType))
+    if (setType === 'sentence' && excelDayColumnInSheet) {
+      const bad = previewRows.filter((r) => {
+        const ex = String(r.example_sentence || '').trim()
+        const m = String(r.meaning || '').trim()
+        if (!ex || !m) return false
+        const dn = Math.max(0, parseInt(String(r.day ?? 0), 10) || 0)
+        return dn < 1
+      })
+      if (bad.length > 0) {
+        alert(
+          `${bad.length}개 행에 day가 비어있어요. 문장/스피킹 세트는 day를 필수로 입력해야 합니다.`,
+        )
+        return
+      }
+    }
+    const valid = previewRows.filter((r) => isPreviewRowValidForSetType(r, setType, validOpts))
     if (valid.length === 0) {
       alert(
         setType === 'sentence'
@@ -274,19 +306,22 @@ export default function BulkImport({
 
       if (localOnly && onLocalImported) {
         const stamp = Date.now()
-        const mapped = payload.map((p, i) => ({
+        const mapped = valid.map((r, i) => ({
           id: `import-${stamp}-${i}`,
-          word: p.word,
-          meaning: p.meaning,
-          example_sentence: p.example_sentence,
-          set_name: p.set_name,
-          day: p.day,
-          difficulty: p.difficulty,
-          image_url: p.image_url,
-          image_source: p.image_source,
-          youtube_url: p.youtube_url,
+          word: String(payload[i].word),
+          meaning: String(payload[i].meaning),
+          example_sentence: payload[i].example_sentence,
+          set_name: String(payload[i].set_name),
+          day: payload[i].day,
+          difficulty: payload[i].difficulty,
+          image_url: payload[i].image_url,
+          image_source: payload[i].image_source,
+          youtube_url: payload[i].youtube_url,
+          dayExplicit: r.dayExplicit === true,
         }))
-        onLocalImported(mapped)
+        const canUseCsvDay =
+          excelDayColumnInSheet && valid.length > 0 && valid.every((r) => r.dayExplicit === true)
+        onLocalImported(mapped, { canUseCsvDay })
         onClose()
         resetPreview()
         setAiPassage('')
@@ -318,12 +353,29 @@ export default function BulkImport({
     setPreviewRows(updated)
   }
 
-  const buildPreviewFromExcelJson = (jsonRows) => {
+  const buildPreviewFromExcelJson = (jsonRows, headerHasDayColumn) => {
     const stamp = Date.now()
     const sn = String(setName || '').trim()
     const d = Math.max(1, parseInt(String(day), 10) || 1)
     const rows = []
     let idx = 0
+    /** day 컬럼이 있는데 셀 비어 있으면 0(미리보기에서 수정·또는 저장 차단) */
+    const rowDayForSentence = (raw) => {
+      const cell = getExcelCell(raw, 'day')
+      if (cell === '') {
+        if (headerHasDayColumn) return 0
+        return d
+      }
+      const n = parseInt(cell, 10)
+      if (isNaN(n) || n < 1) return headerHasDayColumn ? 0 : d
+      return n
+    }
+    const rowDayForWord = (raw) => {
+      const cell = getExcelCell(raw, 'day')
+      if (cell === '') return d
+      const n = parseInt(cell, 10)
+      return !isNaN(n) && n >= 1 ? n : d
+    }
     if (setType === 'sentence') {
       for (const raw of jsonRows) {
         const ex = getExcelCell(raw, 'example_sentence')
@@ -340,13 +392,17 @@ export default function BulkImport({
           ytRaw && String(ytRaw).trim() && !isPlaceholderImageCell(ytRaw)
             ? String(ytRaw).trim()
             : null
+        const dayCell = getExcelCell(raw, 'day')
+        const dayExplicit = headerHasDayColumn && String(dayCell).trim() !== ''
+        const rowDay = rowDayForSentence(raw)
         rows.push({
           id: `import-${stamp}-${idx}`,
           word,
           meaning,
           example_sentence: mergeExampleFields(ex, ko),
           set_name: sn,
-          day: d,
+          day: rowDay,
+          dayExplicit,
           image_url,
           image_source: image_url ? 'upload' : 'none',
           youtube_url,
@@ -368,13 +424,17 @@ export default function BulkImport({
         ytRaw && String(ytRaw).trim() && !isPlaceholderImageCell(ytRaw)
           ? String(ytRaw).trim()
           : null
+      const dayCell = getExcelCell(raw, 'day')
+      const dayExplicit = headerHasDayColumn && String(dayCell).trim() !== ''
+      const rowDay = rowDayForWord(raw)
       rows.push({
         id: `import-${stamp}-${idx}`,
         word,
         meaning,
         example_sentence: mergeExampleFields(ex, ko),
         set_name: sn,
-        day: d,
+        day: rowDay,
+        dayExplicit,
         image_url,
         image_source: image_url ? 'upload' : 'none',
         youtube_url,
@@ -403,7 +463,10 @@ export default function BulkImport({
         alert('데이터 행이 없습니다. 양식 2행부터 채워 주세요.')
         return
       }
-      const rows = buildPreviewFromExcelJson(jsonRows)
+      const headerHasDay =
+        !!jsonRows[0] && Object.keys(jsonRows[0]).some((k) => normalizeExcelHeaderKey(k) === 'day')
+      setExcelDayColumnInSheet(headerHasDay)
+      const rows = buildPreviewFromExcelJson(jsonRows, headerHasDay)
       if (rows.length === 0) {
         alert(
           setType === 'sentence'
@@ -742,8 +805,8 @@ export default function BulkImport({
                 {saving
                   ? '저장 중…'
                   : localOnly
-                    ? `${previewRows.filter((r) => isPreviewRowValidForSetType(r, setType)).length}개 테이블에 추가`
-                    : `${previewRows.filter((r) => isPreviewRowValidForSetType(r, setType)).length}개 저장`}
+                    ? `${previewRows.filter((r) => isPreviewRowValidForSetType(r, setType, validOpts)).length}개 테이블에 추가`
+                    : `${previewRows.filter((r) => isPreviewRowValidForSetType(r, setType, validOpts)).length}개 저장`}
               </button>
             </>
           ) : null}

@@ -36,10 +36,11 @@ export const MODE_LABELS = {
 }
 
 /** word | sentence_writing | sentence_speaking (구 image·sentence 는 normalizeSetType 로 정규화) */
+/** B-2: 세트 타입별 기본 모드(암기=flashcard) */
 export const DEFAULT_MODES_BY_TYPE = {
   word: ['flashcard', 'recall', 'matching', 'test'],
-  sentence_writing: ['reading', 'dictation', 'writing', 'scramble'],
-  sentence_speaking: ['dictation', 'listening', 'shadowing', 'scramble'],
+  sentence_writing: ['reading', 'test'],
+  sentence_speaking: ['reading', 'shadowing'],
 }
 
 /** DB·구버전 값 → word | sentence_writing | sentence_speaking */
