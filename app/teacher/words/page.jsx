@@ -11,7 +11,6 @@ import WordTable from './components/WordTable'
 import BulkImport from './components/BulkImport'
 import AutoFillPanel from './components/AutoFillPanel'
 import RoutineSettingsSection from './components/RoutineSettingsSection'
-import MenuSettingsSection from './components/MenuSettingsSection'
 import NewWordSetModal from './components/NewWordSetModal'
 import SetSettingsModal from './components/SetSettingsModal'
 import { normalizeWordDifficulty } from './utils/parsers'
@@ -43,8 +42,10 @@ export default function WordsManagePage() {
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('')
   /** null | 'save' | 'clear' */
   const [dayYoutubeAction, setDayYoutubeAction] = useState(null)
+  /** 선생(학원) 초대 코드 블록 펼침 */
+  const [invitePanelOpen, setInvitePanelOpen] = useState(false)
 
-  const { teacher, loading: teacherLoading, refresh: refreshTeacher } = useTeacher()
+  const { teacher, loading: teacherLoading } = useTeacher()
   const teacherId = teacher?.id
   const academyId = teacher?.academy_id ?? DEFAULT_ACADEMY_ID
 
@@ -639,8 +640,26 @@ export default function WordsManagePage() {
           >
             가져오기
           </button>
+          <Link
+            href="/teacher/words/app-settings"
+            style={{
+              padding: '10px 16px',
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.textOnGreen}`,
+              background: 'rgba(255,255,255,0.2)',
+              color: COLORS.textOnGreen,
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontSize: 14,
+              textDecoration: 'none',
+            }}
+          >
+            앱 기능 설정
+          </Link>
         </div>
       </header>
+
+      <RoutineSettingsSection teacherId={teacherId} setNames={setNames} sectionTitle="이 세트의 루틴" />
 
       <section
         aria-label="학생 초대 코드"
@@ -648,7 +667,7 @@ export default function WordsManagePage() {
           width: '100%',
           maxWidth: '100%',
           margin: '0 0 16px',
-          padding: '10px 14px',
+          padding: invitePanelOpen ? '10px 14px' : '8px 12px',
           borderRadius: RADIUS.md,
           border: `1px solid ${COLORS.border}`,
           borderLeft: `4px solid #667eea`,
@@ -659,83 +678,116 @@ export default function WordsManagePage() {
           boxSizing: 'border-box',
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: 12,
-            justifyContent: 'space-between',
-            rowGap: 8,
-          }}
-        >
+        {invitePanelOpen ? (
           <div
+            id="teacher-invite-panel-content"
             style={{
               display: 'flex',
               flexWrap: 'wrap',
               alignItems: 'center',
-              gap: 10,
-              minWidth: 0,
-              flex: '1 1 240px',
+              gap: 12,
+              justifyContent: 'space-between',
+              rowGap: 8,
             }}
           >
-            <span
+            <div
               style={{
-                fontSize: 14,
-                fontWeight: 700,
-                color: '#374151',
-                whiteSpace: 'nowrap',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: 10,
+                minWidth: 0,
+                flex: '1 1 240px',
               }}
             >
-              학생 초대 코드
-            </span>
-            <span
-              style={{
-                fontSize: 17,
-                fontWeight: 800,
-                letterSpacing: '0.06em',
-                color: COLORS.textPrimary,
-                fontFamily: 'ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace',
-                lineHeight: 1.2,
-                wordBreak: 'break-all',
-              }}
-            >
-              {String(teacher?.invite_code ?? '').trim() || '—'}
-            </span>
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
-            <button
-              type="button"
-              onClick={() => void handleCopyInviteCode()}
-              style={{
-                padding: '8px 16px',
-                borderRadius: RADIUS.md,
-                border: 'none',
-                background: COLORS.headerGradient,
-                color: COLORS.textOnGreen,
-                fontWeight: 700,
-                fontSize: 14,
-                cursor: 'pointer',
-                boxShadow: '0 2px 10px rgba(102, 126, 234, 0.25)',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              복사
-            </button>
-            {inviteCopyMsg ? (
-              <span role="status" style={{ fontSize: 13, fontWeight: 600, color: COLORS.accentText }}>
-                {inviteCopyMsg}
+              <span
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: '#374151',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                학생 초대 코드
               </span>
-            ) : null}
+              <span
+                style={{
+                  fontSize: 17,
+                  fontWeight: 800,
+                  letterSpacing: '0.06em',
+                  color: COLORS.textPrimary,
+                  fontFamily: 'ui-monospace, "Cascadia Code", "Segoe UI Mono", monospace',
+                  lineHeight: 1.2,
+                  wordBreak: 'break-all',
+                }}
+              >
+                {String(teacher?.invite_code ?? '').trim() || '—'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => void handleCopyInviteCode()}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: RADIUS.md,
+                  border: 'none',
+                  background: COLORS.headerGradient,
+                  color: COLORS.textOnGreen,
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 10px rgba(102, 126, 234, 0.25)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                복사
+              </button>
+              <button
+                type="button"
+                onClick={() => setInvitePanelOpen(false)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: RADIUS.md,
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.bg,
+                  color: COLORS.textSecondary,
+                  fontWeight: 600,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                접기
+              </button>
+              {inviteCopyMsg ? (
+                <span role="status" style={{ fontSize: 13, fontWeight: 600, color: COLORS.accentText }}>
+                  {inviteCopyMsg}
+                </span>
+              ) : null}
+            </div>
           </div>
-        </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setInvitePanelOpen(true)}
+            aria-expanded={false}
+            aria-controls="teacher-invite-panel-content"
+            style={{
+              width: '100%',
+              textAlign: 'left',
+              padding: '6px 4px',
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 700,
+              color: COLORS.accentText,
+            }}
+          >
+            초대 코드 보기
+          </button>
+        )}
       </section>
-
-      <MenuSettingsSection
-        teacherId={teacherId}
-        visibleMenus={teacher?.visible_menus}
-        onSaved={() => void refreshTeacher()}
-      />
 
       <div
         style={{
@@ -1262,8 +1314,6 @@ export default function WordsManagePage() {
         )}
         </div>
       </div>
-
-      <RoutineSettingsSection teacherId={teacherId} setNames={setNames} />
 
       <BulkImport
         open={bulkOpen}

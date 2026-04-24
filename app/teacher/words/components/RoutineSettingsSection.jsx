@@ -5,6 +5,7 @@ import { supabase } from '@/utils/supabaseClient'
 import { useTeacher } from '@/utils/useTeacher'
 import {
   createRoutineWithDaysAndTasks,
+  deleteRoutineForTeacher,
   fetchRoutineForEdit,
   fetchTeacherRoutinesWithStats,
   parseRestDayNumbers,
@@ -88,7 +89,11 @@ function buildModesPayload(recommendedKeys, passScore, maxAttempts) {
 /**
  * @param {{ teacherId?: string, setNames: string[] }} props
  */
-export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNames }) {
+export default function RoutineSettingsSection({
+  teacherId: teacherIdProp,
+  setNames,
+  sectionTitle = '루틴 설정',
+}) {
   const { teacher } = useTeacher()
   const teacherId = teacherIdProp || teacher?.id || ''
   const [routines, setRoutines] = useState([])
@@ -117,6 +122,9 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
   ])
   const [toast, setToast] = useState(null)
   const [recommendSaving, setRecommendSaving] = useState(false)
+  /** 루틴 삭제 확인 — { id, title } | null */
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting] = useState(false)
   const [totalDaysInput, setTotalDaysInput] = useState('28')
   const [reviewCycleInput, setReviewCycleInput] = useState('+1+3+7')
   const [restDaysInput, setRestDaysInput] = useState('DAY7, DAY14, DAY21')
@@ -151,6 +159,15 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
     const t = window.setTimeout(() => setToast(null), 3200)
     return () => clearTimeout(t)
   }, [toast])
+
+  useEffect(() => {
+    if (!deleteTarget) return
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !deleting) setDeleteTarget(null)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [deleteTarget, deleting])
 
   useEffect(() => {
     if (formOpen && setNames.length && !selectedSet) {
@@ -378,6 +395,27 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
     }
   }
 
+  const handleConfirmDeleteRoutine = async () => {
+    if (!deleteTarget || !teacherId) return
+    setDeleting(true)
+    try {
+      const res = await deleteRoutineForTeacher(String(deleteTarget.id), teacherId)
+      if (!res.ok) {
+        setToast({ tone: 'err', message: formatRoutineError(res.error) })
+        return
+      }
+      if (editingRoutineId && String(editingRoutineId) === String(deleteTarget.id)) {
+        setFormOpen(false)
+        resetForm()
+      }
+      setDeleteTarget(null)
+      setToast({ tone: 'ok', message: '루틴이 삭제되었습니다.' })
+      void load()
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <section
       id="routine-settings"
@@ -397,6 +435,97 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
         position: 'relative',
       }}
     >
+      {deleteTarget ? (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="routine-delete-title"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10050,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            boxSizing: 'border-box',
+          }}
+          onClick={() => !deleting && setDeleteTarget(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(400px, 100%)',
+              padding: 22,
+              borderRadius: 14,
+              background: COLORS.surface,
+              border: `1px solid ${COLORS.border}`,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+            }}
+          >
+            <h3
+              id="routine-delete-title"
+              style={{ margin: '0 0 10px', fontSize: 17, fontWeight: 800, color: COLORS.textPrimary }}
+            >
+              이 루틴을 삭제할까요?
+            </h3>
+            <p style={{ margin: '0 0 18px', fontSize: 14, lineHeight: 1.55, color: COLORS.textSecondary }}>
+              연결된 학생들의 루틴도 함께 사라집니다.
+            </p>
+            {deleteTarget.title ? (
+              <p
+                style={{
+                  margin: '0 0 16px',
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: COLORS.accentText,
+                }}
+              >
+                「{String(deleteTarget.title).trim() || '이름 없음'}」
+              </p>
+            ) : null}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setDeleteTarget(null)}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: RADIUS.md,
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.bg,
+                  color: COLORS.textPrimary,
+                  fontWeight: 600,
+                  fontSize: 14,
+                  cursor: deleting ? 'wait' : 'pointer',
+                }}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => void handleConfirmDeleteRoutine()}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: RADIUS.md,
+                  border: 'none',
+                  background: COLORS.danger,
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: deleting ? 'wait' : 'pointer',
+                  opacity: deleting ? 0.85 : 1,
+                }}
+              >
+                {deleting ? '삭제 중…' : '삭제'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {toast ? (
         <div
           role="status"
@@ -431,7 +560,7 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
             paddingLeft: 2,
           }}
         >
-          루틴 설정
+          {sectionTitle}
         </h2>
         <button
           type="button"
@@ -531,19 +660,19 @@ export default function RoutineSettingsSection({ teacherId: teacherIdProp, setNa
                 </button>
                 <button
                   type="button"
-                  onClick={() => {}}
+                  disabled={editLoading || saving || deleting}
+                  onClick={() => setDeleteTarget({ id: r.id, title: r.title || '' })}
                   style={{
                     padding: '8px 14px',
                     borderRadius: RADIUS.sm,
-                    border: `1px solid ${COLORS.border}`,
-                    background: 'rgba(249, 250, 251, 0.95)',
-                    color: COLORS.textSecondary,
+                    border: `1px solid ${COLORS.danger}`,
+                    background: COLORS.dangerBg,
+                    color: COLORS.danger,
                     fontWeight: 600,
                     fontSize: 13,
-                    cursor: 'not-allowed',
-                    opacity: 0.65,
+                    cursor: editLoading || saving || deleting ? 'wait' : 'pointer',
+                    opacity: editLoading || saving || deleting ? 0.65 : 1,
                   }}
-                  title="삭제 기능은 추후 제공 예정입니다"
                 >
                   삭제
                 </button>

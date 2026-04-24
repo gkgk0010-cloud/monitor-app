@@ -13,6 +13,7 @@ import AutoFillPanel from '../components/AutoFillPanel'
 import { normalizeWordDifficulty } from '../utils/parsers'
 import { assignDaysEqual, assignDaysChunk } from '../utils/dayAssign'
 import WorkflowSuccessModal from '../components/WorkflowSuccessModal'
+import WordAddedDaySplitModal from '../components/WordAddedDaySplitModal'
 
 const SET_TYPE_LABELS = {
   word: '단어 세트',
@@ -162,25 +163,35 @@ function CreateWordSetPageContent() {
     setRows((prev) => [emptyRow(setName), ...prev])
   }
 
-  const applyDayPreview = () => {
+  /**
+   * @param {{ dayMode?: 'equal' | 'chunk', totalDays?: number, perDay?: number } | undefined} overrides
+   * 모달에서 넘긴 값으로 미리보기 시 페이지의 dayMode·N·M 상태도 맞춤
+   */
+  const applyDayPreview = (overrides) => {
+    const mode = overrides?.dayMode ?? dayMode
+    const td = Math.max(1, parseInt(String(overrides?.totalDays ?? totalDays), 10) || 1)
+    const pd = Math.max(1, parseInt(String(overrides?.perDay ?? perDay), 10) || 1)
+    if (overrides) {
+      setDayMode(mode)
+      setTotalDays(td)
+      setPerDay(pd)
+    }
+
     const validCount = rows.filter((r) => isRowValidForCreate(r)).length
     if (validCount === 0) {
       alert(isSentenceStyleCreate ? '예문·뜻이 있는 행이 없습니다.' : '영단어·뜻이 있는 행이 없습니다.')
       return
     }
-    if (dayMode === 'equal' && totalDays < 1) {
+    if (mode === 'equal' && td < 1) {
       alert('총 일수는 1 이상이어야 합니다.')
       return
     }
-    if (dayMode === 'chunk' && perDay < 1) {
+    if (mode === 'chunk' && pd < 1) {
       alert('일당 개수는 1 이상이어야 합니다.')
       return
     }
 
-    const seq =
-      dayMode === 'equal'
-        ? assignDaysEqual(validCount, Math.max(1, totalDays))
-        : assignDaysChunk(validCount, Math.max(1, perDay))
+    const seq = mode === 'equal' ? assignDaysEqual(validCount, td) : assignDaysChunk(validCount, pd)
 
     const uniqueDays = new Set(seq).size
     setDaySplitCount(uniqueDays)
@@ -473,7 +484,7 @@ function CreateWordSetPageContent() {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
             <button
               type="button"
-              onClick={applyDayPreview}
+              onClick={() => applyDayPreview()}
               style={{
                 padding: '10px 18px',
                 borderRadius: RADIUS.md,
@@ -619,18 +630,15 @@ function CreateWordSetPageContent() {
         />
       </div>
 
-      <WorkflowSuccessModal
+      <WordAddedDaySplitModal
         open={workflowModal === 'words'}
         onClose={() => setWorkflowModal(null)}
-        title="✓ 단어가 추가됐어요"
-        nextStepDescription="Day별로 단어를 나눠야 학생 앱에서 학습이 가능해요."
-        primaryLabel="Day 자동 나누기"
-        onPrimary={() => {
-          const el = document.getElementById('day-split-section')
-          el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          applyDayPreview()
+        initialMode={dayMode}
+        initialTotalDays={totalDays}
+        initialPerDay={perDay}
+        onExecute={({ dayMode: m, totalDays: td, perDay: pd }) => {
+          applyDayPreview({ dayMode: m, totalDays: td, perDay: pd })
         }}
-        secondaryLabel="나중에 하기"
       />
 
       <WorkflowSuccessModal

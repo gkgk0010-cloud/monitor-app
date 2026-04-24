@@ -460,3 +460,63 @@ export async function updateRoutineWithDaysAndTasks(
 
   return { ok: true }
 }
+
+/**
+ * 루틴 완전 삭제 — student_routines → routine_tasks → routine_days → routines
+ * (FK·CASCADE 설정과 무관하게 일관되게 정리)
+ * @param {string} routineId
+ * @param {string} teacherId
+ * @returns {Promise<{ ok: boolean, error?: string }>}
+ */
+export async function deleteRoutineForTeacher(routineId, teacherId) {
+  if (!routineId || !teacherId) {
+    return { ok: false, error: '잘못된 요청입니다.' }
+  }
+
+  const { data: owner, error: eo } = await supabase
+    .from('routines')
+    .select('id')
+    .eq('id', routineId)
+    .eq('teacher_id', teacherId)
+    .maybeSingle()
+
+  if (eo) {
+    return { ok: false, error: errMessage(eo) }
+  }
+  if (!owner) {
+    return { ok: false, error: '루틴을 찾을 수 없거나 권한이 없습니다.' }
+  }
+
+  const { error: eSr } = await supabase.from('student_routines').delete().eq('routine_id', routineId)
+  if (eSr) {
+    return { ok: false, error: errMessage(eSr) || '학생에게 연결된 루틴을 해제하지 못했습니다.' }
+  }
+
+  const { data: dayRows, error: eDayQ } = await supabase.from('routine_days').select('id').eq('routine_id', routineId)
+  if (eDayQ) {
+    return { ok: false, error: errMessage(eDayQ) }
+  }
+  const dayIds = (dayRows || []).map((d) => d.id).filter(Boolean)
+  if (dayIds.length > 0) {
+    const { error: eT } = await supabase.from('routine_tasks').delete().in('routine_day_id', dayIds)
+    if (eT) {
+      return { ok: false, error: errMessage(eT) || '루틴 태스크를 삭제하지 못했습니다.' }
+    }
+  }
+
+  const { error: eD } = await supabase.from('routine_days').delete().eq('routine_id', routineId)
+  if (eD) {
+    return { ok: false, error: errMessage(eD) || '루틴 일차를 삭제하지 못했습니다.' }
+  }
+
+  const { error: eR } = await supabase
+    .from('routines')
+    .delete()
+    .eq('id', routineId)
+    .eq('teacher_id', teacherId)
+  if (eR) {
+    return { ok: false, error: errMessage(eR) || '루틴을 삭제하지 못했습니다.' }
+  }
+
+  return { ok: true }
+}
