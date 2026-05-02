@@ -470,12 +470,12 @@ export default function WordsManagePage() {
         teacher_id: teacherId,
       }
       const dedupedPayload = Array.from(
-        new Map([rowPayload].map((p) => [`${p.set_name}|${p.word}`, p])).values(),
+        new Map([rowPayload].map((p) => [`${p.set_name}|${p.day}|${p.word}`, p])).values(),
       )
       const { data, error } = await supabase
         .from('words')
         .upsert(dedupedPayload, {
-          onConflict: 'set_name,word',
+          onConflict: 'set_name,day,word',
           defaultToNull: false,
         })
         .select()
