@@ -29,19 +29,22 @@ const EXCEL_FILE_NAMES = {
  * @param {'word' | 'sentence'} t
  * @param {{ excelDayColumn?: boolean } | undefined} opts
  */
-function isPreviewRowValidForSetType(r, t, opts) {
+function isPreviewRowSaveCandidate(r, t, opts) {
   const w = String(r.word || '').trim()
   const ex = String(r.example_sentence || '').trim()
   if (t === 'sentence') {
-    if (!ex || meaningIsMissing(r.meaning)) return false
+    if (!ex) return false
     if (opts?.excelDayColumn) {
       const dn = Math.max(0, parseInt(String(r.day ?? 0), 10) || 0)
       if (dn < 1) return false
     }
     return true
   }
-  if (!w || meaningIsMissing(r.meaning)) return false
-  return true
+  return Boolean(w)
+}
+
+function isPreviewRowValidForSetType(r, t, opts) {
+  return isPreviewRowSaveCandidate(r, t, opts) && !meaningIsMissing(r.meaning)
 }
 
 function normalizeExcelHeaderKey(k) {
@@ -263,13 +266,26 @@ export default function BulkImport({
         return
       }
     }
-    const valid = previewRows.filter((r) => isPreviewRowValidForSetType(r, setType, validOpts))
-    if (valid.length === 0) {
+    const candidates = previewRows.filter((r) => isPreviewRowSaveCandidate(r, setType, validOpts))
+    if (candidates.length === 0) {
       alert(
         setType === 'sentence'
-          ? '저장할 행이 없습니다. 예문·뜻을 모두 입력했는지 확인하세요.'
-          : '저장할 단어가 없습니다. 필수 칸을 모두 입력했는지 확인하세요.',
+          ? '저장할 행이 없습니다. 예문을 입력했는지, day가 비어 있지 않은지 확인하세요.'
+          : '저장할 단어가 없습니다. 단어 칸을 확인하세요.',
       )
+      return
+    }
+    const badMeaning = []
+    for (const r of candidates) {
+      if (!meaningIsMissing(r.meaning)) continue
+      const idx = previewRows.findIndex((x) => String(x.id) === String(r.id))
+      badMeaning.push({
+        row: idx >= 0 ? idx + 1 : 1,
+        label: wordLabelForMeaningAlert(r, { sentenceStyle: setType === 'sentence' }),
+      })
+    }
+    if (badMeaning.length > 0) {
+      alert(formatEmptyMeaningAlert(badMeaning))
       return
     }
     const trimmedSet = String(setName).trim()
@@ -283,7 +299,7 @@ export default function BulkImport({
     }
     setSaving(true)
     try {
-      const payload = valid.map((r) => {
+      const payload = candidates.map((r) => {
         const ex = String(r.example_sentence || '').trim()
         let word = String(r.word || '').trim()
         if (setType === 'sentence' && !word) {
@@ -308,24 +324,9 @@ export default function BulkImport({
         }
       })
 
-      const badMeaning = []
-      payload.forEach((p, i) => {
-        if (!meaningIsMissing(p.meaning)) return
-        const r = valid[i]
-        const idx = previewRows.findIndex((x) => String(x.id) === String(r.id))
-        badMeaning.push({
-          row: idx >= 0 ? idx + 1 : i + 1,
-          label: wordLabelForMeaningAlert(r, { sentenceStyle: setType === 'sentence' }),
-        })
-      })
-      if (badMeaning.length > 0) {
-        alert(formatEmptyMeaningAlert(badMeaning))
-        return
-      }
-
       if (localOnly && onLocalImported) {
         const stamp = Date.now()
-        const mapped = valid.map((r, i) => ({
+        const mapped = candidates.map((r, i) => ({
           id: `import-${stamp}-${i}`,
           word: String(payload[i].word),
           meaning: String(payload[i].meaning),
@@ -339,7 +340,7 @@ export default function BulkImport({
           dayExplicit: r.dayExplicit === true,
         }))
         const canUseCsvDay =
-          excelDayColumnInSheet && valid.length > 0 && valid.every((r) => r.dayExplicit === true)
+          excelDayColumnInSheet && candidates.length > 0 && candidates.every((r) => r.dayExplicit === true)
         onLocalImported(mapped, { canUseCsvDay })
         onClose()
         resetPreview()
@@ -827,8 +828,8 @@ export default function BulkImport({
                 {saving
                   ? '저장 중…'
                   : localOnly
-                    ? `${previewRows.filter((r) => isPreviewRowValidForSetType(r, setType, validOpts)).length}개 테이블에 추가`
-                    : `${previewRows.filter((r) => isPreviewRowValidForSetType(r, setType, validOpts)).length}개 저장`}
+                    ? `${previewRows.filter((r) => isPreviewRowSaveCandidate(r, setType, validOpts)).length}개 테이블에 추가`
+                    : `${previewRows.filter((r) => isPreviewRowSaveCandidate(r, setType, validOpts)).length}개 저장`}
               </button>
             </>
           ) : null}

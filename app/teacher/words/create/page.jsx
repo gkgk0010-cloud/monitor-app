@@ -96,14 +96,20 @@ function CreateWordSetPageContent() {
     createSetType === 'sentence_writing' || createSetType === 'sentence_speaking'
   const wordTableColumnPreset = isSentenceStyleCreate ? 'sentence' : 'word'
 
-  const isRowValidForCreate = useCallback(
+  /** 단어/예문 등 저장하려는 행인지(뜻 유무와 무관 — 빈 뜻은 saveAll에서 차단) */
+  const isRowSaveCandidateForCreate = useCallback(
     (r) => {
       const w = String(r.word || '').trim()
       const ex = String(r.example_sentence || '').trim()
-      if (isSentenceStyleCreate) return Boolean(ex && !meaningIsMissing(r.meaning))
-      return Boolean(w && !meaningIsMissing(r.meaning))
+      if (isSentenceStyleCreate) return Boolean(ex)
+      return Boolean(w)
     },
     [isSentenceStyleCreate],
+  )
+
+  const isRowValidForCreate = useCallback(
+    (r) => isRowSaveCandidateForCreate(r) && !meaningIsMissing(r.meaning),
+    [isRowSaveCandidateForCreate],
   )
 
   const createValidCount = useMemo(
@@ -126,15 +132,11 @@ function CreateWordSetPageContent() {
     if (!hasDayPreview) return []
     const s = new Set()
     for (const r of rows) {
-      const w = String(r.word || '').trim()
-      const m = String(r.meaning || '').trim()
-      const ex = String(r.example_sentence || '').trim()
-      const ok = isSentenceStyleCreate ? ex && m : w && m
-      if (!ok) continue
+      if (!isRowValidForCreate(r)) continue
       s.add(Math.max(1, parseInt(String(r.day ?? 1), 10) || 1))
     }
     return [...s].sort((a, b) => a - b)
-  }, [rows, hasDayPreview, isSentenceStyleCreate])
+  }, [rows, hasDayPreview, isRowValidForCreate])
 
   useEffect(() => {
     if (!hasDayPreview) {
@@ -316,15 +318,34 @@ function CreateWordSetPageContent() {
       alert('먼저 「Day 미리보기」로 day를 배정하세요.')
       return
     }
-    const valid = rows.filter((r) => isRowValidForCreate(r))
-    if (valid.length === 0) {
-      alert(isSentenceStyleCreate ? '저장할 행이 없습니다. 예문·뜻을 확인하세요.' : '저장할 단어가 없습니다.')
+    const candidates = rows.filter((r) => isRowSaveCandidateForCreate(r))
+    if (candidates.length === 0) {
+      alert(
+        isSentenceStyleCreate
+          ? '저장할 행이 없습니다. 예문을 입력했는지 확인하세요.'
+          : '저장할 단어가 없습니다. 단어를 입력했는지 확인하세요.',
+      )
+      return
+    }
+    const badMeaning = []
+    for (const r of candidates) {
+      if (!meaningIsMissing(r.meaning)) continue
+      const idx = rows.findIndex((x) => String(x.id) === String(r.id))
+      badMeaning.push({
+        row: idx >= 0 ? idx + 1 : 1,
+        id: String(r.id),
+        label: wordLabelForMeaningAlert(r, { sentenceStyle: isSentenceStyleCreate }),
+      })
+    }
+    if (badMeaning.length > 0) {
+      setMeaningHighlightRowIds(new Set(badMeaning.map((x) => x.id)))
+      alert(formatEmptyMeaningAlert(badMeaning))
       return
     }
     setSaving(true)
     setHint(null)
     try {
-      const payload = valid.map((r) => {
+      const payload = candidates.map((r) => {
         const ex = String(r.example_sentence || '').trim()
         let word = String(r.word || '').trim()
         if (isSentenceStyleCreate && !word) {
@@ -348,22 +369,6 @@ function CreateWordSetPageContent() {
           teacher_id: teacherId,
         }
       })
-      const badMeaning = []
-      payload.forEach((p, i) => {
-        if (!meaningIsMissing(p.meaning)) return
-        const r = valid[i]
-        const idx = rows.findIndex((x) => String(x.id) === String(r.id))
-        badMeaning.push({
-          row: idx >= 0 ? idx + 1 : i + 1,
-          id: String(r.id),
-          label: wordLabelForMeaningAlert(r, { sentenceStyle: isSentenceStyleCreate }),
-        })
-      })
-      if (badMeaning.length > 0) {
-        setMeaningHighlightRowIds(new Set(badMeaning.map((x) => x.id)))
-        alert(formatEmptyMeaningAlert(badMeaning))
-        return
-      }
       setMeaningHighlightRowIds(new Set())
       const dedupedPayload = Array.from(
         new Map(payload.map((p) => [`${p.set_name}|${p.day}|${p.word}`, p])).values(),
@@ -373,7 +378,7 @@ function CreateWordSetPageContent() {
         defaultToNull: false,
       })
       if (error) throw error
-      const savedMarked = valid.map((r) => ({ ...r, _localSaved: true }))
+      const savedMarked = candidates.map((r) => ({ ...r, _localSaved: true }))
       const tail = [emptyRow(sn), emptyRow(sn), emptyRow(sn)]
       setRows([...savedMarked, ...tail])
       setSelectedIds(new Set())

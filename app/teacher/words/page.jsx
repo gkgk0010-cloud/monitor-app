@@ -565,11 +565,40 @@ export default function WordsManagePage() {
   const handleAutoFilled = async (updated) => {
     if (!teacherId) return
     const map = new Map(updated.map((r) => [String(r.id), r]))
+    const toPersist = updated.filter((r) => !String(r.id).startsWith('temp-'))
+
+    const badMeaning = []
+    for (const r of toPersist) {
+      if (!meaningIsMissing(r.meaning)) continue
+      const id = String(r.id)
+      const vis = filteredRef.current
+      const idx = vis.findIndex((x) => String(x.id) === id)
+      const rowNum =
+        idx >= 0
+          ? idx + 1
+          : (() => {
+              const j = wordsRef.current.findIndex((x) => String(x.id) === id)
+              return j >= 0 ? j + 1 : 1
+            })()
+      const sn = String(r.set_name || '').trim() || String(setFilter || '').trim() || '토익 기본 단어'
+      const st = normalizeSetType(setTypeByName[sn] || 'word')
+      const sentenceStyle = st === 'sentence_writing' || st === 'sentence_speaking'
+      badMeaning.push({
+        row: rowNum,
+        id,
+        label: wordLabelForMeaningAlert(r, { sentenceStyle }),
+      })
+    }
+    if (badMeaning.length > 0) {
+      setMeaningHighlightRowIds(new Set(badMeaning.map((x) => x.id)))
+      alert(formatEmptyMeaningAlert(badMeaning.map(({ row, label }) => ({ row, label }))))
+      return
+    }
+
     setWords((prev) => prev.map((r) => map.get(String(r.id)) || r))
 
-    for (const r of updated) {
+    for (const r of toPersist) {
       const id = String(r.id)
-      if (id.startsWith('temp-')) continue
       const { error } = await supabase
         .from('words')
         .update({
