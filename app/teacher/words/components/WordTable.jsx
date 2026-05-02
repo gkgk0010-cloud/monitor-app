@@ -391,7 +391,7 @@ function WordTable({
     count: flatItems.length,
     getScrollElement: () =>
       scrollContainer === 'window' && typeof document !== 'undefined'
-        ? document.documentElement
+        ? document.scrollingElement ?? document.documentElement
         : scrollParentRef.current,
     estimateSize: (index) => (flatItems[index]?.type === 'section' ? 46 : 96),
     overscan: scrollContainer === 'window' ? 2500 : 20,
@@ -658,11 +658,13 @@ function WordTable({
               gridTemplateColumns: wordTableGrid,
               position: 'sticky',
               top: scrollContainer === 'window' ? stickyHeaderOffsetPx : 0,
-              zIndex: 54,
+              zIndex: 53,
+              isolation: 'isolate',
               background: COLORS.primarySoft,
               borderBottom: `1px solid ${COLORS.border}`,
               textAlign: 'left',
               alignItems: 'center',
+              boxShadow: scrollContainer === 'window' ? '0 1px 0 rgba(0,0,0,0.06)' : undefined,
             }}
           >
             <div role="columnheader" style={{ padding: '10px 8px' }}>
@@ -765,6 +767,8 @@ function WordTable({
               position: 'relative',
               width: '100%',
               height: rowVirtualizer.getTotalSize(),
+              isolation: 'isolate',
+              zIndex: 0,
             }}
           >
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
@@ -772,10 +776,9 @@ function WordTable({
               if (!item) return null
               const rowGridBase = {
                 position: 'absolute',
-                top: 0,
+                top: virtualRow.start,
                 left: 0,
                 width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
                 display: 'grid',
                 gridTemplateColumns: wordTableGrid,
                 boxSizing: 'border-box',

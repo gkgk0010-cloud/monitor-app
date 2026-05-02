@@ -168,8 +168,10 @@ export default function WordsSetDetailView({
       return
     }
     const measure = () => {
-      const h = el.getBoundingClientRect().height
-      if (h > 0) setStickyToolbarHeightPx(Math.ceil(h))
+      window.requestAnimationFrame(() => {
+        const h = el.getBoundingClientRect().height
+        if (h > 0) setStickyToolbarHeightPx(Math.ceil(h))
+      })
     }
     measure()
     const ro = new ResizeObserver(measure)
@@ -609,6 +611,10 @@ export default function WordsSetDetailView({
   const chipFont = '16px'
   const controlPad = '12px 14px'
   const controlMinH = 48
+  /** sticky 툴바 검색·필터 줄 — 검색은 한정 폭, 우측 컨트롤은 크게 */
+  const toolbarSearchMaxPx = 480
+  const toolbarFilterFont = '16px'
+  const toolbarFilterMinH = 48
 
   if (teacherLoading) {
     return (
@@ -859,78 +865,110 @@ export default function WordsSetDetailView({
           style={{
             display: 'flex',
             flexWrap: 'wrap',
-            gap: 14,
             alignItems: 'center',
-            paddingTop: 2,
+            justifyContent: 'space-between',
+            gap: '16px 20px',
+            paddingTop: 6,
+            rowGap: 16,
           }}
         >
-        <input
-          type="search"
-          placeholder="검색 (단어·뜻)"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{
-            flex: '1 1 220px',
-            minHeight: controlMinH,
-            padding: controlPad,
-            borderRadius: RADIUS.sm,
-            border: `1px solid ${COLORS.border}`,
-            fontSize: chipFont,
-            boxSizing: 'border-box',
-          }}
-        />
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ color: COLORS.textSecondary, fontSize: chipFont, fontWeight: 600 }}>Day</span>
-          <select
-            value={dayFilter == null ? '' : String(dayFilter)}
-            onChange={(e) => {
-              const v = e.target.value
-              setDayFilter(v === '' ? null : Number(v))
-            }}
+          <input
+            type="search"
+            placeholder="검색 (단어·뜻)"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
             style={{
-              minHeight: controlMinH,
-              padding: controlPad,
+              flex: '0 1 auto',
+              width: '100%',
+              maxWidth: toolbarSearchMaxPx,
+              minWidth: 200,
+              minHeight: toolbarFilterMinH,
+              padding: '12px 16px',
               borderRadius: RADIUS.sm,
               border: `1px solid ${COLORS.border}`,
-              minWidth: 120,
-              fontSize: chipFont,
+              fontSize: toolbarFilterFont,
+              fontWeight: 600,
               boxSizing: 'border-box',
-              background: COLORS.bg,
             }}
-          >
-            <option value="">전체 Day</option>
-            {daysInSelectedSet.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-          <input type="checkbox" checked={emptyOnly} onChange={(e) => setEmptyOnly(e.target.checked)} />
-          <span style={{ fontSize: chipFont, color: COLORS.textPrimary, fontWeight: 600 }}>빈 필드만 보기</span>
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ color: COLORS.textSecondary, fontSize: chipFont, fontWeight: 600 }}>목록</span>
-          <select
-            value={tableGroupMode}
-            onChange={(e) => setTableGroupMode(e.target.value)}
+          />
+          <div
             style={{
-              minHeight: controlMinH,
-              padding: controlPad,
-              borderRadius: RADIUS.sm,
-              border: `1px solid ${COLORS.border}`,
-              fontSize: chipFont,
-              minWidth: 160,
-              boxSizing: 'border-box',
-              background: COLORS.bg,
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: '14px 22px',
+              justifyContent: 'flex-end',
+              flex: '1 1 280px',
             }}
           >
-            <option value="none">전체 펼침</option>
-            <option value="chunk10">10개씩 접기</option>
-          </select>
-        </label>
-      </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ color: COLORS.textSecondary, fontSize: toolbarFilterFont, fontWeight: 700 }}>
+                Day
+              </span>
+              <select
+                value={dayFilter == null ? '' : String(dayFilter)}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setDayFilter(v === '' ? null : Number(v))
+                }}
+                style={{
+                  minHeight: toolbarFilterMinH,
+                  padding: '12px 16px',
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  minWidth: 132,
+                  fontSize: toolbarFilterFont,
+                  fontWeight: 600,
+                  boxSizing: 'border-box',
+                  background: COLORS.bg,
+                }}
+              >
+                <option value="">전체 Day</option>
+                {daysInSelectedSet.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label
+              style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
+            >
+              <input
+                type="checkbox"
+                checked={emptyOnly}
+                onChange={(e) => setEmptyOnly(e.target.checked)}
+                style={{ width: 22, height: 22, flexShrink: 0, accentColor: COLORS.accentText }}
+              />
+              <span style={{ fontSize: toolbarFilterFont, color: COLORS.textPrimary, fontWeight: 700 }}>
+                빈 필드만 보기
+              </span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ color: COLORS.textSecondary, fontSize: toolbarFilterFont, fontWeight: 700 }}>
+                목록
+              </span>
+              <select
+                value={tableGroupMode}
+                onChange={(e) => setTableGroupMode(e.target.value)}
+                style={{
+                  minHeight: toolbarFilterMinH,
+                  padding: '12px 16px',
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  fontSize: toolbarFilterFont,
+                  fontWeight: 600,
+                  minWidth: 172,
+                  boxSizing: 'border-box',
+                  background: COLORS.bg,
+                }}
+              >
+                <option value="none">전체 펼침</option>
+                <option value="chunk10">10개씩 접기</option>
+              </select>
+            </label>
+          </div>
+        </div>
       </div>
 
       {dayFilter != null ? (
