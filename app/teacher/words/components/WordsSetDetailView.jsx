@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/utils/supabaseClient'
 import { DEFAULT_ACADEMY_ID } from '@/utils/defaults'
@@ -63,6 +63,9 @@ export default function WordsSetDetailView({
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('')
   const [dayYoutubeAction, setDayYoutubeAction] = useState(null)
   const [meaningHighlightRowIds, setMeaningHighlightRowIds] = useState(() => new Set())
+  /** 표 헤더 sticky top — 실제 툴바 높이와 맞춤 (행 사이 끼어 보이는 현상 방지) */
+  const stickyToolbarRef = useRef(null)
+  const [stickyToolbarHeightPx, setStickyToolbarHeightPx] = useState(300)
 
   const { teacher, loading: teacherLoading } = useTeacher()
   const teacherId = teacher?.id
@@ -158,6 +161,21 @@ export default function WordsSetDetailView({
     const noExample = words.filter((w) => !w.example_sentence || !String(w.example_sentence).trim()).length
     return { total, noImage, noExample }
   }, [words])
+
+  useLayoutEffect(() => {
+    const el = stickyToolbarRef.current
+    if (!el || typeof ResizeObserver === 'undefined') {
+      return
+    }
+    const measure = () => {
+      const h = el.getBoundingClientRect().height
+      if (h > 0) setStickyToolbarHeightPx(Math.ceil(h))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [loading, stats.total, stats.noExample, stats.noImage, dayFilter])
 
   const tableColumnPreset = useMemo(() => {
     const t = normalizeSetType(wordSet?.set_type || 'word')
@@ -737,9 +755,10 @@ export default function WordsSetDetailView({
       />
 
       <div
+        ref={stickyToolbarRef}
         style={{
           marginBottom: 16,
-          padding: '12px 16px 14px',
+          padding: '16px 20px 18px',
           boxSizing: 'border-box',
           background: COLORS.surface,
           borderRadius: RADIUS.md,
@@ -780,11 +799,11 @@ export default function WordsSetDetailView({
             role="note"
             style={{
               marginBottom: 14,
-              padding: '16px 18px',
+              padding: '24px 28px',
               borderRadius: RADIUS.md,
               background: 'linear-gradient(135deg, #fef9c3 0%, #ffedd5 100%)',
               border: '1px solid rgba(234, 179, 8, 0.45)',
-              fontSize: 17,
+              fontSize: 34,
               fontWeight: 700,
               color: '#78350f',
               lineHeight: 1.55,
@@ -798,12 +817,12 @@ export default function WordsSetDetailView({
           <div
             role="note"
             style={{
-              marginBottom: 10,
-              padding: '12px 14px',
+              marginBottom: 12,
+              padding: '20px 24px',
               borderRadius: RADIUS.md,
               background: 'linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%)',
               border: '1px solid rgba(59, 130, 246, 0.35)',
-              fontSize: 16,
+              fontSize: 32,
               fontWeight: 600,
               color: '#1e3a5f',
               lineHeight: 1.5,
@@ -819,11 +838,11 @@ export default function WordsSetDetailView({
             role="note"
             style={{
               marginBottom: 14,
-              padding: '10px 14px',
+              padding: '18px 22px',
               borderRadius: RADIUS.md,
               background: '#fff7ed',
               border: '1px solid rgba(251, 146, 60, 0.35)',
-              fontSize: 15,
+              fontSize: 30,
               fontWeight: 600,
               color: '#9a3412',
               lineHeight: 1.45,
@@ -1017,7 +1036,7 @@ export default function WordsSetDetailView({
             columnPreset={tableColumnPreset}
             highlightRowIds={meaningHighlightRowIds}
             scrollContainer="window"
-            stickyHeaderOffsetPx={220}
+            stickyHeaderOffsetPx={stickyToolbarHeightPx}
           />
           {loadingMore ? (
             <p style={{ margin: '10px 0 0', fontSize: 14, color: COLORS.textSecondary }}>

@@ -658,7 +658,7 @@ function WordTable({
               gridTemplateColumns: wordTableGrid,
               position: 'sticky',
               top: scrollContainer === 'window' ? stickyHeaderOffsetPx : 0,
-              zIndex: 50,
+              zIndex: 54,
               background: COLORS.primarySoft,
               borderBottom: `1px solid ${COLORS.border}`,
               textAlign: 'left',
@@ -779,6 +779,7 @@ function WordTable({
                 display: 'grid',
                 gridTemplateColumns: wordTableGrid,
                 boxSizing: 'border-box',
+                zIndex: 0,
               }
               if (item.type === 'section') {
                 const sec = item.sec
