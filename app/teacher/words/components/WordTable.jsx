@@ -131,6 +131,7 @@ function DraftDayInput({ rowId, value, cellDraftsRef, onCommit, style }) {
  *   highlightRowIds?: Set<string> | string[]
  *   scrollContainer?: 'embedded' | 'window'
  *   stickyHeaderOffsetPx?: number
+ *   embeddedMaxHeight?: string
  * }} props
  */
 function WordTable({
@@ -153,6 +154,7 @@ function WordTable({
   highlightRowIds,
   scrollContainer = 'embedded',
   stickyHeaderOffsetPx = 0,
+  embeddedMaxHeight = 'min(72vh, calc(100vh - 240px))',
 }) {
   const isSentence = columnPreset === 'sentence'
   const isImage = columnPreset === 'image'
@@ -636,8 +638,9 @@ function WordTable({
         style={{
           ...(scrollContainer === 'embedded'
             ? {
-                maxHeight: 'min(72vh, calc(100vh - 240px))',
+                maxHeight: embeddedMaxHeight,
                 overflow: 'auto',
+                WebkitOverflowScrolling: 'touch',
               }
             : { overflow: 'visible' }),
           width: '100%',

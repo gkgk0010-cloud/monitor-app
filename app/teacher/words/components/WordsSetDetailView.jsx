@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/utils/supabaseClient'
 import { DEFAULT_ACADEMY_ID } from '@/utils/defaults'
@@ -63,9 +63,6 @@ export default function WordsSetDetailView({
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('')
   const [dayYoutubeAction, setDayYoutubeAction] = useState(null)
   const [meaningHighlightRowIds, setMeaningHighlightRowIds] = useState(() => new Set())
-  /** 표 헤더 sticky top — 실제 툴바 높이와 맞춤 (행 사이 끼어 보이는 현상 방지) */
-  const stickyToolbarRef = useRef(null)
-  const [stickyToolbarHeightPx, setStickyToolbarHeightPx] = useState(300)
 
   const { teacher, loading: teacherLoading } = useTeacher()
   const teacherId = teacher?.id
@@ -161,23 +158,6 @@ export default function WordsSetDetailView({
     const noExample = words.filter((w) => !w.example_sentence || !String(w.example_sentence).trim()).length
     return { total, noImage, noExample }
   }, [words])
-
-  useLayoutEffect(() => {
-    const el = stickyToolbarRef.current
-    if (!el || typeof ResizeObserver === 'undefined') {
-      return
-    }
-    const measure = () => {
-      window.requestAnimationFrame(() => {
-        const h = el.getBoundingClientRect().height
-        if (h > 0) setStickyToolbarHeightPx(Math.ceil(h))
-      })
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [loading, stats.total, stats.noExample, stats.noImage, dayFilter])
 
   const tableColumnPreset = useMemo(() => {
     const t = normalizeSetType(wordSet?.set_type || 'word')
@@ -761,7 +741,6 @@ export default function WordsSetDetailView({
       />
 
       <div
-        ref={stickyToolbarRef}
         style={{
           marginBottom: 16,
           padding: '16px 20px 18px',
@@ -866,8 +845,8 @@ export default function WordsSetDetailView({
             display: 'flex',
             flexWrap: 'wrap',
             alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '16px 20px',
+            justifyContent: 'flex-start',
+            gap: '14px 20px',
             paddingTop: 6,
             rowGap: 16,
           }}
@@ -891,83 +870,70 @@ export default function WordsSetDetailView({
               boxSizing: 'border-box',
             }}
           />
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              alignItems: 'center',
-              gap: '14px 22px',
-              justifyContent: 'flex-end',
-              flex: '1 1 280px',
-            }}
-          >
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ color: COLORS.textSecondary, fontSize: toolbarFilterFont, fontWeight: 700 }}>
-                Day
-              </span>
-              <select
-                value={dayFilter == null ? '' : String(dayFilter)}
-                onChange={(e) => {
-                  const v = e.target.value
-                  setDayFilter(v === '' ? null : Number(v))
-                }}
-                style={{
-                  minHeight: toolbarFilterMinH,
-                  padding: '12px 16px',
-                  borderRadius: RADIUS.sm,
-                  border: `1px solid ${COLORS.border}`,
-                  minWidth: 132,
-                  fontSize: toolbarFilterFont,
-                  fontWeight: 600,
-                  boxSizing: 'border-box',
-                  background: COLORS.bg,
-                }}
-              >
-                <option value="">전체 Day</option>
-                {daysInSelectedSet.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label
-              style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ color: COLORS.textSecondary, fontSize: toolbarFilterFont, fontWeight: 700 }}>
+              Day선택
+            </span>
+            <select
+              value={dayFilter == null ? '' : String(dayFilter)}
+              onChange={(e) => {
+                const v = e.target.value
+                setDayFilter(v === '' ? null : Number(v))
+              }}
+              style={{
+                minHeight: toolbarFilterMinH,
+                padding: '12px 16px',
+                borderRadius: RADIUS.sm,
+                border: `1px solid ${COLORS.border}`,
+                minWidth: 132,
+                fontSize: toolbarFilterFont,
+                fontWeight: 600,
+                boxSizing: 'border-box',
+                background: COLORS.bg,
+              }}
             >
-              <input
-                type="checkbox"
-                checked={emptyOnly}
-                onChange={(e) => setEmptyOnly(e.target.checked)}
-                style={{ width: 22, height: 22, flexShrink: 0, accentColor: COLORS.accentText }}
-              />
-              <span style={{ fontSize: toolbarFilterFont, color: COLORS.textPrimary, fontWeight: 700 }}>
-                빈 필드만 보기
-              </span>
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ color: COLORS.textSecondary, fontSize: toolbarFilterFont, fontWeight: 700 }}>
-                목록
-              </span>
-              <select
-                value={tableGroupMode}
-                onChange={(e) => setTableGroupMode(e.target.value)}
-                style={{
-                  minHeight: toolbarFilterMinH,
-                  padding: '12px 16px',
-                  borderRadius: RADIUS.sm,
-                  border: `1px solid ${COLORS.border}`,
-                  fontSize: toolbarFilterFont,
-                  fontWeight: 600,
-                  minWidth: 172,
-                  boxSizing: 'border-box',
-                  background: COLORS.bg,
-                }}
-              >
-                <option value="none">전체 펼침</option>
-                <option value="chunk10">10개씩 접기</option>
-              </select>
-            </label>
-          </div>
+              <option value="">전체 Day</option>
+              {daysInSelectedSet.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={emptyOnly}
+              onChange={(e) => setEmptyOnly(e.target.checked)}
+              style={{ width: 22, height: 22, flexShrink: 0, accentColor: COLORS.accentText }}
+            />
+            <span style={{ fontSize: toolbarFilterFont, color: COLORS.textPrimary, fontWeight: 700 }}>
+              빈 필드만 보기
+            </span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ color: COLORS.textSecondary, fontSize: toolbarFilterFont, fontWeight: 700 }}>
+              목록
+            </span>
+            <select
+              value={tableGroupMode}
+              onChange={(e) => setTableGroupMode(e.target.value)}
+              style={{
+                minHeight: toolbarFilterMinH,
+                padding: '12px 16px',
+                borderRadius: RADIUS.sm,
+                border: `1px solid ${COLORS.border}`,
+                fontSize: toolbarFilterFont,
+                fontWeight: 600,
+                minWidth: 172,
+                boxSizing: 'border-box',
+                background: COLORS.bg,
+              }}
+            >
+              <option value="none">전체 펼침</option>
+              <option value="chunk10">10개씩 접기</option>
+            </select>
+          </label>
         </div>
       </div>
 
@@ -1073,8 +1039,8 @@ export default function WordsSetDetailView({
             onRowDelete={handleRowDelete}
             columnPreset={tableColumnPreset}
             highlightRowIds={meaningHighlightRowIds}
-            scrollContainer="window"
-            stickyHeaderOffsetPx={stickyToolbarHeightPx}
+            scrollContainer="embedded"
+            embeddedMaxHeight="min(82vh, max(320px, calc(100dvh - 200px)))"
           />
           {loadingMore ? (
             <p style={{ margin: '10px 0 0', fontSize: 14, color: COLORS.textSecondary }}>
