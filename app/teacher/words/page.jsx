@@ -464,19 +464,20 @@ export default function WordsManagePage() {
     }
 
     if (id.startsWith('temp-')) {
+      const rowPayload = {
+        ...payload,
+        academy_id: academyId,
+        teacher_id: teacherId,
+      }
+      const dedupedPayload = Array.from(
+        new Map([rowPayload].map((p) => [`${p.set_name}|${p.word}`, p])).values(),
+      )
       const { data, error } = await supabase
         .from('words')
-        .upsert(
-          {
-            ...payload,
-            academy_id: academyId,
-            teacher_id: teacherId,
-          },
-          {
-            onConflict: 'set_name,word',
-            defaultToNull: false,
-          },
-        )
+        .upsert(dedupedPayload, {
+          onConflict: 'set_name,word',
+          defaultToNull: false,
+        })
         .select()
         .single()
       if (error) {

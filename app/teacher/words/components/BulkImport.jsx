@@ -330,7 +330,10 @@ export default function BulkImport({
         return
       }
 
-      const { error } = await supabase.from('words').upsert(payload, {
+      const dedupedPayload = Array.from(
+        new Map(payload.map((p) => [`${p.set_name}|${p.word}`, p])).values(),
+      )
+      const { error } = await supabase.from('words').upsert(dedupedPayload, {
         onConflict: 'set_name,word',
         defaultToNull: false,
       })

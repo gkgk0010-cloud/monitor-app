@@ -341,7 +341,10 @@ function CreateWordSetPageContent() {
           teacher_id: teacherId,
         }
       })
-      const { error } = await supabase.from('words').upsert(payload, {
+      const dedupedPayload = Array.from(
+        new Map(payload.map((p) => [`${p.set_name}|${p.word}`, p])).values(),
+      )
+      const { error } = await supabase.from('words').upsert(dedupedPayload, {
         onConflict: 'set_name,word',
         defaultToNull: false,
       })
@@ -352,7 +355,7 @@ function CreateWordSetPageContent() {
       setSelectedIds(new Set())
       setWorkflowModal('saved')
       setHint(
-        `${valid.length}개를 저장했습니다. 방금 저장한 행은 연한 배경으로 표시됩니다. 아래 빈 행에 이어서 입력한 뒤 다시 「DB에 저장」할 수 있어요.`,
+        `${dedupedPayload.length}개를 저장했습니다. 방금 저장한 행은 연한 배경으로 표시됩니다. 아래 빈 행에 이어서 입력한 뒤 다시 「DB에 저장」할 수 있어요.`,
       )
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e))
