@@ -155,7 +155,7 @@ function kstTodayRangeUtcIso() {
 /**
  * 학생별 루틴 요약 (활성 루틴만). 안 B: 대표 1개 + 「외 N개」
  * 카드는 student_status.student_id(= students."User ID" 등)로 조회하므로 students.id(PK)만 쓰면 루틴이 안 잡힘.
- * @returns {Promise<Record<string, { line1: string | null, lastParts: { text: string, urgent: boolean, muted: boolean } }>>}
+ * @returns {Promise<Record<string, { line1: string | null, lastParts: { text: string, urgent: boolean, muted: boolean }, lastActivityAt: string | null }>>}
  */
 export async function fetchStudentRoutineSummariesForTeacher(teacherId) {
   const empty = {};
@@ -242,7 +242,7 @@ export async function fetchStudentRoutineSummariesForTeacher(teacherId) {
     }
   }
 
-  /** @type {Record<string, { line1: string | null, lastParts: ReturnType<typeof routineLastStudyParts> }>} */
+  /** @type {Record<string, { line1: string | null, lastParts: ReturnType<typeof routineLastStudyParts>, lastActivityAt: string | null }>} */
   const out = {};
 
   for (const displayKey of displayKeys) {
@@ -256,6 +256,7 @@ export async function fetchStudentRoutineSummariesForTeacher(teacherId) {
       out[displayKey] = {
         line1: null,
         lastParts: routineLastStudyParts(null),
+        lastActivityAt: null,
       };
       continue;
     }
@@ -276,6 +277,7 @@ export async function fetchStudentRoutineSummariesForTeacher(teacherId) {
     out[displayKey] = {
       line1,
       lastParts: routineLastStudyParts(rep.last_activity_at),
+      lastActivityAt: rep.last_activity_at != null ? String(rep.last_activity_at) : null,
     };
   }
 

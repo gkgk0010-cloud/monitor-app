@@ -240,6 +240,26 @@ function routineCompletedYmdKst(val) {
 }
 
 /**
+ * 카드 텍스트용: 불빛 상태와 동일 출처로 「마지막 학습(루틴)」 문구를 맞춤.
+ * - 오늘 DAY 완료(파랑): DB 기준 last_activity_at 일수로 표시
+ * - 오늘 루틴 일부만(흰색): routine_completions 등으로만 잡힌 경우 「오늘 · 루틴 일부 진행」
+ */
+function mergeRoutineLastPartsForGeneral(lightSt, summaryLastActivityAt) {
+  if (lightSt == null) {
+    return routineLastStudyParts(summaryLastActivityAt);
+  }
+  const today = kstYmdToday();
+  const completedYmd = routineCompletedYmdKst(lightSt.last_completed_date);
+  if (completedYmd && completedYmd === today) {
+    return routineLastStudyParts(lightSt.last_activity_at || summaryLastActivityAt);
+  }
+  if (lightSt.hasRoutineAttemptToday) {
+    return { text: '오늘 · 루틴 일부 진행', urgent: false, muted: false };
+  }
+  return routineLastStudyParts(summaryLastActivityAt ?? lightSt.last_activity_at);
+}
+
+/**
  * teaching_type=general: 활성 루틴 행 기준 (최신 last_activity_at 1행).
  * last_answer_result 는 사용하지 않음.
  */
@@ -351,9 +371,17 @@ function getKakaoMent(row, style) {
 
 /** 실시간 사건 기록 한 행 → 그 로그에 맞는 카톡 개별멘트 (학생명 자동 반영) */
 /** student_id → 루틴 요약 (카드용) */
-function MonitorRoutineLines({ studentId, map, compact }) {
-  const s = map[String(studentId)] ?? { line1: null, lastParts: routineLastStudyParts(null) };
-  const { line1, lastParts } = s;
+function MonitorRoutineLines({ studentId, map, lightByStudentId, teachingType, compact }) {
+  const sid = normalizeReportStudentId(studentId);
+  const s = map[sid] ?? {
+    line1: null,
+    lastParts: routineLastStudyParts(null),
+    lastActivityAt: null,
+  };
+  const { line1, lastActivityAt } = s;
+  const isGeneral = (teachingType || '').toLowerCase() === 'general';
+  const lightSt = isGeneral && lightByStudentId ? lightByStudentId[sid] : undefined;
+  const lastParts = isGeneral ? mergeRoutineLastPartsForGeneral(lightSt, lastActivityAt) : s.lastParts;
   const color = lastParts.muted ? '#94a3b8' : lastParts.urgent ? '#dc2626' : '#6b7280';
   return (
     <div style={{ marginTop: compact ? 4 : 6, marginBottom: compact ? 2 : 4 }}>
@@ -960,7 +988,7 @@ export default function TeacherMonitorPage() {
           </div>
           <p style={{ marginTop: -8, marginBottom: 12, fontSize: 13, color: 'var(--muted)', fontWeight: 500 }}>
             {(teacher?.teaching_type || '').toLowerCase() === 'general'
-              ? '최근에 학습한 사람이 맨 위. 파란=오늘 DAY 완료 · 흰색=오늘 진행 중 · 빨강=오늘 미시작 · 회색=루틴 없음'
+              ? '최근에 학습한 사람이 맨 위. 불빛·「마지막 학습(루틴)」= 루틴 DB 기준 · 카드 시각=앱 접속(student_status). 파랑=오늘 DAY 완료 · 흰색=오늘 루틴 진행(일부 포함) · 빨강=오늘 루틴 미시작 · 회색=루틴 없음'
               : '최근에 문제 푼 사람이 맨 위. 문제 풀면 위로 올라오고, 31번째는 안전 보관함으로 내려감 · 정답=파란불 / 오답=빨간불'}
           </p>
           <div className="monitor-card-grid" style={styles.cardGrid}>
@@ -990,8 +1018,33 @@ export default function TeacherMonitorPage() {
                       <span className="monitor-badge" style={{ ...styles.badge, background: light.badge }}>{light.label}</span>
                     </div>
                   </div>
-                  <MonitorRoutineLines studentId={row.student_id} map={routineSummaries} />
-                  {row.last_active != null && <div className="monitor-card-time" style={styles.cardTime} title="마지막 활동 시각 (한국시간)">{formatActive(row.last_active)}</div>}
+                  <MonitorRoutineLines
+                    studentId={row.student_id}
+                    map={routineSummaries}
+                    lightByStudentId={routineLightByStudentId}
+                    teachingType={teacher?.teaching_type}
+                  />
+                  {(teacher?.teaching_type || '').toLowerCase() === 'general' &&
+                    light.label === '미시작' &&
+                    row.last_active != null &&
+                    isTodayKorea(row.last_active) && (
+                    <div style={{ fontSize: 10, color: '#92400e', marginTop: 4, lineHeight: 1.35, fontWeight: 500 }}>
+                      앱·접속은 오늘인데 루틴 완료 기록은 아직 없음
+                    </div>
+                  )}
+                  {row.last_active != null && (
+                    <div
+                      className="monitor-card-time"
+                      style={styles.cardTime}
+                      title={
+                        (teacher?.teaching_type || '').toLowerCase() === 'general'
+                          ? '앱·접속 등 student_status 기준 (루틴 마지막 활동과 다를 수 있음)'
+                          : '마지막 활동 시각 (한국시간)'
+                      }
+                    >
+                      {formatActive(row.last_active)}
+                    </div>
+                  )}
                   <div className="monitor-card-info" style={styles.cardInfo}>
                     {(teacher?.teaching_type || '').toLowerCase() === 'general' ? (
                       <>
@@ -1052,7 +1105,13 @@ export default function TeacherMonitorPage() {
                       <span style={{ ...styles.badgeSmall, background: s.badge }}>{s.label}</span>
                       {row.last_active != null && <span style={styles.safeItemTime}>{formatActive(row.last_active)}</span>}
                     </div>
-                    <MonitorRoutineLines studentId={row.student_id} map={routineSummaries} compact />
+                    <MonitorRoutineLines
+                      studentId={row.student_id}
+                      map={routineSummaries}
+                      lightByStudentId={routineLightByStudentId}
+                      teachingType={teacher?.teaching_type}
+                      compact
+                    />
                   </div>
                 );
               })}
@@ -1079,7 +1138,13 @@ export default function TeacherMonitorPage() {
                       <span style={{ ...styles.badgeSmall, background: s.badge }}>{s.label}</span>
                       {row.last_active != null && <span style={styles.safeItemTime}>{formatActive(row.last_active)}</span>}
                     </div>
-                    <MonitorRoutineLines studentId={row.student_id} map={routineSummaries} compact />
+                    <MonitorRoutineLines
+                      studentId={row.student_id}
+                      map={routineSummaries}
+                      lightByStudentId={routineLightByStudentId}
+                      teachingType={teacher?.teaching_type}
+                      compact
+                    />
                   </div>
                 );
               })}
