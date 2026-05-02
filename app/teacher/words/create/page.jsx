@@ -20,6 +20,48 @@ import {
 import { assignDaysEqual, assignDaysChunk, assignDaysFromManualCounts } from '../utils/dayAssign'
 import WorkflowSuccessModal from '../components/WorkflowSuccessModal'
 import WordAddedDaySplitModal from '../components/WordAddedDaySplitModal'
+import { initModesStateForType, buildAvailableModesJson, normalizeSetType } from '../utils/learningModes'
+import { showToast } from '@/utils/toastBus'
+
+async function ensureWordSetIdForCreate(teacherId, setName, createSetType) {
+  const sn = String(setName || '').trim()
+  if (!teacherId || !sn) throw new Error('세트 이름과 선생님 정보가 필요합니다.')
+  const st = normalizeSetType(createSetType)
+  const { data: existing, error: selErr } = await supabase
+    .from('word_sets')
+    .select('id')
+    .eq('teacher_id', teacherId)
+    .eq('name', sn)
+    .maybeSingle()
+  if (selErr) throw selErr
+  if (existing?.id) return String(existing.id)
+
+  const init = initModesStateForType(st)
+  const available_modes = buildAvailableModesJson(init.modes, init.requiredByMode, init.passScore, init.maxAttempts)
+  const { data, error } = await supabase
+    .from('word_sets')
+    .insert({
+      teacher_id: teacherId,
+      name: sn,
+      set_type: st,
+      available_modes,
+    })
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    const { data: again } = await supabase
+      .from('word_sets')
+      .select('id')
+      .eq('teacher_id', teacherId)
+      .eq('name', sn)
+      .maybeSingle()
+    if (again?.id) return String(again.id)
+    throw error
+  }
+  if (!data?.id) throw new Error('word_sets id를 받지 못했습니다.')
+  return String(data.id)
+}
 
 const SET_TYPE_LABELS = {
   word: '단어 세트',
@@ -54,7 +96,7 @@ function CreateWordSetPageContent() {
   const queryAppliedRef = useRef(false)
   const skipWordsGuideEffectRef = useRef(false)
   const prevValidWordCountRef = useRef(0)
-  /** 'words' | 'day' | 'saved' | null */
+  /** 'words' | 'day' | null */
   const [workflowModal, setWorkflowModal] = useState(null)
   /** applyDayPreview 성공 시 unique day 수 (모달 문구) */
   const [daySplitCount, setDaySplitCount] = useState(0)
@@ -471,15 +513,22 @@ function CreateWordSetPageContent() {
         defaultToNull: false,
       })
       if (error) throw error
-      const savedMarked = candidates.map((r) => ({ ...r, _localSaved: true }))
-      const tail = [emptyRow(sn), emptyRow(sn), emptyRow(sn)]
-      setRows([...savedMarked, ...tail])
-      setSelectedIds(new Set())
-      setWorkflowModal('saved')
-      setMeaningHighlightRowIds(new Set())
-      setHint(
-        `${dedupedPayload.length}개를 저장했습니다. 방금 저장한 행은 연한 배경으로 표시됩니다. 아래 빈 행에 이어서 입력한 뒤 다시 「DB에 저장」할 수 있어요.`,
-      )
+      let wid
+      try {
+        wid = await ensureWordSetIdForCreate(teacherId, sn, createSetType)
+      } catch (e2) {
+        console.warn('[word_sets]', e2)
+        showToast(
+          '단어는 저장됐지만 세트 정보(word_sets)를 만들지 못했습니다. 세트 목록에서 확인해 주세요.',
+          'error',
+          5500,
+        )
+        router.push('/teacher/words')
+        return
+      }
+      showToast(`${dedupedPayload.length}개를 저장했습니다. 세트 상세로 이동합니다.`, 'success', 2800)
+      setWorkflowModal(null)
+      router.push(`/teacher/words/${wid}`)
     } catch (e) {
       alert(formatSupabaseWordsSaveError(e))
     } finally {
@@ -1158,23 +1207,6 @@ function CreateWordSetPageContent() {
           void saveAll()
         }}
         secondaryLabel="미리보기 계속 보기"
-      />
-
-      <WorkflowSuccessModal
-        open={workflowModal === 'saved'}
-        onClose={() => setWorkflowModal(null)}
-        title="✓ 저장 완료!"
-        nextStepDescription="단어 관리로 돌아가서 학생들이 학습할 루틴을 설정해주세요."
-        primaryLabel="루틴 관리로 이동"
-        onPrimary={() => {
-          setWorkflowModal(null)
-          router.push('/teacher/words#routine-settings')
-        }}
-        secondaryLabel="단어 관리로 돌아가기"
-        onSecondary={() => {
-          setWorkflowModal(null)
-          router.push('/teacher/words')
-        }}
       />
     </div>
   )

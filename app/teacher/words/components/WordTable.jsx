@@ -129,6 +129,8 @@ function DraftDayInput({ rowId, value, cellDraftsRef, onCommit, style }) {
  *   columnPreset?: 'classic' | 'word' | 'sentence' | 'image'
  *   getRowBackground?: (row: Record<string, unknown>) => string | undefined
  *   highlightRowIds?: Set<string> | string[]
+ *   scrollContainer?: 'embedded' | 'window'
+ *   stickyHeaderOffsetPx?: number
  * }} props
  */
 function WordTable({
@@ -149,6 +151,8 @@ function WordTable({
   columnPreset = 'classic',
   getRowBackground,
   highlightRowIds,
+  scrollContainer = 'embedded',
+  stickyHeaderOffsetPx = 0,
 }) {
   const isSentence = columnPreset === 'sentence'
   const isImage = columnPreset === 'image'
@@ -385,7 +389,10 @@ function WordTable({
 
   const rowVirtualizer = useVirtualizer({
     count: flatItems.length,
-    getScrollElement: () => scrollParentRef.current,
+    getScrollElement: () =>
+      scrollContainer === 'window' && typeof document !== 'undefined'
+        ? document.documentElement
+        : scrollParentRef.current,
     estimateSize: (index) => (flatItems[index]?.type === 'section' ? 46 : 96),
     overscan: 20,
   })
@@ -625,10 +632,14 @@ function WordTable({
       }}
     >
       <div
-        ref={scrollParentRef}
+        ref={scrollContainer === 'embedded' ? scrollParentRef : undefined}
         style={{
-          maxHeight: 'min(72vh, calc(100vh - 240px))',
-          overflow: 'auto',
+          ...(scrollContainer === 'embedded'
+            ? {
+                maxHeight: 'min(72vh, calc(100vh - 240px))',
+                overflow: 'auto',
+              }
+            : { overflow: 'visible' }),
           width: '100%',
         }}
       >
@@ -646,7 +657,7 @@ function WordTable({
               display: 'grid',
               gridTemplateColumns: wordTableGrid,
               position: 'sticky',
-              top: 0,
+              top: scrollContainer === 'window' ? stickyHeaderOffsetPx : 0,
               zIndex: 8,
               background: COLORS.primarySoft,
               borderBottom: `1px solid ${COLORS.border}`,
