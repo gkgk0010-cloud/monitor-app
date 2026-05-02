@@ -97,14 +97,22 @@ export function routineLastStudyParts(iso) {
   if (iso == null || iso === '') {
     return { text: '시작 안 함', urgent: false, muted: true };
   }
-  const d = new Date(iso);
+  const s = String(iso).trim();
+  let d;
+  if (/Z|[+-]\d{2}:?\d{2}$/.test(s)) {
+    d = new Date(s);
+  } else {
+    const t = s.replace(/\s+/, 'T');
+    const withT = t.includes('T') ? t : `${t}T00:00:00`;
+    d = new Date(`${withT}+09:00`);
+  }
   if (Number.isNaN(d.getTime())) {
     return { text: '시작 안 함', urgent: false, muted: true };
   }
   const actYmd = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
   const todayYmd = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-  const tAct = Date.parse(`${actYmd}T12:00:00`);
-  const tToday = Date.parse(`${todayYmd}T12:00:00`);
+  const tAct = Date.parse(`${actYmd}T12:00:00+09:00`);
+  const tToday = Date.parse(`${todayYmd}T12:00:00+09:00`);
   const diffDays = Math.round((tToday - tAct) / 86400000);
   if (diffDays <= 0) return { text: '오늘', urgent: false, muted: false };
   if (diffDays === 1) return { text: '어제', urgent: false, muted: false };
@@ -127,6 +135,21 @@ function normalizeMonitorStudentKey(raw) {
   return String(raw ?? '')
     .replace(/\s+/g, '')
     .trim();
+}
+
+/** KST 달력 "오늘"에 해당하는 completed_at(timestamptz) 구간 (UTC ISO) */
+function kstTodayRangeUtcIso() {
+  const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  const kstNow = new Date(Date.now() + KST_OFFSET_MS);
+  const y = kstNow.getUTCFullYear();
+  const m = kstNow.getUTCMonth();
+  const d = kstNow.getUTCDate();
+  const startUtcMs = Date.UTC(y, m, d, 0, 0, 0, 0) - KST_OFFSET_MS;
+  const endUtcMs = Date.UTC(y, m, d, 23, 59, 59, 999) - KST_OFFSET_MS;
+  return {
+    startIso: new Date(startUtcMs).toISOString(),
+    endIso: new Date(endUtcMs).toISOString(),
+  };
 }
 
 /**
@@ -261,9 +284,10 @@ export async function fetchStudentRoutineSummariesForTeacher(teacherId) {
 
 /**
  * general 학원 집중관리존 카드 불빛용: 학생당 활성 루틴 중 `last_activity_at` 최신 1행의
- * `last_completed_date` · `last_activity_at`
+ * `last_completed_date` · `last_activity_at` · 오늘(KST) 루틴 시도 여부
+ * (`routine_completions`가 오늘 KST에 찍힌 행이 하나라도 있으면 시도 — completed_at·updated_at·created_at 중 하나로 판단)
  * (student_status.student_id / User ID 키와 동일 규칙으로 맵핑)
- * @returns {Promise<Record<string, { last_completed_date: string | null, last_activity_at: string | null } | null>>}
+ * @returns {Promise<Record<string, { last_completed_date: string | null, last_activity_at: string | null, hasRoutineAttemptToday: boolean } | null>>}
  */
 export async function fetchStudentRoutineLightStateForTeacher(teacherId) {
   const empty = {};
@@ -296,6 +320,48 @@ export async function fetchStudentRoutineLightStateForTeacher(teacherId) {
 
   const ids = [...idQuerySet];
   if (ids.length === 0) return empty;
+
+  const { startIso, endIso } = kstTodayRangeUtcIso();
+  /** 오늘(KST)에 routine_completions 행이 하나라도 관련된 student_id (completed_at 없는 폴백·updated_at만 갱신 포함) */
+  const completionTodaySet = new Set();
+  const addCompletionStudentIds = (rows) => {
+    for (const r of rows || []) {
+      const sid = r.student_id != null ? normalizeMonitorStudentKey(r.student_id) : '';
+      if (sid) completionTodaySet.add(sid);
+    }
+  };
+  const ignoreMissingColumn = (msg) =>
+    /column|does not exist|Could not find/i.test(String(msg || ''));
+
+  let { data: compByCompletedAt, error: errCa } = await supabase
+    .from('routine_completions')
+    .select('student_id')
+    .in('student_id', ids)
+    .gte('completed_at', startIso)
+    .lte('completed_at', endIso);
+  if (errCa) {
+    console.warn('[teacherQueries] routine_completions(completed_at 오늘 KST) 조회 실패:', errCa.message);
+  } else addCompletionStudentIds(compByCompletedAt);
+
+  let { data: compByUpdatedAt, error: errUa } = await supabase
+    .from('routine_completions')
+    .select('student_id')
+    .in('student_id', ids)
+    .gte('updated_at', startIso)
+    .lte('updated_at', endIso);
+  if (errUa && !ignoreMissingColumn(errUa.message)) {
+    console.warn('[teacherQueries] routine_completions(updated_at 오늘 KST) 조회 실패:', errUa.message);
+  } else if (!errUa) addCompletionStudentIds(compByUpdatedAt);
+
+  let { data: compByCreatedAt, error: errCr } = await supabase
+    .from('routine_completions')
+    .select('student_id')
+    .in('student_id', ids)
+    .gte('created_at', startIso)
+    .lte('created_at', endIso);
+  if (errCr && !ignoreMissingColumn(errCr.message)) {
+    console.warn('[teacherQueries] routine_completions(created_at 오늘 KST) 조회 실패:', errCr.message);
+  } else if (!errCr) addCompletionStudentIds(compByCreatedAt);
 
   const selectCols = `
     student_id,
@@ -345,7 +411,7 @@ export async function fetchStudentRoutineLightStateForTeacher(teacherId) {
     }
   }
 
-  /** @type {Record<string, { last_completed_date: string | null, last_activity_at: string | null } | null>} */
+  /** @type {Record<string, { last_completed_date: string | null, last_activity_at: string | null, hasRoutineAttemptToday: boolean } | null>} */
   const out = {};
 
   for (const displayKey of displayKeys) {
@@ -367,9 +433,13 @@ export async function fetchStudentRoutineLightStateForTeacher(teacherId) {
     });
 
     const rep = list[0];
+    const altPkForComp = pkWhenCanonicalIsUid.get(displayKey);
+    const hasRoutineAttemptToday =
+      completionTodaySet.has(displayKey) || (altPkForComp ? completionTodaySet.has(altPkForComp) : false);
     out[displayKey] = {
       last_completed_date: rep.last_completed_date != null ? String(rep.last_completed_date) : null,
       last_activity_at: rep.last_activity_at != null ? String(rep.last_activity_at) : null,
+      hasRoutineAttemptToday,
     };
   }
 

@@ -159,12 +159,9 @@ function formatLogDateAndTime(ts) {
 function isTodayKorea(ts) {
   if (!ts) return false;
   try {
-    const d = toUTCThenKorea(ts);
-    if (!d || isNaN(d.getTime())) return false;
-    const opt = { timeZone: 'Asia/Seoul' };
-    const dStr = d.toLocaleDateString('ko-KR', opt);
-    const nowStr = new Date().toLocaleDateString('ko-KR', opt);
-    return dStr === nowStr;
+    const ymd = getKstDateString(ts);
+    if (!ymd) return false;
+    return ymd === kstYmdToday();
   } catch {
     return false;
   }
@@ -270,8 +267,11 @@ function getGeneralRoutineLightStyle(row, routineLightMap) {
     };
   }
 
-  const actToday = Boolean(st.last_activity_at && isTodayKorea(st.last_activity_at));
-  if (actToday && completedYmd !== today) {
+  /** 오늘 KST 부분 시도: 활동 시각 또는 routine_completions(오늘 찍힘) */
+  const attemptToday =
+    Boolean(st.last_activity_at && isTodayKorea(st.last_activity_at)) ||
+    Boolean(st.hasRoutineAttemptToday);
+  if (attemptToday) {
     return {
       border: 'rgba(255,255,255,0.6)',
       bg: 'rgba(255, 255, 255, 0.92)',
