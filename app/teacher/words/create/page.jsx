@@ -404,10 +404,6 @@ function CreateWordSetPageContent() {
       alert('세트 이름을 입력하세요.')
       return
     }
-    if (!hasDayPreview) {
-      alert('먼저 「Day 미리보기」로 day를 배정하세요.')
-      return
-    }
     const candidates = rows.filter((r) => isRowSaveCandidateForCreate(r))
     if (candidates.length === 0) {
       alert(
@@ -430,6 +426,13 @@ function CreateWordSetPageContent() {
     if (badMeaning.length > 0) {
       setMeaningHighlightRowIds(new Set(badMeaning.map((x) => x.id)))
       alert(formatEmptyMeaningAlert(badMeaning))
+      return
+    }
+    const needsDaySplitModal =
+      !hasDayPreview ||
+      (isSentenceStyleCreate && candidates.some((r) => rowDayNumberForBulk(r) < 1))
+    if (needsDaySplitModal) {
+      setWorkflowModal('words')
       return
     }
     setSaving(true)

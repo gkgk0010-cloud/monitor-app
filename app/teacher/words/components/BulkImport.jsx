@@ -27,18 +27,13 @@ const EXCEL_FILE_NAMES = {
 
 /**
  * @param {'word' | 'sentence'} t
- * @param {{ excelDayColumn?: boolean } | undefined} opts
+ * @param {{ excelDayColumn?: boolean } | undefined} _opts
  */
-function isPreviewRowSaveCandidate(r, t, opts) {
+function isPreviewRowSaveCandidate(r, t, _opts) {
   const w = String(r.word || '').trim()
   const ex = String(r.example_sentence || '').trim()
   if (t === 'sentence') {
-    if (!ex) return false
-    if (opts?.excelDayColumn) {
-      const dn = Math.max(0, parseInt(String(r.day ?? 0), 10) || 0)
-      if (dn < 1) return false
-    }
-    return true
+    return Boolean(ex)
   }
   return Boolean(w)
 }
@@ -252,25 +247,20 @@ export default function BulkImport({
   const validOpts = { excelDayColumn: excelDayColumnInSheet }
 
   const handleSave = async () => {
-    if (setType === 'sentence' && excelDayColumnInSheet) {
-      const bad = previewRows.filter((r) => {
-        const ex = String(r.example_sentence || '').trim()
-        if (!ex || meaningIsMissing(r.meaning)) return false
-        const dn = Math.max(0, parseInt(String(r.day ?? 0), 10) || 0)
-        return dn < 1
-      })
-      if (bad.length > 0) {
-        alert(
-          `${bad.length}개 행에 day가 비어있어요. 문장/스피킹 세트는 day를 필수로 입력해야 합니다.`,
-        )
-        return
+    const dayForPayload = (r) => {
+      const pd = parseInt(String(r.day ?? ''), 10)
+      if (setType === 'sentence') {
+        if (Number.isFinite(pd) && pd >= 1) return pd
+        return localOnly ? 0 : Math.max(1, parseInt(String(day), 10) || 1)
       }
+      return Math.max(1, parseInt(String(r.day ?? day), 10) || 1)
     }
+
     const candidates = previewRows.filter((r) => isPreviewRowSaveCandidate(r, setType, validOpts))
     if (candidates.length === 0) {
       alert(
         setType === 'sentence'
-          ? '저장할 행이 없습니다. 예문을 입력했는지, day가 비어 있지 않은지 확인하세요.'
+          ? '저장할 행이 없습니다. 예문·뜻을 확인하세요.'
           : '저장할 단어가 없습니다. 단어 칸을 확인하세요.',
       )
       return
@@ -314,7 +304,7 @@ export default function BulkImport({
           meaning: String(r.meaning ?? '').trim(),
           example_sentence: ex || null,
           set_name: String(r.set_name || setName).trim() || trimmedSet,
-          day: Math.max(1, parseInt(String(r.day ?? day), 10) || 1),
+          day: dayForPayload(r),
           difficulty: normalizeWordDifficulty(r.difficulty),
           image_url: r.image_url ? String(r.image_url) : null,
           image_source: r.image_url ? (r.image_source || 'upload') : 'none',
