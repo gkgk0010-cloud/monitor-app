@@ -16,6 +16,12 @@ import SetSettingsModal from './components/SetSettingsModal'
 import { normalizeWordDifficulty } from './utils/parsers'
 import { filterWordRows } from './utils/wordFilters'
 import { formatAvailableModesSummary, normalizeSetType } from './utils/learningModes'
+import {
+  meaningIsMissing,
+  wordLabelForMeaningAlert,
+  formatEmptyMeaningAlert,
+  formatSupabaseWordsSaveError,
+} from './utils/wordMeaningGuard'
 import { showToast } from '@/utils/toastBus'
 
 export default function WordsManagePage() {
@@ -44,6 +50,8 @@ export default function WordsManagePage() {
   const [dayYoutubeAction, setDayYoutubeAction] = useState(null)
   /** 선생(학원) 초대 코드 블록 펼침 */
   const [invitePanelOpen, setInvitePanelOpen] = useState(false)
+  /** 뜻 누락/오류 저장 시 행 강조 (표시 row 기준 안내와 함께) */
+  const [meaningHighlightRowIds, setMeaningHighlightRowIds] = useState(() => new Set())
 
   const { teacher, loading: teacherLoading } = useTeacher()
   const teacherId = teacher?.id
@@ -442,14 +450,37 @@ export default function WordsManagePage() {
     const sn = String(row.set_name || '').trim() || String(setFilter || '').trim() || '토익 기본 단어'
     const st = normalizeSetType(setTypeByName[sn] || 'word')
     let word = String(row.word || '').trim()
-    const meaning = String(row.meaning || '').trim()
     const ex = String(row.example_sentence || '').trim()
-    if (st === 'sentence_writing' || st === 'sentence_speaking') {
-      if (!ex || !meaning) return
+    const sentenceStyle = st === 'sentence_writing' || st === 'sentence_speaking'
+
+    if (sentenceStyle) {
+      if (!ex) return
       if (!word) word = ex.length > 300 ? ex.slice(0, 300) : ex
-    } else if (!word || !meaning) {
+    } else if (!word) {
       return
     }
+
+    if (meaningIsMissing(row.meaning)) {
+      const vis = filteredRef.current
+      const idx = vis.findIndex((r) => String(r.id) === id)
+      const rowNum =
+        idx >= 0
+          ? idx + 1
+          : (() => {
+              const j = wordsRef.current.findIndex((r) => String(r.id) === id)
+              return j >= 0 ? j + 1 : 1
+            })()
+      setMeaningHighlightRowIds((prev) => new Set([...prev, id]))
+      alert(
+        formatEmptyMeaningAlert([
+          { row: rowNum, label: wordLabelForMeaningAlert(row, { sentenceStyle }) },
+        ]),
+      )
+      flashRowSaveToast(false)
+      return
+    }
+
+    const meaning = String(row.meaning ?? '').trim()
 
     const payload = {
       word,
@@ -483,8 +514,14 @@ export default function WordsManagePage() {
       if (error) {
         console.warn(error)
         flashRowSaveToast(false)
+        alert(formatSupabaseWordsSaveError(error))
         return
       }
+      setMeaningHighlightRowIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
       setWords((prev) => prev.map((r) => (String(r.id) === id ? data : r)))
       flashRowSaveToast(true)
     } else {
@@ -492,8 +529,14 @@ export default function WordsManagePage() {
       if (error) {
         console.warn(error)
         flashRowSaveToast(false)
+        alert(formatSupabaseWordsSaveError(error))
         return
       }
+      setMeaningHighlightRowIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
       flashRowSaveToast(true)
     }
   }, [teacherId, academyId, flashRowSaveToast, setTypeByName, setFilter])
@@ -1304,6 +1347,7 @@ export default function WordsManagePage() {
               showDeleteColumn
               onRowDelete={handleRowDelete}
               columnPreset={tableColumnPreset}
+              highlightRowIds={meaningHighlightRowIds}
             />
             {loadingMore ? (
               <p style={{ margin: '10px 0 0', fontSize: 13, color: COLORS.textSecondary }}>

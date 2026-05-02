@@ -5,6 +5,12 @@ import * as XLSX from 'xlsx'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import { parseWordText, normalizeWordDifficulty } from '../utils/parsers'
+import {
+  meaningIsMissing,
+  wordLabelForMeaningAlert,
+  formatEmptyMeaningAlert,
+  formatSupabaseWordsSaveError,
+} from '../utils/wordMeaningGuard'
 import WordTable from './WordTable'
 import AutoFillPanel from './AutoFillPanel'
 
@@ -25,17 +31,16 @@ const EXCEL_FILE_NAMES = {
  */
 function isPreviewRowValidForSetType(r, t, opts) {
   const w = String(r.word || '').trim()
-  const m = String(r.meaning || '').trim()
   const ex = String(r.example_sentence || '').trim()
   if (t === 'sentence') {
-    if (!ex || !m) return false
+    if (!ex || meaningIsMissing(r.meaning)) return false
     if (opts?.excelDayColumn) {
       const dn = Math.max(0, parseInt(String(r.day ?? 0), 10) || 0)
       if (dn < 1) return false
     }
     return true
   }
-  if (!w || !m) return false
+  if (!w || meaningIsMissing(r.meaning)) return false
   return true
 }
 
@@ -247,8 +252,7 @@ export default function BulkImport({
     if (setType === 'sentence' && excelDayColumnInSheet) {
       const bad = previewRows.filter((r) => {
         const ex = String(r.example_sentence || '').trim()
-        const m = String(r.meaning || '').trim()
-        if (!ex || !m) return false
+        if (!ex || meaningIsMissing(r.meaning)) return false
         const dn = Math.max(0, parseInt(String(r.day ?? 0), 10) || 0)
         return dn < 1
       })
@@ -291,7 +295,7 @@ export default function BulkImport({
             : null
         return {
           word,
-          meaning: String(r.meaning).trim(),
+          meaning: String(r.meaning ?? '').trim(),
           example_sentence: ex || null,
           set_name: String(r.set_name || setName).trim() || trimmedSet,
           day: Math.max(1, parseInt(String(r.day ?? day), 10) || 1),
@@ -303,6 +307,21 @@ export default function BulkImport({
           teacher_id: teacherId,
         }
       })
+
+      const badMeaning = []
+      payload.forEach((p, i) => {
+        if (!meaningIsMissing(p.meaning)) return
+        const r = valid[i]
+        const idx = previewRows.findIndex((x) => String(x.id) === String(r.id))
+        badMeaning.push({
+          row: idx >= 0 ? idx + 1 : i + 1,
+          label: wordLabelForMeaningAlert(r, { sentenceStyle: setType === 'sentence' }),
+        })
+      })
+      if (badMeaning.length > 0) {
+        alert(formatEmptyMeaningAlert(badMeaning))
+        return
+      }
 
       if (localOnly && onLocalImported) {
         const stamp = Date.now()
@@ -346,7 +365,7 @@ export default function BulkImport({
       setCsvText('')
     } catch (e) {
       console.warn(e)
-      alert(`저장 실패: ${e.message || e}`)
+      alert(formatSupabaseWordsSaveError(e))
     } finally {
       setSaving(false)
     }

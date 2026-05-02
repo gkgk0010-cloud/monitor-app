@@ -11,6 +11,12 @@ import WordTable from '../components/WordTable'
 import BulkImport from '../components/BulkImport'
 import AutoFillPanel from '../components/AutoFillPanel'
 import { normalizeWordDifficulty } from '../utils/parsers'
+import {
+  meaningIsMissing,
+  wordLabelForMeaningAlert,
+  formatEmptyMeaningAlert,
+  formatSupabaseWordsSaveError,
+} from '../utils/wordMeaningGuard'
 import { assignDaysEqual, assignDaysChunk, assignDaysFromManualCounts } from '../utils/dayAssign'
 import WorkflowSuccessModal from '../components/WorkflowSuccessModal'
 import WordAddedDaySplitModal from '../components/WordAddedDaySplitModal'
@@ -64,6 +70,8 @@ function CreateWordSetPageContent() {
   const [dayYoutubeByDay, setDayYoutubeByDay] = useState(() => ({}))
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState(null)
+  /** 뜻 검증 실패 행 — WordTable 빨간 강조 */
+  const [meaningHighlightRowIds, setMeaningHighlightRowIds] = useState(() => new Set())
   /** none | day | chunk10 | day_chunk */
   const [tableGroupMode, setTableGroupMode] = useState('chunk10')
 
@@ -91,10 +99,9 @@ function CreateWordSetPageContent() {
   const isRowValidForCreate = useCallback(
     (r) => {
       const w = String(r.word || '').trim()
-      const m = String(r.meaning || '').trim()
       const ex = String(r.example_sentence || '').trim()
-      if (isSentenceStyleCreate) return Boolean(ex && m)
-      return Boolean(w && m)
+      if (isSentenceStyleCreate) return Boolean(ex && !meaningIsMissing(r.meaning))
+      return Boolean(w && !meaningIsMissing(r.meaning))
     },
     [isSentenceStyleCreate],
   )
@@ -329,7 +336,7 @@ function CreateWordSetPageContent() {
         const yt = (fromDayMap || fromRow) || null
         return {
           word,
-          meaning: String(r.meaning).trim(),
+          meaning: String(r.meaning ?? '').trim(),
           example_sentence: ex || null,
           set_name: sn,
           day: Math.max(1, parseInt(String(r.day ?? 1), 10) || 1),
@@ -341,6 +348,23 @@ function CreateWordSetPageContent() {
           teacher_id: teacherId,
         }
       })
+      const badMeaning = []
+      payload.forEach((p, i) => {
+        if (!meaningIsMissing(p.meaning)) return
+        const r = valid[i]
+        const idx = rows.findIndex((x) => String(x.id) === String(r.id))
+        badMeaning.push({
+          row: idx >= 0 ? idx + 1 : i + 1,
+          id: String(r.id),
+          label: wordLabelForMeaningAlert(r, { sentenceStyle: isSentenceStyleCreate }),
+        })
+      })
+      if (badMeaning.length > 0) {
+        setMeaningHighlightRowIds(new Set(badMeaning.map((x) => x.id)))
+        alert(formatEmptyMeaningAlert(badMeaning))
+        return
+      }
+      setMeaningHighlightRowIds(new Set())
       const dedupedPayload = Array.from(
         new Map(payload.map((p) => [`${p.set_name}|${p.day}|${p.word}`, p])).values(),
       )
@@ -354,11 +378,12 @@ function CreateWordSetPageContent() {
       setRows([...savedMarked, ...tail])
       setSelectedIds(new Set())
       setWorkflowModal('saved')
+      setMeaningHighlightRowIds(new Set())
       setHint(
         `${dedupedPayload.length}개를 저장했습니다. 방금 저장한 행은 연한 배경으로 표시됩니다. 아래 빈 행에 이어서 입력한 뒤 다시 「DB에 저장」할 수 있어요.`,
       )
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e))
+      alert(formatSupabaseWordsSaveError(e))
     } finally {
       setSaving(false)
     }
@@ -812,6 +837,7 @@ function CreateWordSetPageContent() {
           rowGroupMode={effectiveGroupMode}
           columnPreset={wordTableColumnPreset}
           getRowBackground={(row) => (row._localSaved ? 'rgba(16, 185, 129, 0.11)' : undefined)}
+          highlightRowIds={meaningHighlightRowIds}
         />
 
         <AutoFillPanel rows={autoFillRows} onFilled={handleAutoFilled} />

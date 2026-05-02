@@ -128,6 +128,7 @@ function DraftDayInput({ rowId, value, cellDraftsRef, onCommit, style }) {
  *   chunkSize?: number
  *   columnPreset?: 'classic' | 'word' | 'sentence' | 'image'
  *   getRowBackground?: (row: Record<string, unknown>) => string | undefined
+ *   highlightRowIds?: Set<string> | string[]
  * }} props
  */
 function WordTable({
@@ -147,6 +148,7 @@ function WordTable({
   chunkSize = 10,
   columnPreset = 'classic',
   getRowBackground,
+  highlightRowIds,
 }) {
   const isSentence = columnPreset === 'sentence'
   const isImage = columnPreset === 'image'
@@ -201,6 +203,14 @@ function WordTable({
   const [busyExampleId, setBusyExampleId] = useState(null)
   const [imagePicker, setImagePicker] = useState(null)
   const [imageLoadingId, setImageLoadingId] = useState(null)
+
+  const highlightIdSet = useMemo(() => {
+    if (highlightRowIds == null) return null
+    if (highlightRowIds instanceof Set) return highlightRowIds
+    const s = new Set()
+    for (const x of highlightRowIds) s.add(String(x))
+    return s
+  }, [highlightRowIds])
 
   /** 비동기(이미지 검색 등) 직후 클로저의 rows 가 옛값일 수 있어, 렌더마다 동기화 */
   const rowsRef = useRef(rows)
@@ -805,7 +815,10 @@ function WordTable({
               const img = row.image_url ? String(row.image_url).trim() : ''
               const rowNum = indexById.get(id) ?? 0
               const tint = getRowBackground?.(row)
-              const rowBg = tint ?? (selectedIds.has(id) ? COLORS.successBg : COLORS.surface)
+              const isMeaningHighlight = highlightIdSet?.has(id) === true
+              const rowBg = isMeaningHighlight
+                ? 'rgba(254, 226, 226, 0.92)'
+                : (tint ?? (selectedIds.has(id) ? COLORS.successBg : COLORS.surface))
 
               return (
                 <div
@@ -818,6 +831,7 @@ function WordTable({
                     borderTop: `1px solid ${COLORS.border}`,
                     background: rowBg,
                     alignItems: 'start',
+                    boxShadow: isMeaningHighlight ? 'inset 0 0 0 2px #ef4444' : undefined,
                   }}
                 >
                   <div role="gridcell" style={{ padding: 8, minWidth: 0 }}>
