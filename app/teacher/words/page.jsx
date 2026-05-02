@@ -1419,6 +1419,12 @@ export default function WordsManagePage() {
           void loadWords()
           void loadWordSetNames()
         }}
+        onRenamed={(oldName, newName) => {
+          const o = String(oldName || '').trim()
+          const n = String(newName || '').trim()
+          setSettingsSetName(n || null)
+          if (setFilter.trim() === o) changeSetFilter(n)
+        }}
       />
 
       <NewWordSetModal
