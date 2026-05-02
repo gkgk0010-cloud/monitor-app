@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { supabase } from '@/utils/supabaseClient'
 import { useTeacher } from '@/utils/useTeacher'
 import {
@@ -87,12 +87,15 @@ function buildModesPayload(recommendedKeys, passScore, maxAttempts) {
 }
 
 /**
- * @param {{ teacherId?: string, setNames: string[] }} props
+ * @param {{ teacherId?: string, setNames: string[], sectionTitle?: string, deepLinkEditRoutineId?: string, deepLinkNewRoutine?: boolean, onDeepLinkConsumed?: () => void }} props
  */
 export default function RoutineSettingsSection({
   teacherId: teacherIdProp,
   setNames,
   sectionTitle = '루틴 설정',
+  deepLinkEditRoutineId = '',
+  deepLinkNewRoutine = false,
+  onDeepLinkConsumed,
 }) {
   const { teacher } = useTeacher()
   const teacherId = teacherIdProp || teacher?.id || ''
@@ -266,6 +269,39 @@ export default function RoutineSettingsSection({
       setEditLoading(false)
     }
   }
+
+  const lastDeepEditId = useRef('')
+  useEffect(() => {
+    const id = String(deepLinkEditRoutineId || '').trim()
+    if (!id) {
+      lastDeepEditId.current = ''
+      return
+    }
+    if (loading || !teacherId) return
+    if (lastDeepEditId.current === id) return
+    lastDeepEditId.current = id
+    void handleStartEdit(id).finally(() => {
+      onDeepLinkConsumed?.()
+    })
+  }, [loading, teacherId, deepLinkEditRoutineId, onDeepLinkConsumed])
+
+  const lastDeepNew = useRef(false)
+  useEffect(() => {
+    if (!deepLinkNewRoutine) {
+      lastDeepNew.current = false
+      return
+    }
+    if (loading || !setNames.length) return
+    if (lastDeepNew.current) return
+    lastDeepNew.current = true
+    resetForm()
+    setEditingRoutineId(null)
+    const sn0 = setNames[0] || ''
+    setSelectedSet(sn0)
+    setFormOpen(true)
+    void loadModesForSet(sn0)
+    onDeepLinkConsumed?.()
+  }, [loading, deepLinkNewRoutine, setNames, onDeepLinkConsumed])
 
   const applyRecommendedModes = async (recommendedKeys, label) => {
     const sn = String(selectedSet || '').trim()

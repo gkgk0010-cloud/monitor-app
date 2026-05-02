@@ -1,21 +1,30 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/utils/supabaseClient'
 import { useTeacher } from '@/utils/useTeacher'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import WordsSetDetailView from '../components/WordsSetDetailView'
 
-export default function WordSetDetailPage() {
+function WordSetDetailPageInner() {
   const params = useParams()
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const setId = String(params?.setId || '')
+  const editRoutineId = searchParams.get('editRoutine') || ''
+  const newRoutine = searchParams.get('newRoutine') === '1'
+
   const { teacher, loading: teacherLoading } = useTeacher()
   const teacherId = teacher?.id
   const [wordSet, setWordSet] = useState(null)
   const [loadErr, setLoadErr] = useState(null)
+
+  const consumeRoutineDeeplink = useCallback(() => {
+    router.replace(pathname || `/teacher/words/${setId}`)
+  }, [router, pathname, setId])
 
   const refetchWordSet = useCallback(async () => {
     if (!teacherId || !setId) return
@@ -109,6 +118,23 @@ export default function WordSetDetailPage() {
       wordSet={wordSet}
       onWordSetUpdated={() => void refetchWordSet()}
       onSetDeleted={() => router.push('/teacher/words')}
+      deepLinkEditRoutineId={editRoutineId}
+      deepLinkNewRoutine={newRoutine}
+      onRoutineDeepLinkConsumed={consumeRoutineDeeplink}
     />
+  )
+}
+
+export default function WordSetDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ minHeight: '40vh', padding: '8px 0 24px' }}>
+          <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
+        </div>
+      }
+    >
+      <WordSetDetailPageInner />
+    </Suspense>
   )
 }

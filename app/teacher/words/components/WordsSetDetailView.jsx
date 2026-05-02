@@ -37,9 +37,19 @@ function fisherYates(arr) {
  *   wordSet: { id: string; name: string; set_type?: string | null; available_modes?: unknown; invite_code?: string | null }
  *   onWordSetUpdated?: () => void | Promise<void>
  *   onSetDeleted?: () => void
+ *   deepLinkEditRoutineId?: string
+ *   deepLinkNewRoutine?: boolean
+ *   onRoutineDeepLinkConsumed?: () => void
  * }} props
  */
-export default function WordsSetDetailView({ wordSet, onWordSetUpdated, onSetDeleted }) {
+export default function WordsSetDetailView({
+  wordSet,
+  onWordSetUpdated,
+  onSetDeleted,
+  deepLinkEditRoutineId = '',
+  deepLinkNewRoutine = false,
+  onRoutineDeepLinkConsumed,
+}) {
   const [words, setWords] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -87,9 +97,12 @@ export default function WordsSetDetailView({ wordSet, onWordSetUpdated, onSetDel
     const q = () =>
       supabase
         .from('words')
-        .select('id, word, meaning, example_sentence, image_url, image_source, set_name, day, difficulty, youtube_url')
+        .select(
+          'id, word, meaning, example_sentence, image_url, image_source, set_name, day, difficulty, youtube_url, order_index',
+        )
         .eq('teacher_id', teacherId)
         .eq('set_name', sn)
+        .order('order_index', { ascending: true, nullsFirst: false })
         .order('day', { ascending: true })
 
     const { data: first, error } = await q().range(0, WORDS_CHUNK - 1)
@@ -364,12 +377,27 @@ export default function WordsSetDetailView({ wordSet, onWordSetUpdated, onSetDel
 
       const meaning = String(row.meaning ?? '').trim()
 
+      const resolveOrderIndex = () => {
+        if (row.order_index != null && Number.isFinite(Number(row.order_index))) {
+          return Math.max(1, Math.floor(Number(row.order_index)))
+        }
+        const list = wordsRef.current.filter((w) => String(w.set_name || '').trim() === sn)
+        let m = 0
+        for (const w of list) {
+          if (w.order_index != null && Number.isFinite(Number(w.order_index))) {
+            m = Math.max(m, Number(w.order_index))
+          }
+        }
+        return m + 1
+      }
+
       const payload = {
         word,
         meaning,
         example_sentence: ex || null,
         set_name: String(row.set_name || '토익 기본 단어').trim() || '토익 기본 단어',
         day: Math.max(1, parseInt(String(row.day ?? 1), 10) || 1),
+        order_index: resolveOrderIndex(),
         difficulty: normalizeWordDifficulty(row?.difficulty),
         image_url: row.image_url ? String(row.image_url).trim() : null,
         image_source: row.image_url ? String(row.image_source || 'none') : 'none',
@@ -428,25 +456,36 @@ export default function WordsSetDetailView({ wordSet, onWordSetUpdated, onSetDel
 
   const addEmptyRow = () => {
     const sn = setName || '토익 기본 단어'
-    setWords((prev) => [
-      {
-        id: `temp-${Date.now()}`,
-        word: '',
-        meaning: '',
-        example_sentence: '',
-        set_name: sn,
-        day: 1,
-        image_url: null,
-        image_source: 'none',
-        difficulty: 1,
-        youtube_url: null,
-      },
-      ...prev,
-    ])
+    setWords((prev) => {
+      const list = prev.filter((w) => String(w.set_name || '').trim() === sn)
+      let m = 0
+      for (const w of list) {
+        if (w.order_index != null && Number.isFinite(Number(w.order_index))) {
+          m = Math.max(m, Number(w.order_index))
+        }
+      }
+      const nextIdx = m + 1
+      return [
+        {
+          id: `temp-${Date.now()}`,
+          word: '',
+          meaning: '',
+          example_sentence: '',
+          set_name: sn,
+          day: 1,
+          image_url: null,
+          image_source: 'none',
+          difficulty: 1,
+          youtube_url: null,
+          order_index: nextIdx,
+        },
+        ...prev,
+      ]
+    })
   }
 
-  const shuffleDisplayOrder = useCallback(() => {
-    if (!setName) return
+  const shuffleDisplayOrder = useCallback(async () => {
+    if (!setName || !teacherId) return
     const prev = wordsRef.current
     const idxs = []
     for (let i = 0; i < prev.length; i++) {
@@ -458,15 +497,42 @@ export default function WordsSetDetailView({ wordSet, onWordSetUpdated, onSetDel
     }
     const slice = idxs.map((i) => prev[i])
     const shuffled = fisherYates(slice)
+    const persist = shuffled.filter((r) => !String(r.id).startsWith('temp-'))
+    const CHUNK = 40
+    try {
+      for (let c = 0; c < persist.length; c += CHUNK) {
+        const part = persist.slice(c, c + CHUNK)
+        const results = await Promise.all(
+          part.map((r, j) => {
+            const ord = c + j + 1
+            return supabase
+              .from('words')
+              .update({ order_index: ord })
+              .eq('id', String(r.id))
+              .eq('teacher_id', teacherId)
+          }),
+        )
+        const err = results.find((x) => x.error)?.error
+        if (err) throw new Error(err.message)
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '순서 저장에 실패했어요', 'error', 4000)
+      return
+    }
+
     const next = [...prev]
-    for (let j = 0; j < idxs.length; j++) next[idxs[j]] = shuffled[j]
+    const orderMap = new Map()
+    shuffled.forEach((r, i) => {
+      if (!String(r.id).startsWith('temp-')) orderMap.set(String(r.id), i + 1)
+    })
+    for (let j = 0; j < idxs.length; j++) {
+      const r = shuffled[j]
+      const oid = orderMap.get(String(r.id))
+      next[idxs[j]] = oid != null ? { ...r, order_index: oid } : r
+    }
     setWords(next)
-    showToast(
-      '표시 순서를 섞었어요. 각 행의 Day 값은 그대로입니다. (페이지를 새로고침하면 Day 순으로 다시 정렬돼요)',
-      'success',
-      4200,
-    )
-  }, [setName])
+    showToast('순서를 섞어 DB에 저장했어요. 학생 앱에도 같은 순서로 보여요.', 'success', 3800)
+  }, [setName, teacherId])
 
   const autoFillRows =
     selectedIds.size > 0 ? filtered.filter((r) => selectedIds.has(String(r.id))) : filtered
@@ -658,75 +724,127 @@ export default function WordsSetDetailView({ wordSet, onWordSetUpdated, onSetDel
           >
             세트 삭제
           </button>
-          <Link
-            href="/teacher/words/app-settings"
-            style={{
-              padding: '10px 16px',
-              borderRadius: RADIUS.md,
-              border: `1px solid ${COLORS.textOnGreen}`,
-              background: 'rgba(255,255,255,0.2)',
-              color: COLORS.textOnGreen,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontSize: 14,
-              textDecoration: 'none',
-            }}
-          >
-            앱 기능 설정
-          </Link>
         </div>
       </header>
 
-      <RoutineSettingsSection teacherId={teacherId} setNames={routineSetNames} sectionTitle="이 세트의 루틴" />
+      <RoutineSettingsSection
+        teacherId={teacherId}
+        setNames={routineSetNames}
+        sectionTitle="이 세트의 루틴"
+        deepLinkEditRoutineId={deepLinkEditRoutineId}
+        deepLinkNewRoutine={deepLinkNewRoutine}
+        onDeepLinkConsumed={onRoutineDeepLinkConsumed}
+      />
 
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-          gap: 12,
           marginBottom: 16,
-        }}
-      >
-        {[
-          { label: '전체', value: stats.total, bg: COLORS.primarySoft },
-          { label: '이미지 없음', value: stats.noImage, bg: COLORS.warningBg },
-          { label: '예문 없음', value: stats.noExample, bg: COLORS.warningBg },
-        ].map((c) => (
-          <div
-            key={c.label}
-            style={{
-              padding: 16,
-              borderRadius: RADIUS.md,
-              background: c.bg,
-              border: `1px solid ${COLORS.border}`,
-              boxShadow: SHADOW.card,
-            }}
-          >
-            <div style={{ fontSize: 14, color: COLORS.textSecondary }}>{c.label}</div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: COLORS.accentText }}>{c.value}</div>
-          </div>
-        ))}
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 14,
-          alignItems: 'center',
-          marginBottom: 16,
-          padding: '14px 16px',
-          minHeight: 56,
+          padding: '12px 16px 14px',
           boxSizing: 'border-box',
           background: COLORS.surface,
           borderRadius: RADIUS.md,
           border: `1px solid ${COLORS.border}`,
           position: 'sticky',
           top: 0,
-          zIndex: 40,
+          zIndex: 55,
           boxShadow: '0 2px 10px rgba(0,0,0,0.06)',
         }}
       >
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 4,
+            marginBottom: 12,
+            fontSize: 13,
+            color: COLORS.textSecondary,
+            lineHeight: 1.5,
+          }}
+        >
+          <span>
+            전체 <strong style={{ color: COLORS.textPrimary, fontWeight: 800 }}>{stats.total}</strong>개
+          </span>
+          <span aria-hidden>·</span>
+          <span style={{ color: stats.noExample > 0 ? '#c2410c' : undefined, fontWeight: stats.noExample > 0 ? 700 : 400 }}>
+            빈 예문 {stats.noExample}개
+          </span>
+          <span aria-hidden>·</span>
+          <span style={{ color: stats.noImage > 0 ? '#c2410c' : undefined, fontWeight: stats.noImage > 0 ? 700 : 400 }}>
+            빈 이미지 {stats.noImage}개
+          </span>
+        </div>
+
+        {!loading && stats.total === 0 ? (
+          <div
+            role="note"
+            style={{
+              marginBottom: 14,
+              padding: '16px 18px',
+              borderRadius: RADIUS.md,
+              background: 'linear-gradient(135deg, #fef9c3 0%, #ffedd5 100%)',
+              border: '1px solid rgba(234, 179, 8, 0.45)',
+              fontSize: 17,
+              fontWeight: 700,
+              color: '#78350f',
+              lineHeight: 1.55,
+            }}
+          >
+            💡 단어가 아직 없어요. 「+ 단어 추가」 또는 「가져오기」로 넣은 뒤,{' '}
+            <strong>각 행의 「저장」</strong>을 눌러 DB에 반영하세요. Day를 고르면 강의 영상 URL도 아래에서 넣을 수
+            있어요.
+          </div>
+        ) : !loading ? (
+          <div
+            role="note"
+            style={{
+              marginBottom: 10,
+              padding: '12px 14px',
+              borderRadius: RADIUS.md,
+              background: 'linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%)',
+              border: '1px solid rgba(59, 130, 246, 0.35)',
+              fontSize: 16,
+              fontWeight: 600,
+              color: '#1e3a5f',
+              lineHeight: 1.5,
+            }}
+          >
+            💡 수정 내용은 <strong>행마다 「저장」</strong>해야 DB에 반영돼요 · 예문 AI: 칸 오른쪽 돋보기 또는{' '}
+            <strong>Ctrl+S</strong>
+          </div>
+        ) : null}
+
+        {!loading ? (
+          <div
+            role="note"
+            style={{
+              marginBottom: 14,
+              padding: '10px 14px',
+              borderRadius: RADIUS.md,
+              background: '#fff7ed',
+              border: '1px solid rgba(251, 146, 60, 0.35)',
+              fontSize: 15,
+              fontWeight: 600,
+              color: '#9a3412',
+              lineHeight: 1.45,
+            }}
+          >
+            ℹ️{' '}
+            {dayFilter != null
+              ? `Day ${dayFilter} 선택됨 — 아래에서 이 Day 강의 영상 URL을 지정할 수 있어요.`
+              : 'Day를 선택하면 아래에서 Day별 강의 영상 URL을 넣을 수 있어요.'}
+          </div>
+        ) : null}
+
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 14,
+            alignItems: 'center',
+            paddingTop: 2,
+          }}
+        >
         <input
           type="search"
           placeholder="검색 (단어·뜻)"
@@ -793,6 +911,7 @@ export default function WordsSetDetailView({ wordSet, onWordSetUpdated, onSetDel
             <option value="chunk10">10개씩 접기</option>
           </select>
         </label>
+      </div>
       </div>
 
       {dayFilter != null ? (
@@ -879,38 +998,12 @@ export default function WordsSetDetailView({ wordSet, onWordSetUpdated, onSetDel
             Day당 하나의 영상만 재생합니다.
           </p>
         </div>
-      ) : (
-        <div
-          style={{
-            marginBottom: 16,
-            padding: 14,
-            borderRadius: RADIUS.md,
-            border: `1px dashed ${COLORS.border}`,
-            background: COLORS.bg,
-            fontSize: 14,
-            color: COLORS.textSecondary,
-          }}
-        >
-          Day를 하나 선택하면 위에서 강의 영상 URL을 지정할 수 있습니다. (전체 Day 보기에서는 Day별 URL 편집을 할 수 없습니다.)
-        </div>
-      )}
+      ) : null}
 
       {loading ? (
         <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
       ) : (
         <>
-          <p
-            style={{
-              margin: '0 0 12px',
-              fontSize: 14,
-              color: COLORS.textSecondary,
-              lineHeight: 1.5,
-            }}
-          >
-            단어·뜻·예문 등을 수정한 뒤 각 행 <strong style={{ color: COLORS.textPrimary }}>저장</strong>을 눌러야 DB에
-            반영됩니다. 예문 칸 <strong style={{ color: COLORS.textPrimary }}>오른쪽 돋보기</strong> 또는{' '}
-            <strong style={{ color: COLORS.textPrimary }}>Ctrl+S</strong>로 AI 예문을 넣을 수 있습니다.
-          </p>
           <WordTable
             rows={filtered}
             rowGroupMode={tableGroupMode}
@@ -924,7 +1017,7 @@ export default function WordsSetDetailView({ wordSet, onWordSetUpdated, onSetDel
             columnPreset={tableColumnPreset}
             highlightRowIds={meaningHighlightRowIds}
             scrollContainer="window"
-            stickyHeaderOffsetPx={72}
+            stickyHeaderOffsetPx={220}
           />
           {loadingMore ? (
             <p style={{ margin: '10px 0 0', fontSize: 14, color: COLORS.textSecondary }}>

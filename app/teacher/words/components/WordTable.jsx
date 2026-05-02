@@ -394,7 +394,7 @@ function WordTable({
         ? document.documentElement
         : scrollParentRef.current,
     estimateSize: (index) => (flatItems[index]?.type === 'section' ? 46 : 96),
-    overscan: 20,
+    overscan: scrollContainer === 'window' ? 2500 : 20,
   })
 
   const suggestExample = useCallback(
@@ -658,7 +658,7 @@ function WordTable({
               gridTemplateColumns: wordTableGrid,
               position: 'sticky',
               top: scrollContainer === 'window' ? stickyHeaderOffsetPx : 0,
-              zIndex: 8,
+              zIndex: 50,
               background: COLORS.primarySoft,
               borderBottom: `1px solid ${COLORS.border}`,
               textAlign: 'left',

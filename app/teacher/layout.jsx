@@ -34,10 +34,13 @@ export default function TeacherLayout({ children }) {
 
   const isMonitor = pathname === '/teacher/monitor';
   const isTest = pathname === '/teacher/test';
-  const isSettings = pathname === '/teacher/settings';
+  const isWordsAppSettings = pathname === '/teacher/words/app-settings';
+  const isProfileSettings = pathname === '/teacher/settings';
   const isWords =
     pathname === '/teacher/words' ||
-    (pathname?.startsWith('/teacher/words/') && !pathname?.startsWith('/teacher/words/create'));
+    (pathname?.startsWith('/teacher/words/') &&
+      !pathname?.startsWith('/teacher/words/create') &&
+      !pathname?.startsWith('/teacher/words/app-settings'));
 
   const rawTeacherName = teacher?.name?.trim();
   const displayName = rawTeacherName
@@ -104,8 +107,11 @@ export default function TeacherLayout({ children }) {
           <Link href="/teacher/test" style={navItemStyle(isTest)}>
             테스트지
           </Link>
-          <Link href="/teacher/settings" style={navItemStyle(isSettings)}>
-            설정
+          <Link href="/teacher/words/app-settings" style={navItemStyle(isWordsAppSettings)}>
+            앱 기능 설정
+          </Link>
+          <Link href="/teacher/settings" style={navItemStyle(isProfileSettings)}>
+            학원 프로필 설정
           </Link>
         </nav>
 
@@ -176,7 +182,7 @@ export default function TeacherLayout({ children }) {
         </div>
       </header>
 
-      <main className="teacher-main-shell" style={{ flex: 1, minHeight: 0, width: '100%', maxWidth: '100%' }}>
+      <main className="teacher-main-shell" style={{ flex: 1, minHeight: 'auto', width: '100%', maxWidth: '100%', overflow: 'visible' }}>
         {children}
       </main>
       <TeacherToastPortal />

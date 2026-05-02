@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/utils/supabaseClient'
 import { useTeacher } from '@/utils/useTeacher'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
+import { fetchTeacherRoutinesWithStats } from '@/utils/routineAdmin'
+import { generateInviteCode } from '@/utils/teacherSignup'
 import SetSettingsModal from './components/SetSettingsModal'
 import { formatAvailableModesSummary, normalizeSetType } from './utils/learningModes'
 import { showToast } from '@/utils/toastBus'
@@ -13,10 +15,12 @@ import { showToast } from '@/utils/toastBus'
 export default function WordsManagePage() {
   const router = useRouter()
   const [sets, setSets] = useState([])
+  const [routines, setRoutines] = useState([])
   const [countsByName, setCountsByName] = useState({})
   const [loading, setLoading] = useState(true)
   const [settingsSetName, setSettingsSetName] = useState(null)
   const [settingsMeta, setSettingsMeta] = useState({ name: '', inferred: 'word', hasImage: false })
+  const [regeneratingSetId, setRegeneratingSetId] = useState(null)
 
   const { teacher, loading: teacherLoading } = useTeacher()
   const teacherId = teacher?.id
@@ -64,6 +68,15 @@ export default function WordsManagePage() {
     setCountsByName(m)
   }, [teacherId])
 
+  const loadRoutines = useCallback(async () => {
+    if (!teacherId) {
+      setRoutines([])
+      return
+    }
+    const { routines: rows } = await fetchTeacherRoutinesWithStats(teacherId)
+    setRoutines(rows || [])
+  }, [teacherId])
+
   useEffect(() => {
     void loadSets()
   }, [loadSets])
@@ -71,6 +84,10 @@ export default function WordsManagePage() {
   useEffect(() => {
     void loadCounts()
   }, [loadCounts])
+
+  useEffect(() => {
+    void loadRoutines()
+  }, [loadRoutines])
 
   const copyInvite = async (code) => {
     const c = String(code ?? '').trim()
@@ -80,6 +97,55 @@ export default function WordsManagePage() {
       showToast('초대코드가 복사되었어요', 'success', 2500)
     } catch {
       showToast('복사에 실패했어요. 코드를 직접 선택해 주세요', 'error', 3000)
+    }
+  }
+
+  const handleRegenerateInvite = async (setRow, e) => {
+    e?.preventDefault()
+    e?.stopPropagation()
+    const wid = String(setRow.id)
+    if (!teacherId || !wid) return
+    if (
+      !window.confirm(
+        '초대코드를 재발급할까요? 옛 코드로 가입한 학생은 앱에서 비활성화되며, 새 코드로 다시 입력해야 합니다.',
+      )
+    )
+      return
+    setRegeneratingSetId(wid)
+    try {
+      let code = generateInviteCode()
+      let lastErr = null
+      for (let attempt = 0; attempt < 15; attempt++) {
+        const { error: upErr } = await supabase
+          .from('word_sets')
+          .update({ invite_code: code })
+          .eq('id', wid)
+          .eq('teacher_id', teacherId)
+        if (!upErr) {
+          lastErr = null
+          break
+        }
+        lastErr = upErr
+        const msg = String(upErr.message || '').toLowerCase()
+        if (msg.includes('unique') || msg.includes('duplicate')) {
+          code = generateInviteCode()
+          continue
+        }
+        throw new Error(upErr.message)
+      }
+      if (lastErr) throw new Error(lastErr.message)
+      const { error: delErr } = await supabase.from('student_set_access').delete().eq('set_id', wid)
+      if (delErr) throw new Error(delErr.message)
+      setSets((prev) => prev.map((row) => (String(row.id) === wid ? { ...row, invite_code: code } : row)))
+      showToast(
+        '초대코드를 다시 발급했어요. 옛 코드로 가입한 학생은 새 코드를 입력해야 해요.',
+        'success',
+        4200,
+      )
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '재발급에 실패했어요', 'error', 4000)
+    } finally {
+      setRegeneratingSetId(null)
     }
   }
 
@@ -112,6 +178,7 @@ export default function WordsManagePage() {
     setSettingsSetName((prev) => (prev === sn ? null : prev))
     void loadSets()
     void loadCounts()
+    void loadRoutines()
     showToast(`✓ '${sn}' 세트가 삭제되었습니다`, 'success', 3000)
   }
 
@@ -147,6 +214,17 @@ export default function WordsManagePage() {
       cancelled = true
     }
   }, [settingsSetName, teacherId, setTypeByName])
+
+  const routinesBySetName = useMemo(() => {
+    const m = new Map()
+    for (const r of routines) {
+      const sn = String(r.set_name || '').trim()
+      if (!sn) continue
+      if (!m.has(sn)) m.set(sn, [])
+      m.get(sn).push(r)
+    }
+    return m
+  }, [routines])
 
   if (teacherLoading) {
     return (
@@ -218,22 +296,6 @@ export default function WordsManagePage() {
           >
             + 새 세트 만들기
           </Link>
-          <Link
-            href="/teacher/words/app-settings"
-            style={{
-              padding: '10px 16px',
-              borderRadius: RADIUS.md,
-              border: `1px solid ${COLORS.textOnGreen}`,
-              background: 'rgba(255,255,255,0.2)',
-              color: COLORS.textOnGreen,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontSize: 14,
-              textDecoration: 'none',
-            }}
-          >
-            앱 기능 설정
-          </Link>
         </div>
       </header>
 
@@ -271,7 +333,7 @@ export default function WordsManagePage() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
             gap: 20,
           }}
         >
@@ -279,7 +341,7 @@ export default function WordsManagePage() {
             type="button"
             onClick={() => router.push('/teacher/words/create')}
             style={{
-              minHeight: 200,
+              minHeight: 240,
               borderRadius: RADIUS.lg,
               border: `2px dashed ${COLORS.border}`,
               background: COLORS.bg,
@@ -303,41 +365,97 @@ export default function WordsManagePage() {
             const cnt = countsByName[name] ?? 0
             const invite = s.invite_code != null ? String(s.invite_code).trim() : ''
             const st = normalizeSetType(s.set_type || 'word')
+            const setRoutines = routinesBySetName.get(name) || []
+            const busyRe = regeneratingSetId === String(s.id)
             return (
               <div
                 key={s.id}
-                role="link"
-                tabIndex={0}
-                onClick={() => router.push(`/teacher/words/${s.id}`)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    router.push(`/teacher/words/${s.id}`)
-                  }
-                }}
                 style={{
                   borderRadius: RADIUS.lg,
                   border: `1px solid ${COLORS.border}`,
                   background: COLORS.surface,
                   boxShadow: SHADOW.card,
-                  padding: 20,
+                  padding: 22,
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 12,
-                  cursor: 'pointer',
+                  gap: 14,
                   textAlign: 'left',
-                  outline: 'none',
+                  minHeight: 280,
                 }}
               >
-                <div style={{ fontSize: 18, fontWeight: 800, color: COLORS.accentText, lineHeight: 1.35 }}>
+                <div style={{ fontSize: 19, fontWeight: 800, color: COLORS.accentText, lineHeight: 1.35 }}>
                   {name}
                 </div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.textSecondary }}>
-                  단어 {cnt}개 · {formatAvailableModesSummary(s.available_modes, st)}
+                  단어 {cnt}개
+                </div>
+                <div style={{ fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.45 }}>
+                  학습 모드: {formatAvailableModesSummary(s.available_modes, st)}
                 </div>
                 <div
                   style={{
-                    marginTop: 'auto',
+                    padding: '10px 12px',
+                    borderRadius: RADIUS.md,
+                    border: `1px solid ${COLORS.border}`,
+                    background: COLORS.bg,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 800, color: COLORS.accentText }}>
+                    루틴 {setRoutines.length}개
+                  </div>
+                  {setRoutines.length === 0 ? (
+                    <span style={{ fontSize: 13, color: COLORS.textHint }}>등록된 루틴이 없어요</span>
+                  ) : (
+                    <ul style={{ margin: 0, padding: '0 0 0 18px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {setRoutines.map((r) => (
+                        <li key={r.id} style={{ fontSize: 13, color: COLORS.textPrimary }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              router.push(`/teacher/words/${s.id}?editRoutine=${encodeURIComponent(String(r.id))}`)
+                            }
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              padding: 0,
+                              cursor: 'pointer',
+                              color: COLORS.primary,
+                              fontWeight: 700,
+                              fontSize: 13,
+                              textAlign: 'left',
+                              textDecoration: 'underline',
+                            }}
+                          >
+                            {String(r.title || '').trim() || '이름 없음'} ({Number(r.total_days) || 0}일)
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/teacher/words/${s.id}?newRoutine=1`)}
+                    style={{
+                      alignSelf: 'flex-start',
+                      marginTop: 4,
+                      padding: '8px 12px',
+                      borderRadius: RADIUS.sm,
+                      border: `1px solid ${COLORS.primary}`,
+                      background: COLORS.primarySoft,
+                      fontWeight: 700,
+                      fontSize: 13,
+                      color: COLORS.accentText,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    + 새 루틴
+                  </button>
+                </div>
+                <div
+                  style={{
                     padding: '12px 12px',
                     borderRadius: RADIUS.md,
                     border: `1px solid ${COLORS.border}`,
@@ -363,10 +481,7 @@ export default function WordsManagePage() {
                     <button
                       type="button"
                       disabled={!invite}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void copyInvite(invite)
-                      }}
+                      onClick={() => void copyInvite(invite)}
                       style={{
                         padding: '8px 12px',
                         borderRadius: RADIUS.sm,
@@ -379,45 +494,81 @@ export default function WordsManagePage() {
                     >
                       복사
                     </button>
+                    <button
+                      type="button"
+                      disabled={busyRe}
+                      onClick={(e) => void handleRegenerateInvite(s, e)}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.accentText}`,
+                        background: COLORS.primarySoft,
+                        cursor: busyRe ? 'wait' : 'pointer',
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: COLORS.accentText,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {busyRe ? '…' : '재발급'}
+                    </button>
                   </div>
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <div
+                  style={{
+                    marginTop: 'auto',
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr 1fr',
+                    gap: 8,
+                  }}
+                >
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setSettingsSetName(name)
-                    }}
+                    onClick={() => router.push(`/teacher/words/${s.id}`)}
                     style={{
-                      flex: '1 1 auto',
-                      padding: '10px 12px',
+                      padding: '10px 8px',
+                      borderRadius: RADIUS.sm,
+                      border: `1px solid ${COLORS.primary}`,
+                      background: COLORS.primarySoft,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      color: COLORS.accentText,
+                      fontSize: 13,
+                    }}
+                  >
+                    상세 페이지
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSettingsSetName(name)}
+                    style={{
+                      padding: '10px 8px',
                       borderRadius: RADIUS.sm,
                       border: `1px solid ${COLORS.border}`,
                       background: COLORS.bg,
                       fontWeight: 700,
                       cursor: 'pointer',
                       color: COLORS.accentText,
-                      fontSize: 14,
+                      fontSize: 13,
                     }}
                   >
-                    설정
+                    설정 변경
                   </button>
                   <button
                     type="button"
                     onClick={(e) => void handleDeleteSet(name, e)}
                     style={{
-                      flex: '1 1 auto',
-                      padding: '10px 12px',
+                      padding: '10px 8px',
                       borderRadius: RADIUS.sm,
                       border: `1px solid ${COLORS.danger}`,
                       background: COLORS.dangerBg,
                       fontWeight: 700,
                       cursor: 'pointer',
                       color: COLORS.danger,
-                      fontSize: 14,
+                      fontSize: 13,
                     }}
                   >
-                    삭제
+                    세트 삭제
                   </button>
                 </div>
               </div>
@@ -436,6 +587,7 @@ export default function WordsManagePage() {
         onSaved={() => {
           void loadSets()
           void loadCounts()
+          void loadRoutines()
         }}
         onRenamed={(oldName, newName) => {
           const o = String(oldName || '').trim()
@@ -445,6 +597,7 @@ export default function WordsManagePage() {
             prev.map((row) => (String(row.name || '').trim() === o ? { ...row, name: n } : row)),
           )
           void loadCounts()
+          void loadRoutines()
         }}
       />
     </div>
