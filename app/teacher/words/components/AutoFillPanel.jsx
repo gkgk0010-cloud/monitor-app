@@ -6,10 +6,11 @@ import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 /**
  * @param {{
  *   rows: Array<Record<string, unknown>>
- *   onFilled: (updatedRows: Array<Record<string, unknown>>) => void | Promise<void>
+ *   onFilled: updatedRows => void | Promise<void>
+ *   dayEmptyCount?: number | null
  * }} props
  */
-export default function AutoFillPanel({ rows, onFilled }) {
+export default function AutoFillPanel({ rows, onFilled, dayEmptyCount = null }) {
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState('')
   const [progress, setProgress] = useState(0)
@@ -138,6 +139,11 @@ export default function AutoFillPanel({ rows, onFilled }) {
         <span style={{ padding: '4px 10px', borderRadius: RADIUS.sm, background: COLORS.surface }}>
           이미지 없음: <strong>{stats.noImage}</strong>
         </span>
+        {dayEmptyCount != null ? (
+          <span style={{ padding: '4px 10px', borderRadius: RADIUS.sm, background: COLORS.surface }}>
+            day 비어 있음: <strong>{dayEmptyCount}</strong>
+          </span>
+        ) : null}
       </div>
       <button
         type="button"

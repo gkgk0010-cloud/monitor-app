@@ -42,6 +42,12 @@ function emptyRow(setName) {
   }
 }
 
+/** Day 일괄 배정: 숫자 파싱 (비어 있음 = 1 미만) */
+function rowDayNumberForBulk(r) {
+  const d = parseInt(String(r.day ?? ''), 10)
+  return Number.isFinite(d) ? d : 0
+}
+
 function CreateWordSetPageContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -72,6 +78,11 @@ function CreateWordSetPageContent() {
   const [hint, setHint] = useState(null)
   /** 뜻 검증 실패 행 — WordTable 빨간 강조 */
   const [meaningHighlightRowIds, setMeaningHighlightRowIds] = useState(() => new Set())
+  /** 문장/스피킹: day 비어 있는 유효 행에 일괄 배정 (day별 개수) */
+  const [sentenceBulkPlan, setSentenceBulkPlan] = useState(() => [
+    { day: 1, count: 0 },
+    { day: 2, count: 0 },
+  ])
   /** none | day | chunk10 | day_chunk */
   const [tableGroupMode, setTableGroupMode] = useState('chunk10')
 
@@ -111,6 +122,85 @@ function CreateWordSetPageContent() {
     (r) => isRowSaveCandidateForCreate(r) && !meaningIsMissing(r.meaning),
     [isRowSaveCandidateForCreate],
   )
+
+  const emptyDayValidRowsCount = useMemo(
+    () =>
+      isSentenceStyleCreate
+        ? rows.filter((r) => isRowValidForCreate(r) && rowDayNumberForBulk(r) < 1).length
+        : 0,
+    [rows, isSentenceStyleCreate, isRowValidForCreate],
+  )
+
+  const sentenceBulkSum = useMemo(
+    () =>
+      sentenceBulkPlan.reduce(
+        (a, s) => a + Math.max(0, Math.floor(parseInt(String(s.count), 10) || 0)),
+        0,
+      ),
+    [sentenceBulkPlan],
+  )
+
+  const sentenceBulkPreview = useMemo(() => {
+    if (!isSentenceStyleCreate) return null
+    const targets = rows
+      .map((r, idx) => ({ r, idx }))
+      .filter(({ r }) => isRowValidForCreate(r) && rowDayNumberForBulk(r) < 1)
+    const M = targets.length
+    if (M === 0) return { kind: 'nodata' }
+    if (sentenceBulkSum !== M) {
+      return { kind: 'mismatch', sum: sentenceBulkSum, M }
+    }
+    let ti = 0
+    const lines = []
+    for (const seg of sentenceBulkPlan) {
+      const d = Math.max(1, Math.floor(parseInt(String(seg.day), 10) || 1))
+      const n = Math.max(0, Math.floor(parseInt(String(seg.count), 10) || 0))
+      if (n === 0) continue
+      if (ti >= targets.length) break
+      const startRow = targets[ti].idx + 1
+      const endRow = targets[ti + n - 1].idx + 1
+      lines.push({ d, n, startRow, endRow })
+      ti += n
+    }
+    return { kind: 'ok', lines }
+  }, [rows, sentenceBulkPlan, sentenceBulkSum, isSentenceStyleCreate, isRowValidForCreate])
+
+  const applySentenceBulkDays = useCallback(() => {
+    if (!isSentenceStyleCreate) return
+    const targets = rows.filter((r) => isRowValidForCreate(r) && rowDayNumberForBulk(r) < 1)
+    const M = targets.length
+    const sum = sentenceBulkPlan.reduce(
+      (a, s) => a + Math.max(0, Math.floor(parseInt(String(s.count), 10) || 0)),
+      0,
+    )
+    if (M === 0) {
+      alert('day를 채울 유효 행(예문·뜻이 모두 있는 행)이 없습니다.')
+      return
+    }
+    if (sum !== M) {
+      alert(`입력 합계 ${sum}, 빈 행 ${M}. 차이 ${Math.abs(sum - M)}개`)
+      return
+    }
+    const seq = []
+    for (const seg of sentenceBulkPlan) {
+      const d = Math.max(1, Math.floor(parseInt(String(seg.day), 10) || 1))
+      const n = Math.max(0, Math.floor(parseInt(String(seg.count), 10) || 0))
+      for (let i = 0; i < n; i++) seq.push(d)
+    }
+    const targetIds = new Set(targets.map((r) => String(r.id)))
+    let si = 0
+    setRows((prev) =>
+      prev.map((r) => {
+        if (!targetIds.has(String(r.id))) return r
+        return { ...r, day: seq[si++] }
+      }),
+    )
+    const uniq = new Set(seq).size
+    setDaySplitCount(uniq)
+    setHasDayPreview(true)
+    setHint(`Day ${uniq}개 구간으로 빈 행 ${M}개에 적용했습니다. 확인 후 「DB에 저장」을 누르세요.`)
+    setWorkflowModal('day')
+  }, [isSentenceStyleCreate, rows, isRowValidForCreate, sentenceBulkPlan])
 
   const createValidCount = useMemo(
     () => rows.filter((r) => isRowValidForCreate(r)).length,
@@ -845,7 +935,174 @@ function CreateWordSetPageContent() {
           highlightRowIds={meaningHighlightRowIds}
         />
 
-        <AutoFillPanel rows={autoFillRows} onFilled={handleAutoFilled} />
+        {isSentenceStyleCreate ? (
+          <div
+            style={{
+              marginTop: 16,
+              marginBottom: 4,
+              padding: '14px 16px',
+              borderRadius: RADIUS.lg,
+              border: `1px solid ${COLORS.border}`,
+              background: COLORS.surface,
+              boxShadow: SHADOW.card,
+            }}
+          >
+            <p style={{ margin: '0 0 10px', fontWeight: 700, color: COLORS.accentText, fontSize: 15 }}>
+              문장/스피킹 Day 일괄 배정
+            </p>
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.5 }}>
+              예문·뜻은 채워져 있고 <strong>day가 비어 있는 행</strong>(표시 상 1일 미만)만 순서대로 나눕니다. 이미 day가
+              들어간 행은 바꾸지 않습니다.
+            </p>
+            <p style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: COLORS.textPrimary }}>
+              day 비어 있는 행 {emptyDayValidRowsCount}개
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+              {sentenceBulkPlan.map((seg, i) => (
+                <div
+                  key={`bulk-${i}-${seg.day}`}
+                  style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}
+                >
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
+                    day
+                    <input
+                      type="number"
+                      min={1}
+                      value={seg.day}
+                      onChange={(e) => {
+                        const v = Math.max(1, Math.floor(parseInt(String(e.target.value), 10) || 1))
+                        setSentenceBulkPlan((prev) => prev.map((s, j) => (j === i ? { ...s, day: v } : s)))
+                      }}
+                      style={{
+                        width: 64,
+                        padding: '6px 8px',
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.border}`,
+                        fontSize: 14,
+                      }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+                    개수
+                    <input
+                      type="number"
+                      min={0}
+                      value={seg.count}
+                      onChange={(e) => {
+                        const v = Math.max(0, Math.floor(parseInt(String(e.target.value), 10) || 0))
+                        setSentenceBulkPlan((prev) => prev.map((s, j) => (j === i ? { ...s, count: v } : s)))
+                      }}
+                      style={{
+                        width: 80,
+                        padding: '6px 8px',
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.border}`,
+                        fontSize: 14,
+                      }}
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setSentenceBulkPlan((prev) => {
+                    const maxD = prev.length ? Math.max(...prev.map((s) => s.day)) : 0
+                    return [...prev, { day: maxD + 1, count: 0 }]
+                  })
+                }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.surface,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontSize: 13,
+                }}
+              >
+                + day 추가
+              </button>
+              <button
+                type="button"
+                disabled={sentenceBulkPlan.length <= 1}
+                onClick={() => setSentenceBulkPlan((prev) => (prev.length <= 1 ? prev : prev.slice(0, -1)))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.surface,
+                  fontWeight: 600,
+                  cursor: sentenceBulkPlan.length <= 1 ? 'not-allowed' : 'pointer',
+                  opacity: sentenceBulkPlan.length <= 1 ? 0.5 : 1,
+                  fontSize: 13,
+                }}
+              >
+                − day 제거
+              </button>
+            </div>
+            <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 700, color: COLORS.textPrimary }}>
+              합계: {sentenceBulkSum}개 / 빈 행: {emptyDayValidRowsCount}개
+            </p>
+            {sentenceBulkPreview?.kind === 'mismatch' ? (
+              <p style={{ margin: '0 0 8px', fontSize: 13, color: '#b91c1c', fontWeight: 600 }}>
+                합계와 빈 행 수가 다릅니다. 숫자를 맞춘 뒤 적용하세요. (입력 {sentenceBulkPreview.sum} ≠ 빈 행{' '}
+                {sentenceBulkPreview.M})
+              </p>
+            ) : null}
+            {sentenceBulkPreview?.kind === 'ok' ? (
+              <div
+                style={{
+                  marginBottom: 10,
+                  padding: '10px 12px',
+                  borderRadius: RADIUS.sm,
+                  background: 'rgba(99, 102, 241, 0.08)',
+                  border: `1px solid rgba(99, 102, 241, 0.25)`,
+                  fontSize: 12,
+                  color: COLORS.textSecondary,
+                  lineHeight: 1.5,
+                }}
+              >
+                <strong style={{ color: COLORS.textPrimary }}>미리보기</strong> (표 위에서부터 빈 day 행만)
+                <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                  {sentenceBulkPreview.lines.map((ln) => (
+                    <li key={`${ln.d}-${ln.startRow}`}>
+                      Day {ln.d}: {ln.n}개 → row {ln.startRow}
+                      {ln.n > 1 ? ` ~ ${ln.endRow}` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {sentenceBulkPreview?.kind === 'nodata' ? (
+              <p style={{ margin: '0 0 8px', fontSize: 13, color: COLORS.textSecondary }}>
+                지금은 채울 빈 day 행이 없습니다. (가져오기 후 day가 0이거나 비어 있는 행이 있으면 여기 개수가 늘어납니다.)
+              </p>
+            ) : null}
+            <button
+              type="button"
+              disabled={emptyDayValidRowsCount === 0 || sentenceBulkSum !== emptyDayValidRowsCount}
+              onClick={() => applySentenceBulkDays()}
+              style={{
+                padding: '11px 20px',
+                borderRadius: RADIUS.md,
+                border: 'none',
+                background: COLORS.primary,
+                color: COLORS.textOnGreen,
+                fontWeight: 700,
+                cursor: emptyDayValidRowsCount === 0 || sentenceBulkSum !== emptyDayValidRowsCount ? 'not-allowed' : 'pointer',
+                opacity: emptyDayValidRowsCount === 0 || sentenceBulkSum !== emptyDayValidRowsCount ? 0.55 : 1,
+                fontSize: 15,
+              }}
+            >
+              일괄 적용
+            </button>
+          </div>
+        ) : null}
+
+        <AutoFillPanel rows={autoFillRows} onFilled={handleAutoFilled} dayEmptyCount={isSentenceStyleCreate ? emptyDayValidRowsCount : null} />
 
         <BulkImport
           open={bulkOpen}
