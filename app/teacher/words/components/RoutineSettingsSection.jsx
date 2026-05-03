@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { supabase } from '@/utils/supabaseClient'
 import { useTeacher } from '@/utils/useTeacher'
 import {
@@ -74,6 +74,27 @@ function formatRoutineError(err) {
   }
 }
 
+/**
+ * 단어 세트 드롭다운: DB에서 가져온 이름 + 부모 prop + (편집 중) 현재 선택값 병합
+ * @param {string[]} dbNames
+ * @param {string[]} propNames
+ * @param {string} [ensureVisible]
+ */
+function buildDropdownSetNames(dbNames, propNames, ensureVisible) {
+  const s = new Set()
+  for (const n of dbNames || []) {
+    const t = String(n ?? '').trim()
+    if (t) s.add(t)
+  }
+  for (const n of propNames || []) {
+    const t = String(n ?? '').trim()
+    if (t) s.add(t)
+  }
+  const v = String(ensureVisible ?? '').trim()
+  if (v) s.add(v)
+  return Array.from(s).sort((a, b) => a.localeCompare(b, 'ko'))
+}
+
 /** 추천 필수 모드 → word_sets.available_modes JSON */
 function buildModesPayload(recommendedKeys, passScore, maxAttempts) {
   const modes = {}
@@ -131,6 +152,17 @@ export default function RoutineSettingsSection({
   const [totalDaysInput, setTotalDaysInput] = useState('28')
   const [reviewCycleInput, setReviewCycleInput] = useState('+1+3+7')
   const [restDaysInput, setRestDaysInput] = useState('DAY7, DAY14, DAY21')
+  /** 해당 선생님 word_sets.name 전부 — 세트 상세에서만 넘어오는 setNames 한 줄 문제 보완 */
+  const [wordSetNamesFromDb, setWordSetNamesFromDb] = useState([])
+
+  const defaultSetNames = useMemo(
+    () => buildDropdownSetNames(wordSetNamesFromDb, setNames, ''),
+    [wordSetNamesFromDb, setNames],
+  )
+  const dropdownSetNames = useMemo(
+    () => buildDropdownSetNames(wordSetNamesFromDb, setNames, selectedSet),
+    [wordSetNamesFromDb, setNames, selectedSet],
+  )
 
   const load = useCallback(async () => {
     if (!teacherId) {
@@ -158,6 +190,32 @@ export default function RoutineSettingsSection({
   }, [load])
 
   useEffect(() => {
+    if (!teacherId) {
+      setWordSetNamesFromDb([])
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('word_sets')
+        .select('name')
+        .eq('teacher_id', teacherId)
+        .order('name', { ascending: true })
+      if (cancelled) return
+      if (error) {
+        console.warn('[RoutineSettingsSection] word_sets names', error.message)
+        setWordSetNamesFromDb([])
+        return
+      }
+      const names = (data || []).map((r) => String(r?.name ?? '').trim()).filter(Boolean)
+      setWordSetNamesFromDb(names)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [teacherId])
+
+  useEffect(() => {
     if (!toast) return
     const t = window.setTimeout(() => setToast(null), 3200)
     return () => clearTimeout(t)
@@ -173,10 +231,10 @@ export default function RoutineSettingsSection({
   }, [deleteTarget, deleting])
 
   useEffect(() => {
-    if (formOpen && setNames.length && !selectedSet) {
-      setSelectedSet(setNames[0])
+    if (formOpen && defaultSetNames.length && !selectedSet) {
+      setSelectedSet(defaultSetNames[0])
     }
-  }, [formOpen, setNames, selectedSet])
+  }, [formOpen, defaultSetNames, selectedSet])
 
   const loadModesForSet = useCallback(async (setName) => {
     const sn = String(setName || '').trim()
@@ -223,7 +281,7 @@ export default function RoutineSettingsSection({
   const resetForm = () => {
     setEditingRoutineId(null)
     setRoutineName('')
-    setSelectedSet(setNames[0] || '')
+    setSelectedSet(defaultSetNames[0] || '')
     setRequiredModeKeys([])
     setOptionalModeKeys([])
     setIncludeOptional({})
@@ -291,17 +349,17 @@ export default function RoutineSettingsSection({
       lastDeepNew.current = false
       return
     }
-    if (loading || !setNames.length) return
+    if (loading || !defaultSetNames.length) return
     if (lastDeepNew.current) return
     lastDeepNew.current = true
     resetForm()
     setEditingRoutineId(null)
-    const sn0 = setNames[0] || ''
+    const sn0 = defaultSetNames[0] || ''
     setSelectedSet(sn0)
     setFormOpen(true)
     void loadModesForSet(sn0)
     onDeepLinkConsumed?.()
-  }, [loading, deepLinkNewRoutine, setNames, onDeepLinkConsumed])
+  }, [loading, deepLinkNewRoutine, defaultSetNames, onDeepLinkConsumed])
 
   const applyRecommendedModes = async (recommendedKeys, label) => {
     const sn = String(selectedSet || '').trim()
@@ -788,13 +846,13 @@ export default function RoutineSettingsSection({
               }}
             >
               <option value="">선택하세요</option>
-              {setNames.map((n) => (
+              {dropdownSetNames.map((n) => (
                 <option key={n} value={n}>
                   {n}
                 </option>
               ))}
             </select>
-            {setNames.length === 0 ? (
+            {dropdownSetNames.length === 0 ? (
               <span style={{ fontSize: 13, color: COLORS.warning }}>먼저 단어를 등록해 세트가 생기면 선택할 수 있습니다.</span>
             ) : null}
           </label>
@@ -1144,17 +1202,17 @@ export default function RoutineSettingsSection({
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button
               type="submit"
-              disabled={saving || setNames.length === 0 || editLoading}
+              disabled={saving || dropdownSetNames.length === 0 || editLoading}
               style={{
                 padding: '12px 22px',
                 borderRadius: RADIUS.md,
                 border: 'none',
-                background: setNames.length === 0 ? COLORS.border : COLORS.headerGradient,
+                background: dropdownSetNames.length === 0 ? COLORS.border : COLORS.headerGradient,
                 color: COLORS.textOnGreen,
                 fontWeight: 700,
                 fontSize: 15,
-                cursor: setNames.length === 0 || editLoading ? 'not-allowed' : 'pointer',
-                boxShadow: setNames.length === 0 ? 'none' : '0 4px 16px rgba(102, 126, 234, 0.28)',
+                cursor: dropdownSetNames.length === 0 || editLoading ? 'not-allowed' : 'pointer',
+                boxShadow: dropdownSetNames.length === 0 ? 'none' : '0 4px 16px rgba(102, 126, 234, 0.28)',
               }}
             >
               {saving ? '저장 중…' : editingRoutineId ? '저장 (수정)' : '저장 (routine_days + routine_tasks 생성)'}
