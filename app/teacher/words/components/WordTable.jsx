@@ -652,13 +652,8 @@ function WordTable({
             minWidth: 1120,
             fontSize: 14,
             boxSizing: 'border-box',
-            ...(scrollContainer === 'window'
-              ? {
-                  overflowX: 'auto',
-                  overflowY: 'visible',
-                  WebkitOverflowScrolling: 'touch',
-                }
-              : {}),
+            /* window 모드: sticky 열 헤더의 조상에 overflow-x(auto 등) 두면 브라우저가 스크롤박스를 바꿔
+               헤더가 행 사이에 끼이는 것처럼 보임 → 가로는 페이지(문서) 스크롤로 처리 */
           }}
         >
           <div
