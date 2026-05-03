@@ -786,9 +786,9 @@ export default function WordsSetDetailView({
             display: 'flex',
             flexWrap: 'wrap',
             alignItems: 'center',
-            gap: 4,
+            gap: 6,
             marginBottom: 12,
-            fontSize: 13,
+            fontSize: 20,
             color: COLORS.textSecondary,
             lineHeight: 1.5,
           }}
