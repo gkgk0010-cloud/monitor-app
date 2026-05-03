@@ -52,12 +52,11 @@ html, body {
   box-sizing: border-box;
 }
 
-/* 단어 테이블: 가로 스크롤·전체 너비 */
+/* 단어 테이블 외곽: 세로 overflow 두지 않음 — overflow-x만 쓰면 브라우저가 overflow-y도 auto로 잡아 이중 세로 스크롤 발생 가능.
+   가로 스크롤은 WordTable(window 모드) 안쪽 minWidth 래퍼에서 처리 */
 .word-table-wrap {
   width: 100%;
   max-width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
 }
 
 /* gold 카드 테두리 반짝임 (오늘의 MVP) */

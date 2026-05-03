@@ -652,6 +652,13 @@ function WordTable({
             minWidth: 1120,
             fontSize: 14,
             boxSizing: 'border-box',
+            ...(scrollContainer === 'window'
+              ? {
+                  overflowX: 'auto',
+                  overflowY: 'visible',
+                  WebkitOverflowScrolling: 'touch',
+                }
+              : {}),
           }}
         >
           <div

@@ -212,6 +212,32 @@ export default function WordsSetDetailView({
     setYoutubeUrlInput(currentDayYoutubeUrl)
   }, [currentDayYoutubeUrl])
 
+  /** 세트 상세: 페이지(window)만 스크롤 — WordTable 열 헤더 sticky 시 바로 위 툴바 높이 반영 */
+  const toolbarStickyRef = useRef(null)
+  const [wordTableStickyTopPx, setWordTableStickyTopPx] = useState(160)
+
+  const measureToolbarStickyHeight = useCallback(() => {
+    const el = toolbarStickyRef.current
+    if (!el || typeof window === 'undefined') return
+    const h = Math.ceil(el.getBoundingClientRect().height)
+    if (h > 0) setWordTableStickyTopPx(h)
+  }, [])
+
+  useEffect(() => {
+    measureToolbarStickyHeight()
+    const id = window.requestAnimationFrame(() => measureToolbarStickyHeight())
+    return () => window.cancelAnimationFrame(id)
+  }, [measureToolbarStickyHeight, loading, stats.total, tableGroupMode, dayFilter, emptyOnly, search])
+
+  useEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return undefined
+    const el = toolbarStickyRef.current
+    if (!el) return undefined
+    const ro = new ResizeObserver(() => measureToolbarStickyHeight())
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [measureToolbarStickyHeight, loading])
+
   const handleSaveDayYoutube = async () => {
     if (!teacherId || !setName || dayFilter == null) return
     const d = Number(dayFilter)
@@ -613,7 +639,7 @@ export default function WordsSetDetailView({
       style={{
         width: '100%',
         maxWidth: '100%',
-        minHeight: '100%',
+        minHeight: 0,
         fontFamily: '"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
       }}
     >
@@ -741,6 +767,7 @@ export default function WordsSetDetailView({
       />
 
       <div
+        ref={toolbarStickyRef}
         style={{
           marginBottom: 16,
           padding: '16px 20px 18px',
@@ -1039,8 +1066,8 @@ export default function WordsSetDetailView({
             onRowDelete={handleRowDelete}
             columnPreset={tableColumnPreset}
             highlightRowIds={meaningHighlightRowIds}
-            scrollContainer="embedded"
-            embeddedMaxHeight="min(82vh, max(320px, calc(100dvh - 200px)))"
+            scrollContainer="window"
+            stickyHeaderOffsetPx={wordTableStickyTopPx}
           />
           {loadingMore ? (
             <p style={{ margin: '10px 0 0', fontSize: 14, color: COLORS.textSecondary }}>
