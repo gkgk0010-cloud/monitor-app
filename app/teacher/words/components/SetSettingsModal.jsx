@@ -13,6 +13,8 @@ import {
   normalizeSetType,
 } from '../utils/learningModes'
 import LearningModesPicker from './LearningModesPicker'
+import { buildKakaoTeacherInviteShareMessage } from '@/utils/kakaoTeacherInviteShare'
+import { showToast } from '@/utils/toastBus'
 
 const QTYPE_KEYS = [
   { key: 'word_to_meaning', label: '단어 → 뜻' },
@@ -34,13 +36,24 @@ const SET_TYPE_LABELS = {
  *   onClose: () => void
  *   setName: string
  *   teacherId: string
+ *   inviteShareTeacherLabel?: string
  *   inferredSetType?: string
  *   hasImageWords?: boolean
  *   onSaved?: () => void
  *   onRenamed?: (oldName: string, newName: string) => void
  * }} props
  */
-export default function SetSettingsModal({ open, onClose, setName, teacherId, inferredSetType, hasImageWords, onSaved, onRenamed }) {
+export default function SetSettingsModal({
+  open,
+  onClose,
+  setName,
+  teacherId,
+  inviteShareTeacherLabel,
+  inferredSetType,
+  hasImageWords,
+  onSaved,
+  onRenamed,
+}) {
   const isSentenceStyle = (st) => st === 'sentence_writing' || st === 'sentence_speaking'
 
   const [loading, setLoading] = useState(true)
@@ -536,6 +549,42 @@ export default function SetSettingsModal({ open, onClose, setName, teacherId, in
                     }}
                   >
                     복사
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!inviteCode || regeneratingInvite}
+                    onClick={async () => {
+                      const c = String(inviteCode || '').trim()
+                      if (!c) return
+                      const label =
+                        inviteShareTeacherLabel != null && String(inviteShareTeacherLabel).trim()
+                          ? String(inviteShareTeacherLabel).trim()
+                          : '선생님'
+                      try {
+                        await navigator.clipboard.writeText(buildKakaoTeacherInviteShareMessage(label, c))
+                        showToast(
+                          '카톡 메시지가 복사됐어요 — 카톡에 붙여넣기만 하면 학생이 링크로 자동 입장합니다',
+                          'success',
+                          3800,
+                        )
+                      } catch {
+                        showToast('복사에 실패했어요. 다시 시도해 주세요', 'error', 3000)
+                      }
+                    }}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      borderRadius: RADIUS.sm,
+                      border: `1px solid ${COLORS.primary}`,
+                      background: COLORS.primarySoft,
+                      color: COLORS.accentText,
+                      cursor: inviteCode && !regeneratingInvite ? 'pointer' : 'not-allowed',
+                      opacity: inviteCode && !regeneratingInvite ? 1 : 0.55,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    카톡 메시지 복사
                   </button>
                   <button
                     type="button"

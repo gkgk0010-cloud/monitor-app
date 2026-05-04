@@ -21,6 +21,7 @@ import {
   formatSupabaseWordsSaveError,
 } from '../utils/wordMeaningGuard'
 import { showToast } from '@/utils/toastBus'
+import { getTeacherInviteDisplayName } from '@/utils/kakaoTeacherInviteShare'
 
 /** @template T @param {T[]} arr @returns {T[]} */
 function fisherYates(arr) {
@@ -1094,6 +1095,7 @@ export default function WordsSetDetailView({
         onClose={() => setSettingsOpen(false)}
         setName={setName}
         teacherId={teacherId}
+        inviteShareTeacherLabel={getTeacherInviteDisplayName(teacher)}
         inferredSetType={normalizeSetType(wordSet?.set_type || 'word')}
         hasImageWords={words.some((w) => w.image_url && String(w.image_url).trim())}
         onSaved={() => {

@@ -11,6 +11,7 @@ import { generateInviteCode } from '@/utils/teacherSignup'
 import SetSettingsModal from './components/SetSettingsModal'
 import { formatAvailableModesSummary, normalizeSetType } from './utils/learningModes'
 import { showToast } from '@/utils/toastBus'
+import { buildKakaoTeacherInviteShareMessage, getTeacherInviteDisplayName } from '@/utils/kakaoTeacherInviteShare'
 
 export default function WordsManagePage() {
   const router = useRouter()
@@ -97,6 +98,22 @@ export default function WordsManagePage() {
       showToast('초대코드가 복사되었어요', 'success', 2500)
     } catch {
       showToast('복사에 실패했어요. 코드를 직접 선택해 주세요', 'error', 3000)
+    }
+  }
+
+  const copyKakaoInviteMessage = async (code) => {
+    const c = String(code ?? '').trim()
+    if (!c) return
+    const label = getTeacherInviteDisplayName(teacher)
+    try {
+      await navigator.clipboard.writeText(buildKakaoTeacherInviteShareMessage(label, c))
+      showToast(
+        '카톡 메시지가 복사됐어요 — 카톡에 붙여넣기만 하면 학생이 링크로 자동 입장합니다',
+        'success',
+        3800,
+      )
+    } catch {
+      showToast('복사에 실패했어요. 다시 시도해 주세요', 'error', 3000)
     }
   }
 
@@ -496,6 +513,25 @@ export default function WordsManagePage() {
                     </button>
                     <button
                       type="button"
+                      disabled={!invite}
+                      onClick={() => void copyKakaoInviteMessage(invite)}
+                      style={{
+                        padding: '8px 12px',
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.primary}`,
+                        background: COLORS.primarySoft,
+                        cursor: invite ? 'pointer' : 'not-allowed',
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: COLORS.accentText,
+                        opacity: invite ? 1 : 0.45,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      카톡 메시지 복사
+                    </button>
+                    <button
+                      type="button"
                       disabled={busyRe}
                       onClick={(e) => void handleRegenerateInvite(s, e)}
                       style={{
@@ -582,6 +618,7 @@ export default function WordsManagePage() {
         onClose={() => setSettingsSetName(null)}
         setName={settingsSetName || ''}
         teacherId={teacherId}
+        inviteShareTeacherLabel={getTeacherInviteDisplayName(teacher)}
         inferredSetType={settingsMeta.inferred || 'word'}
         hasImageWords={settingsMeta.hasImage}
         onSaved={() => {
