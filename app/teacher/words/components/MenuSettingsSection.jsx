@@ -57,11 +57,20 @@ export default function MenuSettingsSection({ teacherId, visibleMenus, onSaved }
     setSaving(true)
     setStatusMsg(null)
     const payload = { ...menus }
-    const { error } = await supabase.from('teachers').update({ visible_menus: payload }).eq('id', teacherId)
+    const { data, error } = await supabase
+      .from('teachers')
+      .update({ visible_menus: payload })
+      .eq('id', teacherId)
+      .select('id')
     setSaving(false)
     if (error) {
       console.warn('[MenuSettings]', error.message)
       setStatusMsg('저장 실패')
+      return
+    }
+    if (!data || data.length === 0) {
+      console.warn('[MenuSettings] 업데이트된 행 없음 teacherId=', teacherId)
+      setStatusMsg('저장 실패 · 권한 또는 선생님 ID를 확인해 주세요')
       return
     }
     setStatusMsg('저장됐습니다 ✓')
