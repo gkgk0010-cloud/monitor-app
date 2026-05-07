@@ -11,9 +11,10 @@ import BulkImport from './BulkImport'
 import AutoFillPanel from './AutoFillPanel'
 import RoutineSettingsSection from './RoutineSettingsSection'
 import SetSettingsModal from './SetSettingsModal'
+import VocabTestTimeModal from './VocabTestTimeModal'
 import { normalizeWordDifficulty } from '../utils/parsers'
 import { filterWordRows } from '../utils/wordFilters'
-import { formatAvailableModesSummary, normalizeSetType } from '../utils/learningModes'
+import { formatAvailableModesSummary, normalizeSetType, parseAvailableModes } from '../utils/learningModes'
 import {
   meaningIsMissing,
   wordLabelForMeaningAlert,
@@ -35,7 +36,7 @@ function fisherYates(arr) {
 
 /**
  * @param {{
- *   wordSet: { id: string; name: string; set_type?: string | null; available_modes?: unknown; invite_code?: string | null }
+ *   wordSet: { id: string; name: string; set_type?: string | null; available_modes?: unknown; invite_code?: string | null; test_time_per_word?: number | null }
  *   onWordSetUpdated?: () => void | Promise<void>
  *   onSetDeleted?: () => void
  *   deepLinkEditRoutineId?: string
@@ -61,6 +62,7 @@ export default function WordsSetDetailView({
   const [bulkOpen, setBulkOpen] = useState(false)
   const [tableGroupMode, setTableGroupMode] = useState('chunk10')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [testTimeModalOpen, setTestTimeModalOpen] = useState(false)
   const [youtubeUrlInput, setYoutubeUrlInput] = useState('')
   const [dayYoutubeAction, setDayYoutubeAction] = useState(null)
   const [meaningHighlightRowIds, setMeaningHighlightRowIds] = useState(() => new Set())
@@ -159,6 +161,18 @@ export default function WordsSetDetailView({
     const noExample = words.filter((w) => !w.example_sentence || !String(w.example_sentence).trim()).length
     return { total, noImage, noExample }
   }, [words])
+
+  const testModeEnabled = useMemo(
+    () => parseAvailableModes(wordSet?.available_modes, normalizeSetType(wordSet?.set_type || 'word')).modes.test,
+    [wordSet?.available_modes, wordSet?.set_type],
+  )
+
+  const academyDefaultTestSeconds = useMemo(() => {
+    const v = teacher?.default_test_time_per_word
+    if (v == null || v === '') return null
+    const n = Math.floor(Number(v))
+    return Number.isFinite(n) && n > 0 ? Math.min(600, n) : null
+  }, [teacher?.default_test_time_per_word])
 
   const tableColumnPreset = useMemo(() => {
     const t = normalizeSetType(wordSet?.set_type || 'word')
@@ -691,6 +705,24 @@ export default function WordsSetDetailView({
           >
             세트 설정
           </button>
+          {testModeEnabled ? (
+            <button
+              type="button"
+              onClick={() => setTestTimeModalOpen(true)}
+              style={{
+                padding: '10px 16px',
+                borderRadius: RADIUS.md,
+                border: `1px solid ${COLORS.textOnGreen}`,
+                background: 'rgba(255,255,255,0.12)',
+                color: COLORS.textOnGreen,
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontSize: 14,
+              }}
+            >
+              테스트 설정
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => void shuffleDisplayOrder()}
@@ -1110,6 +1142,24 @@ export default function WordsSetDetailView({
             setWords((prev) => prev.map((r) => (String(r.set_name || '').trim() === o ? { ...r, set_name: n } : r)))
           }
           if (n) setSettingsOpen(false)
+        }}
+      />
+
+      <VocabTestTimeModal
+        open={testTimeModalOpen}
+        onClose={() => setTestTimeModalOpen(false)}
+        wordSetId={String(wordSet.id)}
+        teacherId={teacherId}
+        initialSeconds={
+          wordSet?.test_time_per_word != null &&
+          Number.isFinite(Number(wordSet.test_time_per_word)) &&
+          Number(wordSet.test_time_per_word) > 0
+            ? Math.floor(Number(wordSet.test_time_per_word))
+            : null
+        }
+        academyDefaultSeconds={academyDefaultTestSeconds}
+        onSaved={() => {
+          void onWordSetUpdated?.()
         }}
       />
     </div>

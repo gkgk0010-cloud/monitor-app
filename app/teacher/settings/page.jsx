@@ -12,6 +12,7 @@ import { insertAcademyRowForName, normalizeTeachingType } from '@/utils/teacherS
 export default function TeacherSettingsPage() {
   const { teacher, loading, refresh } = useTeacher();
   const [academyName, setAcademyName] = useState('');
+  const [defaultTestSecondsInput, setDefaultTestSecondsInput] = useState('');
   const [pendingLogoFile, setPendingLogoFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
@@ -20,6 +21,12 @@ export default function TeacherSettingsPage() {
   useEffect(() => {
     if (!teacher) return;
     setAcademyName(teacher.academy_name != null ? String(teacher.academy_name) : '');
+    const v = teacher.default_test_time_per_word;
+    if (v != null && v !== '' && Number.isFinite(Number(v)) && Number(v) > 0) {
+      setDefaultTestSecondsInput(String(Math.floor(Number(v))));
+    } else {
+      setDefaultTestSecondsInput('');
+    }
   }, [teacher]);
 
   const showToast = useCallback((msg) => {
@@ -37,6 +44,18 @@ export default function TeacherSettingsPage() {
     try {
       const nameTrim = academyName.trim();
 
+      const rawTestSec = defaultTestSecondsInput.trim();
+      let defaultTestPerWord = null;
+      if (rawTestSec !== '') {
+        const tn = parseInt(rawTestSec, 10);
+        if (!Number.isFinite(tn) || tn < 1 || tn > 600) {
+          setError('테스트 단어당 기본 시간은 1~600초이거나 비워 두세요.');
+          setSaving(false);
+          return;
+        }
+        defaultTestPerWord = tn;
+      }
+
       if (pendingLogoFile) {
         try {
           await uploadAndAssignAcademyLogo(teacher.id, pendingLogoFile, teacher.academy_logo_url || null);
@@ -47,7 +66,7 @@ export default function TeacherSettingsPage() {
         setPendingLogoFile(null);
       }
 
-      const teacherPayload = { academy_name: nameTrim || null };
+      const teacherPayload = { academy_name: nameTrim || null, default_test_time_per_word: defaultTestPerWord };
 
       if (nameTrim) {
         if (teacher.academy_id) {
@@ -191,6 +210,38 @@ export default function TeacherSettingsPage() {
               boxSizing: 'border-box',
             }}
           />
+        </div>
+
+        <div style={{ marginBottom: 18 }}>
+          <label
+            htmlFor="default-test-sec"
+            style={{ display: 'block', fontSize: 12, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 6 }}
+          >
+            테스트 단어당 기본 시간 (초)
+          </label>
+          <input
+            id="default-test-sec"
+            type="number"
+            min={1}
+            max={600}
+            value={defaultTestSecondsInput}
+            onChange={(e) => setDefaultTestSecondsInput(e.target.value)}
+            placeholder="비워 두면 학생 앱 기본 15초"
+            disabled={saving}
+            style={{
+              width: '100%',
+              maxWidth: 200,
+              padding: '12px 14px',
+              fontSize: 15,
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.border}`,
+              outline: 'none',
+              boxSizing: 'border-box',
+            }}
+          />
+          <p style={{ margin: '8px 0 0', fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.5 }}>
+            객관식 테스트 모드의 문항당 제한 시간입니다. 세트에서 별도 지정이 없을 때 적용됩니다.
+          </p>
         </div>
 
         <div style={{ marginBottom: 16 }}>

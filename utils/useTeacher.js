@@ -41,7 +41,7 @@ export function useTeacher() {
       const res = await supabase
         .from('teachers')
         .select(
-          'id, name, email, invite_code, academy_id, visible_menus, academy_name, academy_logo_url, teaching_type',
+          'id, name, email, invite_code, academy_id, visible_menus, academy_name, academy_logo_url, teaching_type, default_test_time_per_word',
         )
         .eq('email', email)
         .maybeSingle();

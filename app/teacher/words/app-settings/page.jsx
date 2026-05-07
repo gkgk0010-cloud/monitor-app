@@ -73,6 +73,14 @@ export default function WordAppMenuSettingsPage() {
         onSaved={() => void refreshTeacher()}
       />
 
+      <p style={{ fontSize: 14, color: COLORS.textSecondary, marginTop: 20, lineHeight: 1.55 }}>
+        객관식 테스트의 문항당 기본 시간(초)은{' '}
+        <Link href="/teacher/settings" style={{ color: COLORS.primary, fontWeight: 700 }}>
+          학원 설정
+        </Link>
+        에서 지정할 수 있습니다.
+      </p>
+
       <div style={{ marginTop: 8 }}>
         <Link
           href="/teacher/words"
