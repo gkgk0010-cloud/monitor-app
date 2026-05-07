@@ -108,6 +108,192 @@ function DraftDayInput({ rowId, value, cellDraftsRef, onCommit, style }) {
   )
 }
 
+const THUMB_PX = 80
+const PEEK_MAX_PX = 260
+
+const WordTableImageBlock = memo(function WordTableImageBlock({
+  rowId,
+  imageUrl,
+  imageLoading,
+  supportsHoverPeek,
+  onOpenLightbox,
+  onSearch,
+  onDrop,
+  onPaste,
+  onFileChange,
+}) {
+  const fileRef = useRef(null)
+  const [hoverPeek, setHoverPeek] = useState(false)
+  const img = imageUrl ? String(imageUrl).trim() : ''
+
+  return (
+    <div role="gridcell" style={{ padding: 8, verticalAlign: 'top', minWidth: 0 }}>
+      <div
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
+        }}
+        onDrop={onDrop}
+        onPaste={onPaste}
+        tabIndex={0}
+        title="이미지: 드롭, 붙여넣기, 검색 또는 업로드 (단어당 1장)"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          padding: 8,
+          borderRadius: RADIUS.sm,
+          border: `1px dashed ${COLORS.border}`,
+          background: COLORS.bg,
+          maxWidth: '100%',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+          <div
+            style={{ position: 'relative', flexShrink: 0 }}
+            onMouseEnter={() => {
+              if (supportsHoverPeek && img) setHoverPeek(true)
+            }}
+            onMouseLeave={() => setHoverPeek(false)}
+          >
+            {img ? (
+              <button
+                type="button"
+                onClick={() => onOpenLightbox(img)}
+                aria-label="이미지 크게 보기"
+                style={{
+                  padding: 0,
+                  margin: 0,
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.surface,
+                  borderRadius: RADIUS.sm,
+                  cursor: 'zoom-in',
+                  display: 'block',
+                  lineHeight: 0,
+                }}
+              >
+                <img
+                  src={img}
+                  alt=""
+                  style={{
+                    width: THUMB_PX,
+                    height: THUMB_PX,
+                    objectFit: 'cover',
+                    borderRadius: RADIUS.sm,
+                    display: 'block',
+                  }}
+                />
+              </button>
+            ) : (
+              <div
+                aria-hidden
+                style={{
+                  width: THUMB_PX,
+                  height: THUMB_PX,
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.surface,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: COLORS.textHint,
+                  fontSize: 13,
+                }}
+              >
+                —
+              </div>
+            )}
+            {hoverPeek && img ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  bottom: '100%',
+                  marginBottom: 6,
+                  zIndex: 80,
+                  pointerEvents: 'none',
+                }}
+              >
+                <img
+                  src={img}
+                  alt=""
+                  style={{
+                    width: PEEK_MAX_PX,
+                    maxHeight: PEEK_MAX_PX,
+                    height: 'auto',
+                    objectFit: 'contain',
+                    borderRadius: RADIUS.md,
+                    border: `1px solid ${COLORS.border}`,
+                    boxShadow: SHADOW.modal,
+                    background: COLORS.surface,
+                    display: 'block',
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, flex: '1 1 120px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                title="Unsplash에서 이미지 찾기"
+                onClick={() => void onSearch(rowId)}
+                disabled={imageLoading}
+                style={{
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.primary}`,
+                  background: COLORS.primarySoft,
+                  color: COLORS.accentText,
+                  cursor: imageLoading ? 'wait' : 'pointer',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {imageLoading ? '검색…' : '검색'}
+              </button>
+              <button
+                type="button"
+                title="기기에서 이미지 파일 선택"
+                onClick={() => fileRef.current?.click()}
+                disabled={imageLoading}
+                style={{
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  background: COLORS.surface,
+                  color: COLORS.textPrimary,
+                  cursor: imageLoading ? 'wait' : 'pointer',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                업로드
+              </button>
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              aria-label={`단어 행 이미지 업로드`}
+              style={{ display: 'none' }}
+              onChange={onFileChange}
+            />
+            <span style={{ fontSize: 10, color: COLORS.textHint, lineHeight: 1.35 }}>
+              PC에서 폴더·탐색기로 드래그하거나, 이미지를 복사한 뒤 이 칸에 포커스하고 붙여넣기(Ctrl+V)하세요.
+              모바일은 「업로드」로 갤러리·촬영 이미지를 고를 수 있습니다.
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+})
+
 /**
  * @param {{
  *   rows: Array<Record<string, unknown>>
@@ -165,29 +351,29 @@ function WordTable({
     const parts = ['48px']
     if (showRowNumbers) parts.push('50px')
     if (isSentence) {
-      parts.push('minmax(200px, 1.4fr)', '200px', '150px')
+      parts.push('minmax(200px, 1.25fr)', 'minmax(160px, 0.95fr)', 'minmax(220px, 1.85fr)')
       if (showDayColumn) parts.push('60px')
       if (onRowCommit) parts.push('76px')
       if (showDeleteColumn && onRowDelete) parts.push('70px')
       return parts.join(' ')
     }
     if (isImage) {
-      parts.push('150px', '200px', '150px')
+      parts.push('150px', '200px', 'minmax(236px, 2.2fr)')
       if (showDayColumn) parts.push('60px')
       if (onRowCommit) parts.push('76px')
       if (showDeleteColumn && onRowDelete) parts.push('70px')
       return parts.join(' ')
     }
     if (isTypedWord) {
-      parts.push('150px', '200px', '150px', 'minmax(160px, 1fr)')
+      parts.push('150px', '200px', 'minmax(236px, 2.2fr)', 'minmax(120px, 1fr)')
       if (showDayColumn) parts.push('60px')
       if (onRowCommit) parts.push('76px')
       if (showDeleteColumn && onRowDelete) parts.push('70px')
       return parts.join(' ')
     }
     parts.push('150px', '200px')
-    if (showImageColumn) parts.push('150px')
-    parts.push('minmax(160px, 1fr)')
+    if (showImageColumn) parts.push('minmax(236px, 2.2fr)')
+    parts.push('minmax(120px, 1fr)')
     if (showSetNameColumn && !isTypedWord) parts.push('150px')
     if (showDayColumn) parts.push('60px')
     if (onRowCommit) parts.push('76px')
@@ -209,6 +395,8 @@ function WordTable({
   const [busyExampleId, setBusyExampleId] = useState(null)
   const [imagePicker, setImagePicker] = useState(null)
   const [imageLoadingId, setImageLoadingId] = useState(null)
+  const [imageLightboxUrl, setImageLightboxUrl] = useState(null)
+  const [supportsHoverPeek, setSupportsHoverPeek] = useState(false)
 
   const highlightIdSet = useMemo(() => {
     if (highlightRowIds == null) return null
@@ -371,6 +559,24 @@ function WordTable({
     setCollapsedSections(new Set())
   }, [rowGroupMode])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(hover: hover)')
+    const apply = () => setSupportsHoverPeek(Boolean(mq.matches))
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
+
+  useEffect(() => {
+    if (!imageLightboxUrl) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') setImageLightboxUrl(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [imageLightboxUrl])
+
   /** 섹션 헤더 + 데이터 행을 한 줄로 펼쳐 가상 스크롤 */
   const flatItems = useMemo(() => {
     const out = []
@@ -395,7 +601,7 @@ function WordTable({
       scrollContainer === 'window' && typeof document !== 'undefined'
         ? document.scrollingElement ?? document.documentElement
         : scrollParentRef.current,
-    estimateSize: (index) => (flatItems[index]?.type === 'section' ? 46 : 96),
+    estimateSize: (index) => (flatItems[index]?.type === 'section' ? 46 : 128),
     overscan: scrollContainer === 'window' ? 2500 : 20,
   })
 
@@ -510,13 +716,22 @@ function WordTable({
     patchRow(id, { image_url: s, image_source: source })
   }
 
-  const onImageDrop = (id, e) => {
-    e.preventDefault()
-    const f = e.dataTransfer?.files?.[0]
-    if (!f || !f.type.startsWith('image/')) return
+  const loadImageFileIntoRow = (id, file) => {
+    if (!file || !file.type.startsWith('image/')) return
     const reader = new FileReader()
     reader.onload = () => applyImageUrl(id, reader.result, 'upload')
-    reader.readAsDataURL(f)
+    reader.readAsDataURL(file)
+  }
+
+  const onImageDrop = (id, e) => {
+    e.preventDefault()
+    loadImageFileIntoRow(id, e.dataTransfer?.files?.[0])
+  }
+
+  const onImageFileInputChange = (id) => (e) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    loadImageFileIntoRow(id, f)
   }
 
   const onImagePaste = (id, e) => {
@@ -535,92 +750,20 @@ function WordTable({
     }
   }
 
-  /** image 칼럼 UI (classic / sentence / image 프리셋 공통) */
-  function renderImageBlock(id, row) {
-    const img = row.image_url ? String(row.image_url).trim() : ''
-    return (
-      <div role="gridcell" style={{ padding: 8, verticalAlign: 'top', minWidth: 0 }}>
-        <div
-          onDragOver={(e) => {
-            e.preventDefault()
-            e.dataTransfer.dropEffect = 'copy'
-          }}
-          onDrop={(e) => onImageDrop(id, e)}
-          onPaste={(e) => onImagePaste(id, e)}
-          tabIndex={0}
-          title="이미지 파일 드롭 또는 클립보드에서 이미지 붙여넣기"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-            padding: 6,
-            borderRadius: RADIUS.sm,
-            border: `1px dashed ${COLORS.border}`,
-            background: COLORS.bg,
-            maxWidth: '100%',
-            boxSizing: 'border-box',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            {img ? (
-              <img
-                src={img}
-                alt=""
-                style={{
-                  width: 40,
-                  height: 40,
-                  objectFit: 'cover',
-                  borderRadius: RADIUS.sm,
-                  border: `1px solid ${COLORS.border}`,
-                }}
-              />
-            ) : (
-              <span style={{ fontSize: 12, color: COLORS.textHint }}>—</span>
-            )}
-            <button
-              type="button"
-              title="Unsplash에서 이미지 찾기"
-              onClick={() => void openImagePicker(id)}
-              disabled={imageLoadingId === id}
-              style={{
-                padding: '4px 8px',
-                fontSize: 12,
-                borderRadius: RADIUS.sm,
-                border: `1px solid ${COLORS.primary}`,
-                background: COLORS.primarySoft,
-                color: COLORS.accentText,
-                cursor: imageLoadingId === id ? 'wait' : 'pointer',
-                fontWeight: 600,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {imageLoadingId === id ? '검색…' : '검색'}
-            </button>
-          </div>
-          <input
-            type="url"
-            name={`imgurl-${id}`}
-            placeholder="https://… URL"
-            defaultValue=""
-            onBlur={(e) => {
-              const v = e.target.value.trim()
-              if (v) applyImageUrl(id, v, 'link')
-              e.target.value = ''
-            }}
-            style={{
-              fontSize: 11,
-              padding: '4px 6px',
-              borderRadius: RADIUS.sm,
-              border: `1px solid ${COLORS.border}`,
-              width: '100%',
-              boxSizing: 'border-box',
-            }}
-          />
-          <span style={{ fontSize: 10, color: COLORS.textHint }}>드롭·붙여넣기·URL</span>
-        </div>
-      </div>
-    )
-  }
+  const imageCell = (id, row) => (
+    <WordTableImageBlock
+      key={`img-cell-${id}`}
+      rowId={id}
+      imageUrl={row.image_url}
+      imageLoading={imageLoadingId === id}
+      supportsHoverPeek={supportsHoverPeek}
+      onOpenLightbox={(url) => setImageLightboxUrl(url)}
+      onSearch={openImagePicker}
+      onDrop={(e) => onImageDrop(id, e)}
+      onPaste={(e) => onImagePaste(id, e)}
+      onFileChange={onImageFileInputChange(id)}
+    />
+  )
 
   return (
     <div
@@ -649,7 +792,7 @@ function WordTable({
         <div
           style={{
             width: '100%',
-            minWidth: 1120,
+            minWidth: 1260,
             fontSize: 14,
             boxSizing: 'border-box',
             /* window 모드: sticky 열 헤더의 조상에 overflow-x(auto 등) 두면 브라우저가 스크롤박스를 바꿔
@@ -976,7 +1119,7 @@ function WordTable({
                           }}
                         />
                       </div>
-                      {renderImageBlock(id, row)}
+                      {imageCell(id, row)}
                     </>
                   ) : isImage ? (
                     <>
@@ -1020,7 +1163,7 @@ function WordTable({
                           }}
                         />
                       </div>
-                      {renderImageBlock(id, row)}
+                      {imageCell(id, row)}
                     </>
                   ) : isTypedWord ? (
                     <>
@@ -1064,7 +1207,7 @@ function WordTable({
                           }}
                         />
                       </div>
-                      {renderImageBlock(id, row)}
+                      {imageCell(id, row)}
                       <div
                         role="gridcell"
                         style={{
@@ -1183,7 +1326,7 @@ function WordTable({
                           }}
                         />
                       </div>
-                      {showImageColumn ? renderImageBlock(id, row) : null}
+                      {showImageColumn ? imageCell(id, row) : null}
                       <div
                         role="gridcell"
                         style={{
@@ -1452,6 +1595,72 @@ function WordTable({
               ))}
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {imageLightboxUrl ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="이미지 크게 보기"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 2100,
+            background: 'rgba(15, 23, 42, 0.82)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            boxSizing: 'border-box',
+          }}
+          onClick={() => setImageLightboxUrl(null)}
+        >
+          <div
+            style={{
+              position: 'relative',
+              maxWidth: '100%',
+              maxHeight: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 12,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={imageLightboxUrl}
+              alt=""
+              style={{
+                maxWidth: 'min(920px, 94vw)',
+                maxHeight: 'min(78vh, 720px)',
+                width: 'auto',
+                height: 'auto',
+                objectFit: 'contain',
+                borderRadius: RADIUS.md,
+                border: `1px solid ${COLORS.border}`,
+                boxShadow: SHADOW.modal,
+                background: COLORS.surface,
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setImageLightboxUrl(null)}
+              style={{
+                padding: '10px 18px',
+                borderRadius: RADIUS.md,
+                border: 'none',
+                background: COLORS.surface,
+                color: COLORS.accentText,
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontSize: 14,
+                boxShadow: SHADOW.card,
+              }}
+            >
+              닫기 · Esc
+            </button>
+          </div>
         </div>
       ) : null}
     </div>
