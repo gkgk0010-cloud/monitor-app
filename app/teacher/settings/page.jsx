@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/utils/supabaseClient';
 import { useTeacher } from '@/utils/useTeacher';
@@ -8,6 +8,7 @@ import { COLORS, RADIUS, SHADOW } from '@/utils/tokens';
 import AcademyLogoDropzone from '@/app/teacher/components/AcademyLogoDropzone';
 import { uploadAndAssignAcademyLogo, clearTeacherAcademyLogo } from '@/utils/academyStorage';
 import { insertAcademyRowForName, normalizeTeachingType } from '@/utils/teacherSignup';
+import { showToast } from '@/utils/toastBus';
 
 const ACADEMY_QT_KEYS = [
   { key: 'word_to_meaning', label: '단어 → 뜻' },
@@ -33,7 +34,6 @@ export default function TeacherSettingsPage() {
   const [defaultTestQt, setDefaultTestQt] = useState(() => ['word_to_meaning']);
   const [pendingLogoFile, setPendingLogoFile] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -65,11 +65,6 @@ export default function TeacherSettingsPage() {
     }
     setDefaultTestQt(normalizeTeacherQt(teacher.default_test_question_types));
   }, [teacher]);
-
-  const showToast = useCallback((msg) => {
-    setToast(msg);
-    window.setTimeout(() => setToast(''), 3200);
-  }, []);
 
   const handleSave = async () => {
     if (!teacher?.id) {
@@ -136,7 +131,7 @@ export default function TeacherSettingsPage() {
           await uploadAndAssignAcademyLogo(teacher.id, pendingLogoFile, teacher.academy_logo_url || null);
         } catch (logoErr) {
           console.warn('[settings] 로고 업로드 실패:', logoErr);
-          showToast('로고 업로드에 실패했습니다. 학원명만 저장합니다.');
+          showToast('로고 업로드에 실패했습니다. 학원명만 저장합니다.', 'error', 3800);
         }
         setPendingLogoFile(null);
       }
@@ -180,7 +175,7 @@ export default function TeacherSettingsPage() {
         return;
       }
 
-      showToast('저장되었습니다.');
+      showToast('저장되었습니다.', 'success', 3000);
       await refresh();
     } catch (e) {
       setError(e?.message || '저장 중 오류가 발생했습니다.');
@@ -196,7 +191,7 @@ export default function TeacherSettingsPage() {
     try {
       await clearTeacherAcademyLogo(teacher.id, teacher.academy_logo_url || null);
       setPendingLogoFile(null);
-      showToast('로고를 삭제했습니다.');
+      showToast('로고를 삭제했습니다.', 'success', 3000);
       await refresh();
     } catch (e) {
       setError(e?.message || '로고 삭제에 실패했습니다.');
@@ -520,28 +515,6 @@ export default function TeacherSettingsPage() {
           {saving ? '저장 중…' : '저장'}
         </button>
       </div>
-
-      {toast ? (
-        <div
-          role="status"
-          style={{
-            position: 'fixed',
-            bottom: 24,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            padding: '12px 20px',
-            borderRadius: RADIUS.lg,
-            background: 'rgba(55, 48, 163, 0.92)',
-            color: '#fff',
-            fontSize: 14,
-            fontWeight: 600,
-            boxShadow: SHADOW.modal,
-            zIndex: 20000,
-          }}
-        >
-          {toast}
-        </div>
-      ) : null}
     </div>
   );
 }

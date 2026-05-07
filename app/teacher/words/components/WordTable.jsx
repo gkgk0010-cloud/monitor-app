@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback, memo } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
+import { showToast } from '@/utils/toastBus'
 
 /**
  * 완전 비제어 입력: 타이핑 시 setState 없음 → 자식 리렌더·리컨실 비용 없음.
@@ -108,8 +109,26 @@ function DraftDayInput({ rowId, value, cellDraftsRef, onCommit, style }) {
   )
 }
 
-const THUMB_PX = 80
-const PEEK_MAX_PX = 260
+const THUMB_PX = 140
+const PEEK_MAX_PX = 300
+
+/** 빈 이미지 슬롯 — 사진 프레임 느낌의 간단 라인 아이콘 */
+function ImagePlaceholderGlyph({ size = 56 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <rect x="2.75" y="4.75" width="18.5" height="14.5" rx="2" stroke="currentColor" strokeWidth="1.35" />
+      <circle cx="8" cy="9.75" r="1.65" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M2.75 16.75 7.75 11.75l3.65 3.65L15.85 11l6.05 8.25" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 const WordTableImageBlock = memo(function WordTableImageBlock({
   rowId,
@@ -121,10 +140,15 @@ const WordTableImageBlock = memo(function WordTableImageBlock({
   onDrop,
   onPaste,
   onFileChange,
+  onClearImage,
 }) {
   const fileRef = useRef(null)
-  const [hoverPeek, setHoverPeek] = useState(false)
+  /** 썸네일 영역 호버 시 피크(PC) + 삭제 X 표시(PC·모바일 패턴) 제어 */
+  const [thumbHovered, setThumbHovered] = useState(false)
+
   const img = imageUrl ? String(imageUrl).trim() : ''
+  const showDeleteBtn = Boolean(img)
+  const deleteOpaque = supportsHoverPeek ? thumbHovered : true
 
   return (
     <div role="gridcell" style={{ padding: 8, verticalAlign: 'top', minWidth: 0 }}>
@@ -151,60 +175,129 @@ const WordTableImageBlock = memo(function WordTableImageBlock({
       >
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
           <div
-            style={{ position: 'relative', flexShrink: 0 }}
-            onMouseEnter={() => {
-              if (supportsHoverPeek && img) setHoverPeek(true)
+            style={{
+              position: 'relative',
+              flexShrink: 0,
+              width: THUMB_PX,
+              minHeight: THUMB_PX,
             }}
-            onMouseLeave={() => setHoverPeek(false)}
+            onMouseEnter={() => {
+              setThumbHovered(true)
+            }}
+            onMouseLeave={() => {
+              setThumbHovered(false)
+            }}
           >
             {img ? (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onClearImage(rowId)
+                  }}
+                  aria-label="이미지 삭제"
+                  title="이미지 삭제"
+                  style={{
+                    position: 'absolute',
+                    top: 4,
+                    right: 4,
+                    zIndex: 5,
+                    width: 26,
+                    height: 26,
+                    padding: 0,
+                    border: 'none',
+                    borderRadius: '50%',
+                    background: 'rgba(15, 23, 42, 0.72)',
+                    color: '#fff',
+                    cursor: imageLoading ? 'not-allowed' : 'pointer',
+                    fontWeight: 800,
+                    fontSize: 15,
+                    lineHeight: '24px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: deleteOpaque ? 1 : 0,
+                    transition: 'opacity 0.12s ease',
+                    pointerEvents: deleteOpaque && showDeleteBtn && !imageLoading ? 'auto' : 'none',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.35)',
+                  }}
+                >
+                  ×
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenLightbox(img)}
+                  aria-label="이미지 크게 보기"
+                  disabled={imageLoading}
+                  style={{
+                    padding: 0,
+                    margin: 0,
+                    border: `1px solid ${COLORS.border}`,
+                    background: COLORS.surface,
+                    borderRadius: RADIUS.sm,
+                    cursor: imageLoading ? 'wait' : 'zoom-in',
+                    display: 'block',
+                    lineHeight: 0,
+                  }}
+                >
+                  <img
+                    src={img}
+                    alt=""
+                    style={{
+                      width: THUMB_PX,
+                      height: THUMB_PX,
+                      objectFit: 'cover',
+                      borderRadius: RADIUS.sm,
+                      display: 'block',
+                    }}
+                  />
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
-                onClick={() => onOpenLightbox(img)}
-                aria-label="이미지 크게 보기"
-                style={{
-                  padding: 0,
-                  margin: 0,
-                  border: `1px solid ${COLORS.border}`,
-                  background: COLORS.surface,
-                  borderRadius: RADIUS.sm,
-                  cursor: 'zoom-in',
-                  display: 'block',
-                  lineHeight: 0,
+                aria-label="이미지 업로드 또는 여기로 드래그"
+                title="파일 업로드"
+                disabled={imageLoading}
+                onClick={() => {
+                  if (!imageLoading) fileRef.current?.click()
                 }}
-              >
-                <img
-                  src={img}
-                  alt=""
-                  style={{
-                    width: THUMB_PX,
-                    height: THUMB_PX,
-                    objectFit: 'cover',
-                    borderRadius: RADIUS.sm,
-                    display: 'block',
-                  }}
-                />
-              </button>
-            ) : (
-              <div
-                aria-hidden
                 style={{
                   width: THUMB_PX,
-                  height: THUMB_PX,
+                  minHeight: THUMB_PX,
+                  padding: '10px 8px',
+                  boxSizing: 'border-box',
                   borderRadius: RADIUS.sm,
-                  border: `1px solid ${COLORS.border}`,
-                  background: COLORS.surface,
+                  border: `2px dashed ${COLORS.primary}`,
+                  background: COLORS.primarySoft,
+                  color: COLORS.textSecondary,
+                  cursor: imageLoading ? 'wait' : 'pointer',
                   display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: COLORS.textHint,
-                  fontSize: 13,
+                  gap: 6,
+                  margin: 0,
                 }}
               >
-                —
-              </div>
+                <ImagePlaceholderGlyph size={52} />
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    lineHeight: 1.35,
+                    textAlign: 'center',
+                    color: COLORS.accentText,
+                    wordBreak: 'keep-all',
+                  }}
+                >
+                  드래그하거나 업로드
+                </span>
+              </button>
             )}
-            {hoverPeek && img ? (
+            {supportsHoverPeek && thumbHovered && img ? (
               <div
                 style={{
                   position: 'absolute',
@@ -601,7 +694,7 @@ function WordTable({
       scrollContainer === 'window' && typeof document !== 'undefined'
         ? document.scrollingElement ?? document.documentElement
         : scrollParentRef.current,
-    estimateSize: (index) => (flatItems[index]?.type === 'section' ? 46 : 128),
+    estimateSize: (index) => (flatItems[index]?.type === 'section' ? 46 : 218),
     overscan: scrollContainer === 'window' ? 2500 : 20,
   })
 
@@ -750,6 +843,11 @@ function WordTable({
     }
   }
 
+  const onClearWordImage = useCallback((id) => {
+    patchRow(id, { image_url: null, image_source: 'none' })
+    showToast('✓ 이미지를 제거했습니다', 'success', 1600)
+  }, [patchRow])
+
   const imageCell = (id, row) => (
     <WordTableImageBlock
       key={`img-cell-${id}`}
@@ -762,6 +860,7 @@ function WordTable({
       onDrop={(e) => onImageDrop(id, e)}
       onPaste={(e) => onImagePaste(id, e)}
       onFileChange={onImageFileInputChange(id)}
+      onClearImage={onClearWordImage}
     />
   )
 

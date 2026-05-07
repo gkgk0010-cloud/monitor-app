@@ -1,7 +1,7 @@
 /**
  * Teacher 영역 전역 토스트 — TeacherToastPortal이 구독하고 createPortal로 body에 그림.
  * @param {string} message
- * @param {'success' | 'error'} [type]
+ * @param {'success' | 'error' | 'info'} [type]
  * @param {number} [durationMs]
  */
 const listeners = new Set()
@@ -12,7 +12,10 @@ export function subscribeToast(listener) {
 }
 
 export function showToast(message, type = 'success', durationMs = 2500) {
-  const payload = { message: String(message ?? ''), type: type === 'error' ? 'error' : 'success', durationMs }
+  let t = 'success'
+  if (type === 'error') t = 'error'
+  else if (type === 'info') t = 'info'
+  const payload = { message: String(message ?? ''), type: t, durationMs }
   listeners.forEach((fn) => {
     try {
       fn(payload)
