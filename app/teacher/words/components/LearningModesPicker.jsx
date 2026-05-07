@@ -26,6 +26,7 @@ function toggleStyle(active) {
  *   passScore: number
  *   maxAttempts: number
  *   hasImageWords?: boolean
+ *   hideTestRubrics?: boolean
  *   onToggleMode: (key: string) => void
  *   onRequiredChange: (key: string, required: boolean) => void
  *   onPassScoreChange: (n: number) => void
@@ -39,6 +40,7 @@ export default function LearningModesPicker({
   passScore,
   maxAttempts,
   hasImageWords,
+  hideTestRubrics = false,
   onToggleMode,
   onRequiredChange,
   onPassScoreChange,
@@ -82,7 +84,7 @@ export default function LearningModesPicker({
             {hasImageWords ? '단어에 이미지가 있으면 앱에서 사용할 수 있어요.' : 'image_url이 있는 단어가 있을 때 앱에서 활성화돼요.'}
           </span>
         ) : null}
-        {key === 'test' && checked ? (
+        {key === 'test' && checked && !hideTestRubrics ? (
           <div
             style={{
               marginLeft: 24,

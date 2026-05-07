@@ -174,6 +174,21 @@ export default function WordsSetDetailView({
     return Number.isFinite(n) && n > 0 ? Math.min(600, n) : null
   }, [teacher?.default_test_time_per_word])
 
+  const academyTestDefaults = useMemo(
+    () => ({
+      questionCount: teacher?.default_test_question_count ?? null,
+      passScore: teacher?.default_test_pass_score ?? null,
+      maxAttempts: teacher?.default_test_max_attempts ?? null,
+      questionTypes: teacher?.default_test_question_types ?? null,
+    }),
+    [
+      teacher?.default_test_question_count,
+      teacher?.default_test_pass_score,
+      teacher?.default_test_max_attempts,
+      teacher?.default_test_question_types,
+    ],
+  )
+
   const tableColumnPreset = useMemo(() => {
     const t = normalizeSetType(wordSet?.set_type || 'word')
     if (t === 'sentence_writing' || t === 'sentence_speaking') return 'sentence'
@@ -1158,6 +1173,8 @@ export default function WordsSetDetailView({
             : null
         }
         academyDefaultSeconds={academyDefaultTestSeconds}
+        academyDefaults={academyTestDefaults}
+        hasImageWords={stats.total > 0 && stats.noImage < stats.total}
         onSaved={() => {
           void onWordSetUpdated?.()
         }}

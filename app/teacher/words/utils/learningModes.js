@@ -124,17 +124,11 @@ export function normalizeRawAvailableModes(raw) {
  * word_sets.available_modes 저장용 — 순수 JSON 직렬화 가능한 plain object 배열만 반환.
  * @returns {object[]}
  */
-export function buildModesDataForWordSetSave(modes, requiredByMode, passScore, maxAttempts) {
+export function buildModesDataForWordSetSave(modes, requiredByMode, _passScore, _maxAttempts) {
   const selectedKeys = ALL_MODE_KEYS.filter((k) => modes[k])
   const modesData = selectedKeys.map((modeName) => ({
     mode: modeName,
     required: !!requiredByMode[modeName],
-    ...(modeName === 'test'
-      ? {
-          pass_score: Math.min(100, Math.max(0, Math.round(Number(passScore) || 80))),
-          max_attempts: Math.max(1, Math.round(Number(maxAttempts) || 3)),
-        }
-      : {}),
   }))
   return JSON.parse(JSON.stringify(modesData))
 }
@@ -164,7 +158,7 @@ export function parseAvailableModes(am, setType) {
     requiredByMode[k] = false
   }
 
-  let passScore = 80
+  let passScore = 70
   let maxAttempts = 3
 
   if (!Array.isArray(amNorm) || amNorm.length === 0) {
@@ -224,5 +218,5 @@ export function initModesStateForType(setType) {
   for (const k of ALL_MODE_KEYS) {
     requiredByMode[k] = modes[k] ? !!def[k] : false
   }
-  return { modes, requiredByMode, passScore: 80, maxAttempts: 3 }
+  return { modes, requiredByMode, passScore: 70, maxAttempts: 3 }
 }

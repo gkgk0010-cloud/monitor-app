@@ -16,12 +16,6 @@ import LearningModesPicker from './LearningModesPicker'
 import { buildKakaoTeacherInviteShareMessage } from '@/utils/kakaoTeacherInviteShare'
 import { showToast } from '@/utils/toastBus'
 
-const QTYPE_KEYS = [
-  { key: 'word_to_meaning', label: '단어 → 뜻' },
-  { key: 'meaning_to_word', label: '뜻 → 단어' },
-  { key: 'image_to_word', label: '이미지 → 단어' },
-]
-
 const SET_TYPE_LABELS = {
   word: '단어 세트',
   sentence_writing: '문장 세트 — 라이팅',
@@ -61,8 +55,6 @@ export default function SetSettingsModal({
   const [setType, setSetType] = useState('word')
   const [modes, setModes] = useState({})
   const [requiredByMode, setRequiredByMode] = useState({})
-  const [passScore, setPassScore] = useState(80)
-  const [maxAttempts, setMaxAttempts] = useState(3)
   const [dayMode, setDayMode] = useState('equal')
   const [totalDays, setTotalDays] = useState(7)
   const [perDay, setPerDay] = useState(20)
@@ -76,7 +68,6 @@ export default function SetSettingsModal({
   const [editableSetName, setEditableSetName] = useState('')
   const [inviteCode, setInviteCode] = useState('')
   const [hint, setHint] = useState(null)
-  const [testQuestionTypes, setTestQuestionTypes] = useState(() => ['word_to_meaning'])
 
   const load = useCallback(async () => {
     const sn = String(setName || '').trim()
@@ -104,37 +95,10 @@ export default function SetSettingsModal({
       const parsed = parseAvailableModes(ws?.available_modes, st)
       setModes(parsed.modes)
       setRequiredByMode(parsed.requiredByMode)
-      let ps = parsed.passScore
-      let ma = parsed.maxAttempts
       const wid = ws?.id ? String(ws.id) : null
       setWordSetId(wid)
       setEditableSetName(ws?.name != null ? String(ws.name).trim() : sn)
       setInviteCode(ws?.invite_code != null ? String(ws.invite_code).trim() : '')
-      if (wid) {
-        const { data: vts } = await supabase
-          .from('vocab_test_settings')
-          .select('pass_score, max_attempts, test_question_types')
-          .eq('word_set_id', wid)
-          .maybeSingle()
-        if (vts) {
-          if (vts.pass_score != null) ps = Math.min(100, Math.max(0, Number(vts.pass_score)))
-          if (vts.max_attempts != null) ma = Math.max(1, Number(vts.max_attempts))
-          if (Array.isArray(vts.test_question_types) && vts.test_question_types.length) {
-            const allow = new Set(QTYPE_KEYS.map((x) => x.key))
-            const next = vts.test_question_types.map(String).filter((k) => allow.has(k))
-            if (next.length) setTestQuestionTypes(next)
-            else setTestQuestionTypes(['word_to_meaning'])
-          } else {
-            setTestQuestionTypes(['word_to_meaning'])
-          }
-        } else {
-          setTestQuestionTypes(['word_to_meaning'])
-        }
-      } else {
-        setTestQuestionTypes(['word_to_meaning'])
-      }
-      setPassScore(ps)
-      setMaxAttempts(ma)
 
       const list = (wordRows || []).map((r) => ({
         id: String(r.id),
@@ -373,7 +337,7 @@ export default function SetSettingsModal({
       return
     }
     const sn = String(setName || '').trim()
-    const modesData = buildModesDataForWordSetSave(modes, requiredByMode, passScore, maxAttempts)
+    const modesData = buildModesDataForWordSetSave(modes, requiredByMode, 70, 3)
     setSavingModes(true)
     try {
       let wid = wordSetId ? String(wordSetId) : null
@@ -400,22 +364,6 @@ export default function SetSettingsModal({
         if (error) throw error
         const { data: row } = await supabase.from('word_sets').select('id').eq('teacher_id', teacherId).eq('name', sn).maybeSingle()
         if (row?.id) wid = String(row.id)
-      }
-
-      if (wid && modes.test) {
-        const allow = new Set(QTYPE_KEYS.map((x) => x.key))
-        const tqt = (testQuestionTypes || []).map(String).filter((k) => allow.has(k))
-        const tqtFinal = tqt.length > 0 ? tqt : ['word_to_meaning']
-        const { error: e2 } = await supabase.from('vocab_test_settings').upsert(
-          {
-            word_set_id: wid,
-            pass_score: Math.min(100, Math.max(0, Math.round(Number(passScore) || 80))),
-            max_attempts: Math.max(1, Math.round(Number(maxAttempts) || 3)),
-            test_question_types: tqtFinal,
-          },
-          { onConflict: 'word_set_id' },
-        )
-        if (e2) console.warn('[vocab_test_settings]', e2.message)
       }
 
       if (wid) setWordSetId(String(wid))
@@ -787,72 +735,23 @@ export default function SetSettingsModal({
               학습 모드 재설정
             </div>
             <p style={{ fontSize: 12, color: COLORS.textSecondary, margin: '0 0 10px' }}>
-              새 세트 만들기 2단계와 동일합니다. 필수/선택과 테스트 통과 기준이 `word_sets`·`vocab_test_settings`에 저장됩니다.
+              필수·선택은 <code style={{ fontSize: 11 }}>word_sets.available_modes</code>에만 저장됩니다. 객관식 테스트의 문항 수·통과 점수·출제 유형 등은 세트 단어
+              목록 상단의 <strong>테스트 설정</strong>에서 수정하세요 (학생 앱·루틴과 동일한 단일 규칙).
             </p>
 
             <LearningModesPicker
               setType={setType}
               modes={modes}
               requiredByMode={requiredByMode}
-              passScore={passScore}
-              maxAttempts={maxAttempts}
+              passScore={70}
+              maxAttempts={3}
+              hideTestRubrics
               hasImageWords={hasImageWords}
               onToggleMode={handleToggleMode}
               onRequiredChange={(key, required) => setRequiredByMode((r) => ({ ...r, [key]: required }))}
-              onPassScoreChange={setPassScore}
-              onMaxAttemptsChange={setMaxAttempts}
+              onPassScoreChange={() => {}}
+              onMaxAttemptsChange={() => {}}
             />
-
-            {modes.test ? (
-              <div
-                style={{
-                  marginTop: 14,
-                  padding: 14,
-                  borderRadius: RADIUS.md,
-                  border: `1px solid ${COLORS.border}`,
-                  background: COLORS.primarySoft,
-                }}
-              >
-                <div style={{ fontWeight: 800, color: COLORS.accentText, marginBottom: 8, fontSize: 13 }}>
-                  객관식 테스트 출제 방식
-                </div>
-                <p style={{ fontSize: 11, color: COLORS.textSecondary, margin: '0 0 10px' }}>
-                  여러 개 선택 시 문항마다 무작위로 섞어 출제합니다. 이미지가 없는 단어는 &quot;이미지 → 단어&quot;가 아니라
-                  &quot;단어 → 뜻&quot;으로 대체됩니다.
-                </p>
-                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 8 }}>
-                  {QTYPE_KEYS.map(({ key, label }) => {
-                    const checked = (testQuestionTypes || []).includes(key)
-                    return (
-                      <li key={key}>
-                        <label
-                          style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              setTestQuestionTypes((prev) => {
-                                const p = Array.isArray(prev) ? prev : ['word_to_meaning']
-                                if (p.includes(key)) {
-                                  if (p.length <= 1) {
-                                    alert('출제 방식은 최소 한 가지를 선택해 주세요.')
-                                    return p
-                                  }
-                                  return p.filter((x) => x !== key)
-                                }
-                                return [...p, key]
-                              })
-                            }}
-                          />
-                          <span>{label}</span>
-                        </label>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            ) : null}
 
             {hint ? (
               <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600, color: COLORS.accentText }}>{hint}</p>

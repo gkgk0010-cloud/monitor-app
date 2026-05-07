@@ -9,10 +9,28 @@ import AcademyLogoDropzone from '@/app/teacher/components/AcademyLogoDropzone';
 import { uploadAndAssignAcademyLogo, clearTeacherAcademyLogo } from '@/utils/academyStorage';
 import { insertAcademyRowForName, normalizeTeachingType } from '@/utils/teacherSignup';
 
+const ACADEMY_QT_KEYS = [
+  { key: 'word_to_meaning', label: '단어 → 뜻' },
+  { key: 'meaning_to_word', label: '뜻 → 단어' },
+  { key: 'image_to_word', label: '이미지 → 단어' },
+];
+
+function normalizeTeacherQt(raw) {
+  const allow = new Set(ACADEMY_QT_KEYS.map((x) => x.key));
+  if (raw == null) return ['word_to_meaning'];
+  const arr = Array.isArray(raw) ? raw : [];
+  const next = arr.map((x) => String(x).trim()).filter((k) => allow.has(k));
+  return next.length > 0 ? next : ['word_to_meaning'];
+}
+
 export default function TeacherSettingsPage() {
   const { teacher, loading, refresh } = useTeacher();
   const [academyName, setAcademyName] = useState('');
   const [defaultTestSecondsInput, setDefaultTestSecondsInput] = useState('');
+  const [defaultTestQCountInput, setDefaultTestQCountInput] = useState('');
+  const [defaultTestPassInput, setDefaultTestPassInput] = useState('');
+  const [defaultTestAttemptsInput, setDefaultTestAttemptsInput] = useState('');
+  const [defaultTestQt, setDefaultTestQt] = useState(() => ['word_to_meaning']);
   const [pendingLogoFile, setPendingLogoFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
@@ -27,6 +45,25 @@ export default function TeacherSettingsPage() {
     } else {
       setDefaultTestSecondsInput('');
     }
+    const qc = teacher.default_test_question_count;
+    if (qc != null && qc !== '' && Number.isFinite(Number(qc))) {
+      setDefaultTestQCountInput(String(Math.max(0, Math.min(100, Math.floor(Number(qc))))));
+    } else {
+      setDefaultTestQCountInput('');
+    }
+    const ps = teacher.default_test_pass_score;
+    if (ps != null && ps !== '' && Number.isFinite(Number(ps))) {
+      setDefaultTestPassInput(String(Math.max(0, Math.min(100, Math.floor(Number(ps))))));
+    } else {
+      setDefaultTestPassInput('');
+    }
+    const ma = teacher.default_test_max_attempts;
+    if (ma != null && ma !== '' && Number.isFinite(Number(ma))) {
+      setDefaultTestAttemptsInput(String(Math.max(1, Math.floor(Number(ma)))));
+    } else {
+      setDefaultTestAttemptsInput('');
+    }
+    setDefaultTestQt(normalizeTeacherQt(teacher.default_test_question_types));
   }, [teacher]);
 
   const showToast = useCallback((msg) => {
@@ -56,6 +93,44 @@ export default function TeacherSettingsPage() {
         defaultTestPerWord = tn;
       }
 
+      const rawQc = defaultTestQCountInput.trim();
+      let defaultTestQuestionCount = null;
+      if (rawQc !== '') {
+        const qn = parseInt(rawQc, 10);
+        if (!Number.isFinite(qn) || qn < 0 || qn > 100) {
+          setError('기본 출제 문항 수는 0~100 또는 비워 두세요(비우면 학생 앱 기본 0 = Day 전체).');
+          setSaving(false);
+          return;
+        }
+        defaultTestQuestionCount = qn;
+      }
+
+      const rawPs = defaultTestPassInput.trim();
+      let defaultTestPassScore = null;
+      if (rawPs !== '') {
+        const pn = parseInt(rawPs, 10);
+        if (!Number.isFinite(pn) || pn < 0 || pn > 100) {
+          setError('기본 통과 점수는 0~100 또는 비워 두세요(비우면 70%).');
+          setSaving(false);
+          return;
+        }
+        defaultTestPassScore = pn;
+      }
+
+      const rawMa = defaultTestAttemptsInput.trim();
+      let defaultTestMaxAttempts = null;
+      if (rawMa !== '') {
+        const mn = parseInt(rawMa, 10);
+        if (!Number.isFinite(mn) || mn < 1 || mn > 99) {
+          setError('기본 최대 시도는 1~99 또는 비워 두세요(비우면 3회).');
+          setSaving(false);
+          return;
+        }
+        defaultTestMaxAttempts = mn;
+      }
+
+      const defaultTestQuestionTypes = defaultTestQt.length > 0 ? defaultTestQt : ['word_to_meaning'];
+
       if (pendingLogoFile) {
         try {
           await uploadAndAssignAcademyLogo(teacher.id, pendingLogoFile, teacher.academy_logo_url || null);
@@ -66,7 +141,14 @@ export default function TeacherSettingsPage() {
         setPendingLogoFile(null);
       }
 
-      const teacherPayload = { academy_name: nameTrim || null, default_test_time_per_word: defaultTestPerWord };
+      const teacherPayload = {
+        academy_name: nameTrim || null,
+        default_test_time_per_word: defaultTestPerWord,
+        default_test_question_count: defaultTestQuestionCount,
+        default_test_pass_score: defaultTestPassScore,
+        default_test_max_attempts: defaultTestMaxAttempts,
+        default_test_question_types: defaultTestQuestionTypes,
+      };
 
       if (nameTrim) {
         if (teacher.academy_id) {
@@ -242,6 +324,139 @@ export default function TeacherSettingsPage() {
           <p style={{ margin: '8px 0 0', fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.5 }}>
             객관식 테스트 모드의 문항당 제한 시간입니다. 세트에서 별도 지정이 없을 때 적용됩니다.
           </p>
+        </div>
+
+        <div style={{ marginBottom: 18 }}>
+          <span
+            style={{ display: 'block', fontSize: 13, fontWeight: 700, color: COLORS.accentText, marginBottom: 10 }}
+          >
+            객관식 테스트 학원 기본
+          </span>
+          <p style={{ margin: '0 0 12px', fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.5 }}>
+            세트에 별도 값이 없을 때 학생 앱에 적용됩니다. 세트별 상세는 단어 목록 상단의 테스트 설정에서 합니다.
+          </p>
+
+          <label
+            htmlFor="default-test-qcount"
+            style={{ display: 'block', fontSize: 12, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 6 }}
+          >
+            기본 출제 문항 수 (0 = 해당 Day 전체)
+          </label>
+          <input
+            id="default-test-qcount"
+            type="number"
+            min={0}
+            max={100}
+            value={defaultTestQCountInput}
+            onChange={(e) => setDefaultTestQCountInput(e.target.value)}
+            placeholder="비우면 0"
+            disabled={saving}
+            style={{
+              width: '100%',
+              maxWidth: 200,
+              padding: '12px 14px',
+              fontSize: 15,
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.border}`,
+              outline: 'none',
+              boxSizing: 'border-box',
+              marginBottom: 14,
+            }}
+          />
+
+          <label
+            htmlFor="default-test-pass"
+            style={{ display: 'block', fontSize: 12, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 6 }}
+          >
+            기본 통과 점수 (%)
+          </label>
+          <input
+            id="default-test-pass"
+            type="number"
+            min={0}
+            max={100}
+            value={defaultTestPassInput}
+            onChange={(e) => setDefaultTestPassInput(e.target.value)}
+            placeholder="비우면 70"
+            disabled={saving}
+            style={{
+              width: '100%',
+              maxWidth: 200,
+              padding: '12px 14px',
+              fontSize: 15,
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.border}`,
+              outline: 'none',
+              boxSizing: 'border-box',
+              marginBottom: 14,
+            }}
+          />
+
+          <label
+            htmlFor="default-test-att"
+            style={{ display: 'block', fontSize: 12, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 6 }}
+          >
+            기본 최대 시도 횟수
+          </label>
+          <input
+            id="default-test-att"
+            type="number"
+            min={1}
+            max={99}
+            value={defaultTestAttemptsInput}
+            onChange={(e) => setDefaultTestAttemptsInput(e.target.value)}
+            placeholder="비우면 3"
+            disabled={saving}
+            style={{
+              width: '100%',
+              maxWidth: 200,
+              padding: '12px 14px',
+              fontSize: 15,
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.border}`,
+              outline: 'none',
+              boxSizing: 'border-box',
+              marginBottom: 14,
+            }}
+          />
+
+          <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: COLORS.textPrimary, marginBottom: 8 }}>
+            기본 출제 방식 (복수)
+          </span>
+          <ul style={{ listStyle: 'none', margin: '0 0 8px', padding: 0, display: 'grid', gap: 8 }}>
+            {ACADEMY_QT_KEYS.map(({ key, label }) => {
+              const checked = defaultTestQt.includes(key);
+              return (
+                <li key={key}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      cursor: saving ? 'not-allowed' : 'pointer',
+                      fontSize: 14,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={saving}
+                      onChange={() => {
+                        setDefaultTestQt((prev) => {
+                          if (prev.includes(key)) {
+                            if (prev.length <= 1) return prev;
+                            return prev.filter((x) => x !== key);
+                          }
+                          return [...prev, key];
+                        });
+                      }}
+                    />
+                    {label}
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
         </div>
 
         <div style={{ marginBottom: 16 }}>

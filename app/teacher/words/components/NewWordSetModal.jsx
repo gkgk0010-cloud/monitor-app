@@ -33,8 +33,6 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
   const [setType, setSetType] = useState('word')
   const [modes, setModes] = useState(() => initModesStateForType('word').modes)
   const [requiredByMode, setRequiredByMode] = useState(() => initModesStateForType('word').requiredByMode)
-  const [passScore, setPassScore] = useState(80)
-  const [maxAttempts, setMaxAttempts] = useState(3)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -45,8 +43,6 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
     const init = initModesStateForType('word')
     setModes(init.modes)
     setRequiredByMode(init.requiredByMode)
-    setPassScore(init.passScore)
-    setMaxAttempts(init.maxAttempts)
     setSaving(false)
   }, [open])
 
@@ -63,8 +59,6 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
     const init = initModesStateForType(setType)
     setModes(init.modes)
     setRequiredByMode(init.requiredByMode)
-    setPassScore(init.passScore)
-    setMaxAttempts(init.maxAttempts)
     setStep(2)
   }
 
@@ -84,7 +78,7 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
   const handleComplete = async () => {
     const n = String(setName || '').trim()
     const selected = ALL_MODE_KEYS.filter((k) => modes[k])
-    const availableModes = buildAvailableModesJson(modes, requiredByMode, passScore, maxAttempts)
+    const availableModes = buildAvailableModesJson(modes, requiredByMode, 70, 3)
 
     if (selected.length === 0) {
       alert('학습 모드를 하나 이상 선택해 주세요.')
@@ -119,21 +113,6 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
           alert(`저장 실패: ${error.message}`)
         }
         return
-      }
-
-      const wordSetId = data?.id
-      if (wordSetId && modes.test) {
-        const { error: e2 } = await supabase.from('vocab_test_settings').upsert(
-          {
-            word_set_id: wordSetId,
-            pass_score: Math.min(100, Math.max(0, Math.round(Number(passScore) || 80))),
-            max_attempts: Math.max(1, Math.round(Number(maxAttempts) || 3)),
-          },
-          { onConflict: 'word_set_id' },
-        )
-        if (e2) {
-          console.warn('[vocab_test_settings] 저장 실패 (테이블·RLS 확인):', e2.message)
-        }
       }
 
       onClose()
@@ -278,13 +257,14 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
               setType={setType}
               modes={modes}
               requiredByMode={requiredByMode}
-              passScore={passScore}
-              maxAttempts={maxAttempts}
+              passScore={70}
+              maxAttempts={3}
+              hideTestRubrics
               hasImageWords={hasImageWords}
               onToggleMode={handleToggleMode}
               onRequiredChange={(key, required) => setRequiredByMode((r) => ({ ...r, [key]: required }))}
-              onPassScoreChange={setPassScore}
-              onMaxAttemptsChange={setMaxAttempts}
+              onPassScoreChange={() => {}}
+              onMaxAttemptsChange={() => {}}
             />
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 22, gap: 10, flexWrap: 'wrap' }}>
