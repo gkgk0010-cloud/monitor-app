@@ -7,6 +7,7 @@ import { useTeacher } from '@/utils/useTeacher';
 import { formatTeacherName } from '@/utils/formatTeacherName';
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens';
 import TeacherToastPortal from '@/components/TeacherToastPortal';
+import TtsWarmupPortal from '@/components/TtsWarmupPortal';
 
 function navItemStyle(active) {
   return {
@@ -186,6 +187,7 @@ export default function TeacherLayout({ children }) {
         {children}
       </main>
       <TeacherToastPortal />
+      <TtsWarmupPortal />
     </div>
   );
 }

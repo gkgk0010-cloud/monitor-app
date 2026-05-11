@@ -10,6 +10,7 @@ import {
   defaultRequiredForBaseKeys,
 } from '../utils/learningModes'
 import LearningModesPicker from './LearningModesPicker'
+import { WORD_SET_DEFAULT_LANG_OPTIONS } from '@/utils/wordSetLangUi'
 
 const SET_TYPE_OPTIONS = [
   { id: 'word', label: '단어 (암기, 매칭 중심)', hint: '기본: 암기·리콜·매칭·테스트' },
@@ -33,6 +34,7 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
   const [setType, setSetType] = useState('word')
   const [modes, setModes] = useState(() => initModesStateForType('word').modes)
   const [requiredByMode, setRequiredByMode] = useState(() => initModesStateForType('word').requiredByMode)
+  const [defaultLang, setDefaultLang] = useState('en-US')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -43,6 +45,7 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
     const init = initModesStateForType('word')
     setModes(init.modes)
     setRequiredByMode(init.requiredByMode)
+    setDefaultLang('en-US')
     setSaving(false)
   }, [open])
 
@@ -97,6 +100,7 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
           name: n,
           set_type: setType,
           available_modes: availableModes,
+          default_lang: String(defaultLang || 'en-US').trim() || null,
         })
         .select('id')
         .maybeSingle()
@@ -183,6 +187,33 @@ export default function NewWordSetModal({ open, onClose, teacherId, existingSetN
                 boxSizing: 'border-box',
               }}
             />
+
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 8 }}>
+              세트 언어
+            </label>
+            <select
+              value={defaultLang}
+              onChange={(e) => setDefaultLang(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '12px 14px',
+                borderRadius: RADIUS.md,
+                border: `1px solid ${COLORS.border}`,
+                fontSize: 15,
+                marginBottom: 8,
+                boxSizing: 'border-box',
+                background: COLORS.surface,
+              }}
+            >
+              {WORD_SET_DEFAULT_LANG_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p style={{ fontSize: 12, color: COLORS.textSecondary, margin: '0 0 20px', lineHeight: 1.5 }}>
+              학생 학습 및 Google 음성(TTS)의 기준 언어입니다. 세트 설정에서 언제든 바꿀 수 있어요.
+            </p>
 
             <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 10 }}>세트 타입</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

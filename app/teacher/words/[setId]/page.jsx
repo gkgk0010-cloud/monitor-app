@@ -30,7 +30,7 @@ function WordSetDetailPageInner() {
     if (!teacherId || !setId) return
     const { data, error } = await supabase
       .from('word_sets')
-      .select('id, name, set_type, available_modes, invite_code, test_time_per_word')
+      .select('id, name, set_type, available_modes, invite_code, test_time_per_word, default_lang')
       .eq('id', setId)
       .eq('teacher_id', teacherId)
       .maybeSingle()
@@ -47,7 +47,7 @@ function WordSetDetailPageInner() {
     ;(async () => {
       const { data, error } = await supabase
         .from('word_sets')
-        .select('id, name, set_type, available_modes, invite_code, test_time_per_word')
+        .select('id, name, set_type, available_modes, invite_code, test_time_per_word, default_lang')
         .eq('id', setId)
         .eq('teacher_id', teacherId)
         .maybeSingle()

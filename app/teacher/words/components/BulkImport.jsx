@@ -11,6 +11,9 @@ import {
   formatEmptyMeaningAlert,
   formatSupabaseWordsSaveError,
 } from '../utils/wordMeaningGuard'
+import { fetchWordSetsLangMapByTeacher, buildTtsJobsFromRowsWithSetLangMap } from '@/utils/ttsJobs'
+import { runTeacherTtsPrefetchWithOverlay } from '@/utils/ttsPrefetchRunner'
+import { showToast } from '@/utils/toastBus'
 import WordTable from './WordTable'
 import AutoFillPanel from './AutoFillPanel'
 
@@ -348,6 +351,26 @@ export default function BulkImport({
         defaultToNull: false,
       })
       if (error) throw error
+
+      try {
+        const langBySet = await fetchWordSetsLangMapByTeacher(supabase, teacherId)
+        const jobs = buildTtsJobsFromRowsWithSetLangMap(langBySet, dedupedPayload)
+        if (jobs.length > 0) {
+          void runTeacherTtsPrefetchWithOverlay({
+            jobs,
+            title: '가져오기 · 음성 캐시',
+            subtitle: `음성 생성 중 0/${jobs.length}`,
+            gapMs: 165,
+            onToast: {
+              success: (m) => showToast(m, 'success', 3400),
+              warning: (m) => showToast(m, 'error', 3800),
+            },
+          })
+        }
+      } catch (e) {
+        console.error('[BulkImport] tts warmup', e)
+      }
+
       onSaved()
       onClose()
       resetPreview()

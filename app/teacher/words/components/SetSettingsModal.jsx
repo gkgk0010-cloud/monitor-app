@@ -15,6 +15,8 @@ import {
 import LearningModesPicker from './LearningModesPicker'
 import { buildKakaoTeacherInviteShareMessage } from '@/utils/kakaoTeacherInviteShare'
 import { showToast } from '@/utils/toastBus'
+import { WORD_SET_DEFAULT_LANG_OPTIONS } from '@/utils/wordSetLangUi'
+import { normalizeStudyTtsLang } from '@/utils/studyTtsLang'
 
 const SET_TYPE_LABELS = {
   word: '단어 세트',
@@ -68,6 +70,7 @@ export default function SetSettingsModal({
   const [editableSetName, setEditableSetName] = useState('')
   const [inviteCode, setInviteCode] = useState('')
   const [hint, setHint] = useState(null)
+  const [defaultLang, setDefaultLang] = useState('en-US')
 
   const load = useCallback(async () => {
     const sn = String(setName || '').trim()
@@ -78,7 +81,7 @@ export default function SetSettingsModal({
     setWordSetId(null)
     try {
       const [{ data: ws, error: wsErr }, { data: wordRows, error: wErr }] = await Promise.all([
-        supabase.from('word_sets').select('id, set_type, available_modes, invite_code, name').eq('teacher_id', teacherId).eq('name', sn).maybeSingle(),
+        supabase.from('word_sets').select('id, set_type, available_modes, invite_code, name, default_lang').eq('teacher_id', teacherId).eq('name', sn).maybeSingle(),
         supabase
           .from('words')
           .select('id, word, meaning, example_sentence, day, difficulty, image_url, image_source, youtube_url')
@@ -99,6 +102,8 @@ export default function SetSettingsModal({
       setWordSetId(wid)
       setEditableSetName(ws?.name != null ? String(ws.name).trim() : sn)
       setInviteCode(ws?.invite_code != null ? String(ws.invite_code).trim() : '')
+      const norm = normalizeStudyTtsLang(ws?.default_lang)
+      setDefaultLang(norm ?? 'en-US')
 
       const list = (wordRows || []).map((r) => ({
         id: String(r.id),
@@ -347,6 +352,7 @@ export default function SetSettingsModal({
           .update({
             available_modes: modesData,
             set_type: setType,
+            default_lang: String(defaultLang || 'en-US').trim() || null,
           })
           .eq('id', wid)
           .eq('teacher_id', teacherId)
@@ -358,6 +364,7 @@ export default function SetSettingsModal({
             name: sn,
             set_type: setType,
             available_modes: modesData,
+            default_lang: String(defaultLang || 'en-US').trim() || null,
           },
           { onConflict: 'teacher_id,name' },
         )
@@ -561,6 +568,33 @@ export default function SetSettingsModal({
             <p style={{ margin: '0 0 18px', fontSize: 14, color: COLORS.textPrimary }}>
               <span style={{ fontWeight: 700, color: COLORS.accentText }}>세트 타입:</span>{' '}
               {SET_TYPE_LABELS[setType] || setType}
+            </p>
+
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 800, color: COLORS.accentText, marginBottom: 8 }}>
+              세트 언어 (학습·TTS)
+            </label>
+            <select
+              value={defaultLang}
+              onChange={(e) => setDefaultLang(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: RADIUS.md,
+                border: `1px solid ${COLORS.border}`,
+                fontSize: 14,
+                marginBottom: 8,
+                background: COLORS.surface,
+                boxSizing: 'border-box',
+              }}
+            >
+              {WORD_SET_DEFAULT_LANG_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p style={{ margin: '0 0 14px', fontSize: 11, color: COLORS.textSecondary, lineHeight: 1.45 }}>
+              아래 「저장」시 DB에 반영됩니다. 새로 등록되는 음성 미리 생성도 이 언어를 따릅니다.
             </p>
 
             <div style={{ fontWeight: 800, color: COLORS.accentText, marginBottom: 10, fontSize: 14 }}>DAY 나누기</div>

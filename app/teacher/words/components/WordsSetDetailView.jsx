@@ -23,6 +23,8 @@ import {
 } from '../utils/wordMeaningGuard'
 import { showToast } from '@/utils/toastBus'
 import { getTeacherInviteDisplayName } from '@/utils/kakaoTeacherInviteShare'
+import { prefetchTeacherWordTtsQuiet } from '@/utils/ttsPrefetchRunner'
+import { downloadPagedRowsAsUtf8BomCsv, formatDateYmdLocal, safeCsvFileSlug } from '@/utils/csvExport'
 
 /** @template T @param {T[]} arr @returns {T[]} */
 function fisherYates(arr) {
@@ -60,6 +62,8 @@ export default function WordsSetDetailView({
   const [emptyOnly, setEmptyOnly] = useState(false)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkOpen, setBulkOpen] = useState(false)
+  const [exportingCsv, setExportingCsv] = useState(false)
+  const exportingCsvLockRef = useRef(false)
   const [tableGroupMode, setTableGroupMode] = useState('chunk10')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [testTimeModalOpen, setTestTimeModalOpen] = useState(false)
@@ -390,6 +394,42 @@ export default function WordsSetDetailView({
     onSetDeleted?.()
   }, [teacherId, setName, onSetDeleted])
 
+  const handleExportWordSetCsv = useCallback(async () => {
+    const sn = String(setName || '').trim()
+    if (!teacherId || !sn) return
+    if (exportingCsvLockRef.current) return
+    exportingCsvLockRef.current = true
+    setExportingCsv(true)
+    try {
+      const baseQuery = () =>
+        supabase
+          .from('words')
+          .select('word, meaning, example_sentence, image_url, day')
+          .eq('teacher_id', teacherId)
+          .eq('set_name', sn)
+          .order('order_index', { ascending: true, nullsFirst: false })
+          .order('day', { ascending: true })
+
+      const filenameBase = `${safeCsvFileSlug(sn)}_${formatDateYmdLocal()}`
+      const { rowCount } = await downloadPagedRowsAsUtf8BomCsv({
+        filenameBase,
+        pageSize: 500,
+        fetchPage: (from, to) => baseQuery().range(from, to),
+      })
+      if (rowCount === 0) {
+        showToast('내보낼 단어가 없습니다.', 'error', 2600)
+      } else {
+        showToast(`CSV를 저장했습니다 (${rowCount}행)`, 'success', 3200)
+      }
+    } catch (e) {
+      console.error('[WordsSetDetailView] export csv', e)
+      showToast(e instanceof Error ? e.message : 'CSV 내보내기에 실패했습니다.', 'error', 4200)
+    } finally {
+      exportingCsvLockRef.current = false
+      setExportingCsv(false)
+    }
+  }, [teacherId, setName])
+
   const flashRowSaveToast = useCallback((ok) => {
     showToast(ok ? '✓ 저장되었습니다' : '저장 실패', ok ? 'success' : 'error', 2500)
   }, [])
@@ -491,6 +531,10 @@ export default function WordsSetDetailView({
         })
         setWords((prev) => prev.map((r) => (String(r.id) === id ? data : r)))
         flashRowSaveToast(true)
+        prefetchTeacherWordTtsQuiet(wordSet?.default_lang ?? 'en-US', {
+          word: payload.word,
+          example_sentence: payload.example_sentence,
+        })
       } else {
         const { error } = await supabase.from('words').update(payload).eq('id', id).eq('teacher_id', teacherId)
         if (error) {
@@ -505,9 +549,13 @@ export default function WordsSetDetailView({
           return next
         })
         flashRowSaveToast(true)
+        prefetchTeacherWordTtsQuiet(wordSet?.default_lang ?? 'en-US', {
+          word: payload.word,
+          example_sentence: payload.example_sentence,
+        })
       }
     },
-    [teacherId, academyId, flashRowSaveToast, setTypeByName, setName],
+    [teacherId, academyId, flashRowSaveToast, setTypeByName, setName, wordSet?.default_lang],
   )
 
   const addEmptyRow = () => {
@@ -769,6 +817,25 @@ export default function WordsSetDetailView({
             }}
           >
             + 단어 추가
+          </button>
+          <button
+            type="button"
+            disabled={exportingCsv}
+            onClick={() => void handleExportWordSetCsv()}
+            style={{
+              padding: '10px 16px',
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.textOnGreen}`,
+              background: 'rgba(255,255,255,0.1)',
+              color: COLORS.textOnGreen,
+              fontWeight: 700,
+              cursor: exportingCsv ? 'wait' : 'pointer',
+              fontSize: 14,
+              opacity: exportingCsv ? 0.75 : 1,
+            }}
+            title="이 세트의 단어를 UTF-8(BOM) CSV로 저장합니다"
+          >
+            {exportingCsv ? '내보내는 중…' : '내보내기'}
           </button>
           <button
             type="button"

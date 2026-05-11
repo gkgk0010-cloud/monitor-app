@@ -8,10 +8,13 @@ import { useTeacher } from '@/utils/useTeacher'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import { fetchTeacherRoutinesWithStats } from '@/utils/routineAdmin'
 import { generateInviteCode } from '@/utils/teacherSignup'
+import { hasGoogleTtsApiKeyConfigured } from '@/utils/googleTts'
 import SetSettingsModal from './components/SetSettingsModal'
 import { formatAvailableModesSummary, normalizeSetType } from './utils/learningModes'
 import { showToast } from '@/utils/toastBus'
 import { buildKakaoTeacherInviteShareMessage, getTeacherInviteDisplayName } from '@/utils/kakaoTeacherInviteShare'
+import { fetchAllTeacherWordTtsJobs } from '@/utils/ttsJobs'
+import { runTeacherTtsPrefetchWithOverlay, isTeacherTtsOverlayBusy } from '@/utils/ttsPrefetchRunner'
 
 export default function WordsManagePage() {
   const router = useRouter()
@@ -89,6 +92,40 @@ export default function WordsManagePage() {
   useEffect(() => {
     void loadRoutines()
   }, [loadRoutines])
+
+  const handleWarmAllTeacherTts = useCallback(async () => {
+    if (!teacherId) return
+    if (!hasGoogleTtsApiKeyConfigured()) {
+      console.warn('[words] NEXT_PUBLIC_GOOGLE_TTS_API_KEY 없음')
+      showToast('Google TTS API 키가 없습니다. 모니터 .env 에 NEXT_PUBLIC_GOOGLE_TTS_API_KEY 를 설정해 주세요.', 'error', 4800)
+      return
+    }
+    if (isTeacherTtsOverlayBusy()) {
+      showToast('이미 음성 미리 생성이 진행 중입니다. 완료 후 다시 시도해 주세요.', 'error', 3600)
+      return
+    }
+    let jobs = []
+    try {
+      jobs = await fetchAllTeacherWordTtsJobs(supabase, teacherId)
+    } catch (e) {
+      console.error('[words] fetch tts jobs', e)
+      showToast('단어 목록을 불러오지 못했습니다.', 'error', 3500)
+      return
+    }
+    if (jobs.length === 0) {
+      showToast('음성으로 만들 텍스트가 없습니다.', 'error', 2800)
+      return
+    }
+    void runTeacherTtsPrefetchWithOverlay({
+      jobs,
+      title: '전체 세트 음성 미리 생성',
+      gapMs: 165,
+      onToast: {
+        success: (m) => showToast(m, 'success', 4200),
+        warning: (m) => showToast(m, 'error', 4000),
+      },
+    })
+  }, [teacherId])
 
   const copyInvite = async (code) => {
     const c = String(code ?? '').trim()
@@ -297,6 +334,24 @@ export default function WordsManagePage() {
           <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>단어 세트</h1>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={() => void handleWarmAllTeacherTts()}
+            style={{
+              padding: '11px 16px',
+              borderRadius: RADIUS.md,
+              border: '2px solid rgba(255,255,255,0.65)',
+              background: 'rgba(255,255,255,0.12)',
+              color: COLORS.textOnGreen,
+              fontWeight: 800,
+              cursor: 'pointer',
+              fontSize: 14,
+              whiteSpace: 'nowrap',
+            }}
+            title="등록한 모든 단어·예문에 대해 Google TTS 캐시를 확보합니다"
+          >
+            전체 음성 미리 생성
+          </button>
           <Link
             href="/teacher/words/create"
             style={{

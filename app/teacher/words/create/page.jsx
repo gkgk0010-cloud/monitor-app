@@ -22,6 +22,8 @@ import WorkflowSuccessModal from '../components/WorkflowSuccessModal'
 import WordAddedDaySplitModal from '../components/WordAddedDaySplitModal'
 import { initModesStateForType, buildAvailableModesJson, normalizeSetType } from '../utils/learningModes'
 import { showToast } from '@/utils/toastBus'
+import { buildTtsJobsFromManyRowsForcedLang } from '@/utils/ttsJobs'
+import { runTeacherTtsPrefetchWithOverlay } from '@/utils/ttsPrefetchRunner'
 
 async function ensureWordSetIdForCreate(teacherId, setName, createSetType) {
   const sn = String(setName || '').trim()
@@ -45,6 +47,7 @@ async function ensureWordSetIdForCreate(teacherId, setName, createSetType) {
       name: sn,
       set_type: st,
       available_modes,
+      default_lang: 'en-US',
     })
     .select('id')
     .maybeSingle()
@@ -528,6 +531,28 @@ function CreateWordSetPageContent() {
       }
       showToast(`${dedupedPayload.length}개를 저장했습니다. 세트 상세로 이동합니다.`, 'success', 2800)
       setWorkflowModal(null)
+      try {
+        const { data: wsRow } = await supabase
+          .from('word_sets')
+          .select('default_lang')
+          .eq('teacher_id', teacherId)
+          .eq('name', sn)
+          .maybeSingle()
+        const jobs = buildTtsJobsFromManyRowsForcedLang(wsRow?.default_lang ?? 'en-US', dedupedPayload)
+        if (jobs.length > 0) {
+          void runTeacherTtsPrefetchWithOverlay({
+            jobs,
+            title: `음성 캐시 · ${sn}`,
+            gapMs: 165,
+            onToast: {
+              success: (m) => showToast(m, 'success', 3400),
+              warning: (m) => showToast(m, 'error', 3800),
+            },
+          })
+        }
+      } catch (e3) {
+        console.error('[create/saveAll] tts warmup', e3)
+      }
       router.push(`/teacher/words/${wid}`)
     } catch (e) {
       alert(formatSupabaseWordsSaveError(e))
