@@ -23,7 +23,13 @@ import {
 } from '../utils/wordMeaningGuard'
 import { showToast } from '@/utils/toastBus'
 import { getTeacherInviteDisplayName } from '@/utils/kakaoTeacherInviteShare'
-import { prefetchTeacherWordTtsQuiet } from '@/utils/ttsPrefetchRunner'
+import {
+  prefetchTeacherWordTtsQuiet,
+  runTeacherTtsPrefetchWithOverlay,
+  isTeacherTtsOverlayBusy,
+} from '@/utils/ttsPrefetchRunner'
+import { hasGoogleTtsApiKeyConfigured } from '@/utils/googleTts'
+import { buildTtsJobsFromManyRows } from '@/utils/ttsJobs'
 import { downloadPagedRowsAsUtf8BomCsv, formatDateYmdLocal, safeCsvFileSlug } from '@/utils/csvExport'
 
 /** @template T @param {T[]} arr @returns {T[]} */
@@ -38,7 +44,7 @@ function fisherYates(arr) {
 
 /**
  * @param {{
- *   wordSet: { id: string; name: string; set_type?: string | null; available_modes?: unknown; invite_code?: string | null; test_time_per_word?: number | null }
+ *   wordSet: { id: string; name: string; default_lang?: string | null; set_type?: string | null; available_modes?: unknown; invite_code?: string | null; test_time_per_word?: number | null }
  *   onWordSetUpdated?: () => void | Promise<void>
  *   onSetDeleted?: () => void
  *   deepLinkEditRoutineId?: string
@@ -430,6 +436,31 @@ export default function WordsSetDetailView({
     }
   }, [teacherId, setName])
 
+  const handleWarmThisSetTts = useCallback(async () => {
+    if (!hasGoogleTtsApiKeyConfigured()) {
+      showToast('Google TTS API 키가 없습니다. 모니터 .env 에 NEXT_PUBLIC_GOOGLE_TTS_API_KEY 를 설정해 주세요.', 'error', 4800)
+      return
+    }
+    if (isTeacherTtsOverlayBusy()) {
+      showToast('이미 음성 미리 생성이 진행 중입니다. 완료 후 다시 시도해 주세요.', 'error', 3600)
+      return
+    }
+    const jobs = buildTtsJobsFromManyRows(wordSet?.default_lang, words)
+    if (jobs.length === 0) {
+      showToast('음성으로 만들 텍스트가 없습니다.', 'error', 2800)
+      return
+    }
+    await runTeacherTtsPrefetchWithOverlay({
+      jobs,
+      title: '이 세트 음성 미리 생성',
+      gapMs: 165,
+      onToast: {
+        success: (m) => showToast(m, 'success', 4200),
+        warning: (m) => showToast(m, 'error', 4000),
+      },
+    })
+  }, [wordSet?.default_lang, words])
+
   const flashRowSaveToast = useCallback((ok) => {
     showToast(ok ? '✓ 저장되었습니다' : '저장 실패', ok ? 'success' : 'error', 2500)
   }, [])
@@ -817,6 +848,25 @@ export default function WordsSetDetailView({
             }}
           >
             + 단어 추가
+          </button>
+          <button
+            type="button"
+            disabled={loading || words.length === 0}
+            onClick={() => void handleWarmThisSetTts()}
+            style={{
+              padding: '10px 16px',
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.textOnGreen}`,
+              background: 'rgba(255,255,255,0.14)',
+              color: COLORS.textOnGreen,
+              fontWeight: 700,
+              cursor: loading || words.length === 0 ? 'not-allowed' : 'pointer',
+              fontSize: 14,
+              opacity: loading || words.length === 0 ? 0.55 : 1,
+            }}
+            title="이 세트의 단어·예문에 대해 Google TTS 캐시를 확보합니다(이미 있는 항목은 건너뜀)"
+          >
+            이 세트 음성 생성
           </button>
           <button
             type="button"
