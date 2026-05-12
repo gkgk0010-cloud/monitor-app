@@ -1572,6 +1572,8 @@ export default function TeacherMonitorPage() {
             teacherName={teacher?.name}
             teacherAcademyName={teacher?.academy_name}
             teacherAcademyLogoUrl={teacher?.academy_logo_url}
+            teacherId={teacher?.id ?? ''}
+            studentId={normalizeReportStudentId(detailStudent.student_id)}
           />
         )}
       </div>

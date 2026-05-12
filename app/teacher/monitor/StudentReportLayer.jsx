@@ -1,7 +1,14 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { formatTeacherName } from '@/utils/formatTeacherName';
+import { supabase } from '@/utils/supabaseClient';
+import {
+  fetchStudentVocabDayReports,
+  formatVocabDayReportsCopy,
+  getDayReportViewRow,
+  listDayNumbersForSet,
+} from '@/utils/studentVocabDayReports';
 
 const Z_LAYER = 10050;
 
@@ -145,6 +152,33 @@ function formatModeCorrectRateDisplay(mode, correctRate) {
   return `${correctRate}%`;
 }
 
+function hasDayRowActivity(row) {
+  if (!row) return false;
+  return (
+    (row.wlEvents || 0) > 0 ||
+    (row.vocabTests?.count || 0) > 0 ||
+    (row.matchingAttempts || 0) > 0 ||
+    (row.scrambleAttempts || 0) > 0 ||
+    (row.wrongInDayCount || 0) > 0 ||
+    (row.graduatedFromDayCount || 0) > 0
+  );
+}
+
+function buildAllSetsVocabDayPrintText(studentName, payload) {
+  if (!payload?.setNames?.length) return '';
+  const parts = [];
+  for (const setName of payload.setNames) {
+    const nums = listDayNumbersForSet(setName, payload);
+    const list = nums
+      .map((d) => getDayReportViewRow(payload.reports, payload.wordsPerDay, setName, d))
+      .filter(Boolean)
+      .filter((row) => (row.wordsInDay || 0) > 0 || hasDayRowActivity(row));
+    if (!list.length) continue;
+    parts.push(formatVocabDayReportsCopy(studentName, setName, list));
+  }
+  return parts.join('\n\n').trim();
+}
+
 export default function StudentReportLayer({
   studentDisplayName,
   onClose,
@@ -154,7 +188,33 @@ export default function StudentReportLayer({
   teacherName,
   teacherAcademyName,
   teacherAcademyLogoUrl,
+  teacherId,
+  studentId,
 }) {
+  const [vocabDayPrintText, setVocabDayPrintText] = useState('');
+
+  useEffect(() => {
+    const tid = String(teacherId || '').trim();
+    const sid = String(studentId || '').replace(/\s+/g, '').trim();
+    if (!tid || !sid) {
+      setVocabDayPrintText('');
+      return undefined;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const payload = await fetchStudentVocabDayReports(supabase, { studentId: sid, teacherId: tid });
+        if (cancelled) return;
+        const name = String(studentDisplayName || '').trim() || '학생';
+        setVocabDayPrintText(buildAllSetsVocabDayPrintText(name, payload));
+      } catch {
+        if (!cancelled) setVocabDayPrintText('');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [teacherId, studentId, studentDisplayName]);
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose();
@@ -362,6 +422,16 @@ export default function StudentReportLayer({
             </table>
           </div>
         </section>
+
+        {vocabDayPrintText ? (
+          <section style={s.section} className="sr-section-vocab-day">
+            <h3 style={s.h3}>📗 단어 세트 · 개별 Day 학습 (앱 로그)</h3>
+            <p style={s.pSmall}>
+              루틴 DAY 표와 별개로, 세트·Day별 단어장 학습(암기·테스트·매칭 등) 요약입니다.
+            </p>
+            <pre style={s.vocabDayPre}>{vocabDayPrintText}</pre>
+          </section>
+        ) : null}
 
         <section style={s.section} className="sr-section-mode">
           <h3 style={s.h3}>📚 모드별 통계</h3>
@@ -634,6 +704,7 @@ export default function StudentReportLayer({
               margin-bottom: 12pt !important;
             }
             .sr-section-day,
+            .sr-section-vocab-day,
             .sr-section-mode,
             .sr-section-toeic {
               margin-bottom: 12pt !important;
@@ -881,6 +952,20 @@ const s = {
     color: '#4b5563',
   },
   p: { margin: '0 0 8px', fontSize: 14, color: '#374151', lineHeight: 1.6 },
+  pSmall: { margin: '0 0 10px', fontSize: 12, color: '#6b7280', lineHeight: 1.55 },
+  vocabDayPre: {
+    margin: 0,
+    padding: '12px 14px',
+    fontSize: 11,
+    lineHeight: 1.55,
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
+    background: '#fafafa',
+    borderRadius: 12,
+    border: '1px solid #e5e7eb',
+    color: '#374151',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+  },
   muted: { margin: 0, fontSize: 14, color: '#6b7280' },
   errorText: { margin: 0, fontSize: 14, color: '#dc2626', lineHeight: 1.5 },
   tableWrap: { overflowX: 'auto', background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb' },
