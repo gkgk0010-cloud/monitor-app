@@ -17,14 +17,33 @@ export async function POST(req) {
   }
 
   const meaning = body.meaning != null ? String(body.meaning).trim() : ''
+  const defaultLang = String(body.default_lang || 'en-US').trim() || 'en-US'
+
+  const LANG_LABEL = {
+    'en-US': 'English',
+    'ko-KR': 'Korean',
+    'ja-JP': 'Japanese',
+    'zh-CN': 'Chinese (Simplified, zh-CN)',
+    'es-ES': 'Spanish',
+    'vi-VN': 'Vietnamese',
+    'de-DE': 'German',
+  }
+  const langHuman = LANG_LABEL[defaultLang] || defaultLang
 
   const prompt = `
-영단어: ${word}
-한글 뜻(있으면 참고): ${meaning || '(없음)'}
+단어/표현: ${word}
+참고 뜻·설명(있으면): ${meaning || '(없음)'}
 
-토익 수준에 맞는 **영어 예문 한 문장**만 작성해.
-응답은 JSON 한 줄만: {"example_sentence":"영어 문장만"}
-마크다운·설명·따옴표 밖 문장 금지.
+예문을 작성할 **학습 언어**(BCP-47): ${defaultLang}
+언어 이름: ${langHuman}
+
+규칙:
+1. 위 학습 언어로만 **자연스러운 예문 한 문장**을 작성한다.
+2. 반드시 단어/표현 「${word}」를 문장 안에서 적절히 사용한다.
+3. 선생님 검토용으로 **한국어 번역 또는 짧은 한글 해설**을 함께 제공한다 (\`example_ko\`).
+
+응답은 JSON 한 줄만 출력한다 (설명·마크다운·코드펜스 금지):
+{"example_sentence":"<학습 언어 예문 한 문장>","example_ko":"<한국어 번역 또는 해설>"}
 `.trim()
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -58,10 +77,11 @@ export async function POST(req) {
     const cleaned = text.replace(/```json|```/g, '').trim()
     const parsed = JSON.parse(cleaned)
     const example_sentence = String(parsed.example_sentence || '').trim()
+    const example_ko = String(parsed.example_ko || '').trim()
     if (!example_sentence) {
       return Response.json({ error: '빈 예문 응답' }, { status: 502 })
     }
-    return Response.json({ example_sentence })
+    return Response.json({ example_sentence, example_ko })
   } catch {
     return Response.json({ error: '예문 파싱 실패' }, { status: 502 })
   }

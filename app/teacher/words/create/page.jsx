@@ -1146,6 +1146,7 @@ function CreateWordSetPageContent() {
           columnPreset={wordTableColumnPreset}
           getRowBackground={(row) => (row._localSaved ? 'rgba(16, 185, 129, 0.11)' : undefined)}
           highlightRowIds={meaningHighlightRowIds}
+          defaultLang="en-US"
         />
 
         {isSentenceStyleCreate ? (

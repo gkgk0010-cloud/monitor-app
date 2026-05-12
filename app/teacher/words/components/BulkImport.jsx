@@ -815,6 +815,7 @@ export default function BulkImport({
                 onRowDelete={handlePreviewRowDelete}
                 columnPreset={setType}
                 showImageColumn
+                defaultLang="en-US"
               />
               <AutoFillPanel
                 rows={selectedIds.size > 0 ? previewRows.filter((r) => selectedIds.has(String(r.id))) : previewRows}

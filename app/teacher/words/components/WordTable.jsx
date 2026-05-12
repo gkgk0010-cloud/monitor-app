@@ -411,6 +411,7 @@ const WordTableImageBlock = memo(function WordTableImageBlock({
  *   scrollContainer?: 'embedded' | 'window'
  *   stickyHeaderOffsetPx?: number
  *   embeddedMaxHeight?: string
+ *   defaultLang?: string - word_sets.default_lang (예: AI 예문 생성 언어)
  * }} props
  */
 function WordTable({
@@ -434,6 +435,7 @@ function WordTable({
   scrollContainer = 'embedded',
   stickyHeaderOffsetPx = 0,
   embeddedMaxHeight = 'min(72vh, calc(100vh - 240px))',
+  defaultLang = 'en-US',
 }) {
   const isSentence = columnPreset === 'sentence'
   const isImage = columnPreset === 'image'
@@ -720,19 +722,28 @@ function WordTable({
         const res = await fetch('/api/suggest-example', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ word, meaning: meaning || undefined }),
+          body: JSON.stringify({
+            word,
+            meaning: meaning || undefined,
+            default_lang: String(defaultLang || 'en-US').trim() || 'en-US',
+          }),
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || '예문 요청 실패')
         const ex = String(json.example_sentence || '').trim()
         if (!ex) throw new Error('예문을 받지 못했습니다.')
+        const exampleKo = String(json.example_ko || '').trim()
         const sid = String(id)
         const dr = cellDraftsRef.current[sid]
         if (dr) {
           delete dr.example_sentence
+          delete dr.example_ko
           if (Object.keys(dr).length === 0) delete cellDraftsRef.current[sid]
         }
-        updateField(id, 'example_sentence', ex)
+        patchRow(sid, {
+          example_sentence: ex,
+          ...(exampleKo ? { example_ko: exampleKo } : {}),
+        })
         requestAnimationFrame(() => {
           try {
             const el = document.querySelector(`input[data-row-id="${sid}"]`)
@@ -745,7 +756,7 @@ function WordTable({
         setBusyExampleId(null)
       }
     },
-    [getEffectiveRow, updateField, isSentence],
+    [getEffectiveRow, patchRow, isSentence, defaultLang],
   )
 
   const handleExampleKeyDown = useCallback(

@@ -1233,6 +1233,7 @@ export default function WordsSetDetailView({
             highlightRowIds={meaningHighlightRowIds}
             scrollContainer="window"
             stickyHeaderOffsetPx={wordTableStickyTopPx}
+            defaultLang={wordSet?.default_lang || 'en-US'}
           />
           {loadingMore ? (
             <p style={{ margin: '10px 0 0', fontSize: 14, color: COLORS.textSecondary }}>
