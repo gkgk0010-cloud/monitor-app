@@ -199,6 +199,33 @@ function buildAllSetsVocabDayPrintText(studentName, payload) {
   return parts.join('\n\n').trim();
 }
 
+function buildSingleSetVocabDayPrintText(studentName, payload, setName) {
+  if (!payload?.setNames?.length) return '';
+  const nums = listDayNumbersForSet(setName, payload);
+  const list = nums
+    .map((d) => getDayReportViewRow(payload.reports, payload.wordsPerDay, setName, d))
+    .filter(Boolean)
+    .filter((row) => (row.wordsInDay || 0) > 0 || hasDayRowActivity(row));
+  if (!list.length) return '';
+  return formatVocabDayReportsCopy(studentName, setName, list);
+}
+
+function summarizeVocabSetPanel(payload, setName) {
+  const nums = listDayNumbersForSet(setName, payload);
+  let activeDays = 0;
+  let sumPct = 0;
+  for (const d of nums) {
+    const row = getDayReportViewRow(payload.reports, payload.wordsPerDay, setName, d);
+    if (!row) continue;
+    if ((row.wordsInDay || 0) > 0 || hasDayRowActivity(row)) {
+      activeDays += 1;
+      sumPct += Number(row.overallProgressPct) || 0;
+    }
+  }
+  const avgPct = activeDays ? Math.round((sumPct / activeDays) * 10) / 10 : 0;
+  return { totalDaySlots: nums.length, activeDays, avgPct };
+}
+
 export default function StudentReportLayer({
   studentDisplayName,
   onClose,
@@ -211,15 +238,21 @@ export default function StudentReportLayer({
   teacherId,
   studentId,
 }) {
-  const [vocabDayPrintText, setVocabDayPrintText] = useState('');
+  const [vocabDayPayload, setVocabDayPayload] = useState(null);
   const [vocabDayLoadState, setVocabDayLoadState] = useState('idle');
   const [vocabDayError, setVocabDayError] = useState(null);
+  /** 'routine' | `set:${setName}` */
+  const [reportMainTab, setReportMainTab] = useState('routine');
+
+  useEffect(() => {
+    setReportMainTab('routine');
+  }, [teacherId, studentId]);
 
   useEffect(() => {
     const tid = String(teacherId || '').trim();
     const sid = String(studentId || '').replace(/\s+/g, '').trim();
     if (!tid || !sid) {
-      setVocabDayPrintText('');
+      setVocabDayPayload(null);
       setVocabDayLoadState('idle');
       setVocabDayError(null);
       return undefined;
@@ -232,8 +265,8 @@ export default function StudentReportLayer({
         const payload = await fetchStudentVocabDayReports(supabase, { studentId: sid, teacherId: tid });
         if (cancelled) return;
         const name = String(studentDisplayName || '').trim() || '학생';
-        const text = buildAllSetsVocabDayPrintText(name, payload);
-        setVocabDayPrintText(text);
+        const mergedPreview = buildAllSetsVocabDayPrintText(name, payload);
+        setVocabDayPayload(payload);
         let nonEmpty = 0;
         if (payload?.setNames?.length) {
           for (const setName of payload.setNames) {
@@ -250,12 +283,12 @@ export default function StudentReportLayer({
           studentId: sid,
           setNames: payload?.setNames?.length ?? 0,
           setsWithRows: nonEmpty,
-          charCount: text.length,
+          charCount: mergedPreview.length,
         });
         setVocabDayLoadState('ready');
       } catch (e) {
         if (!cancelled) {
-          setVocabDayPrintText('');
+          setVocabDayPayload(null);
           setVocabDayLoadState('error');
           setVocabDayError(e instanceof Error ? e.message : String(e));
           console.warn('[student-report] day-reports failed', e);
@@ -337,9 +370,46 @@ export default function StudentReportLayer({
     const tidEff = String(teacherId || '').trim();
     const sidEff = String(studentId || '').replace(/\s+/g, '').trim();
     const showVocabDaySection = Boolean(tidEff && sidEff);
+    const copyName = (studentDisplayName || '').trim() || '학생';
+    const vocabSetNames = vocabDayPayload?.setNames ?? [];
 
     body = (
       <>
+        <nav className="sr-report-tab-strip sr-no-print" style={s.reportTabStrip}>
+          <button
+            type="button"
+            style={{
+              ...s.reportTabBtn,
+              ...(reportMainTab === 'routine' ? s.reportTabBtnActive : {}),
+            }}
+            onClick={() => setReportMainTab('routine')}
+          >
+            루틴 보고서
+          </button>
+          {showVocabDaySection
+            ? vocabSetNames.map((sn) => (
+                <button
+                  key={sn}
+                  type="button"
+                  style={{
+                    ...s.reportTabBtn,
+                    ...(reportMainTab === `set:${sn}` ? s.reportTabBtnActive : {}),
+                  }}
+                  onClick={() => setReportMainTab(`set:${sn}`)}
+                  title={sn}
+                >
+                  📗
+                  {' '}
+                  {sn.length > 22 ? `${sn.slice(0, 21)}…` : sn}
+                </button>
+              ))
+            : null}
+        </nav>
+
+        <div
+          className="sr-tab-page sr-tab-routine"
+          style={{ display: reportMainTab === 'routine' ? 'block' : 'none' }}
+        >
         <section style={s.parentSummary} className="sr-parent-summary">
           <h3 style={s.parentSummaryTitle}>월간 학생 개인 보고서</h3>
           {reportMetaLine ? (
@@ -477,30 +547,6 @@ export default function StudentReportLayer({
             </table>
           </div>
         </section>
-
-        {showVocabDaySection ? (
-          <section style={s.section} className="sr-section-vocab-day">
-            <h3 style={s.h3}>📗 단어 세트 · 개별 Day 학습 (앱 로그)</h3>
-            <p style={s.pSmall}>
-              루틴 DAY 표와 별개로, 세트·Day별 단어장 학습(암기·테스트·매칭 등) 요약입니다. (학생 ID·교사 ID로 집계)
-            </p>
-            {vocabDayLoadState === 'loading' || vocabDayLoadState === 'idle' ? (
-              <p style={s.muted}>개별 Day 요약을 불러오는 중…</p>
-            ) : null}
-            {vocabDayLoadState === 'error' ? (
-              <p style={s.errorText}>
-                개별 Day 데이터를 불러오지 못했습니다.
-                {vocabDayError ? ` (${vocabDayError})` : ''}
-              </p>
-            ) : null}
-            {vocabDayLoadState === 'ready' && !vocabDayPrintText ? (
-              <p style={s.muted}>
-                이 학생·교사 기준으로 표시할 개별 Day 기록이 없습니다. (단어 세트·학습 로그·RLS를 확인하세요)
-              </p>
-            ) : null}
-            {vocabDayPrintText ? <pre style={s.vocabDayPre}>{vocabDayPrintText}</pre> : null}
-          </section>
-        ) : null}
 
         <section style={s.section} className="sr-section-mode">
           <h3 style={s.h3}>📚 모드별 통계</h3>
@@ -643,6 +689,44 @@ export default function StudentReportLayer({
             )}
           </section>
         )}
+        </div>
+
+        {showVocabDaySection && vocabDayPayload
+          ? vocabSetNames.map((sn) => {
+              const meta = summarizeVocabSetPanel(vocabDayPayload, sn);
+              const singleText = buildSingleSetVocabDayPrintText(copyName, vocabDayPayload, sn);
+              return (
+                <div
+                  key={sn}
+                  className="sr-tab-page sr-tab-set"
+                  style={{ display: reportMainTab === `set:${sn}` ? 'block' : 'none' }}
+                >
+                  <section style={s.section} className="sr-section-vocab-day">
+                    <h3 style={s.h3}>📗 단어 세트 · 개별 Day 학습</h3>
+                    <p style={s.pSmall}>
+                      세트명: <strong>{sn}</strong>
+                      {' · '}
+                      Day 구간 {meta.totalDaySlots}개 · 활동 있는 Day {meta.activeDays}개 · 평균 진행률{' '}
+                      {meta.avgPct}%
+                    </p>
+                    {vocabDayLoadState === 'loading' || vocabDayLoadState === 'idle' ? (
+                      <p style={s.muted}>개별 Day 요약을 불러오는 중…</p>
+                    ) : null}
+                    {vocabDayLoadState === 'error' ? (
+                      <p style={s.errorText}>
+                        개별 Day 데이터를 불러오지 못했습니다.
+                        {vocabDayError ? ` (${vocabDayError})` : ''}
+                      </p>
+                    ) : null}
+                    {vocabDayLoadState === 'ready' && !singleText ? (
+                      <p style={s.muted}>이 세트에서 표시할 Day 요약이 없습니다.</p>
+                    ) : null}
+                    {singleText ? <pre style={s.vocabDayPre}>{singleText}</pre> : null}
+                  </section>
+                </div>
+              );
+            })
+          : null}
       </>
     );
   }
@@ -743,6 +827,18 @@ export default function StudentReportLayer({
             }
             .sr-no-print {
               display: none !important;
+            }
+            .sr-report-tab-strip {
+              display: none !important;
+            }
+            .sr-tab-page {
+              display: block !important;
+              page-break-after: always;
+              break-after: page;
+            }
+            .sr-tab-page:last-child {
+              page-break-after: auto;
+              break-after: auto;
             }
             .sr-print-only {
               display: block !important;
@@ -990,6 +1086,32 @@ const s = {
     width: '100%',
     margin: '0 auto',
     boxSizing: 'border-box',
+  },
+  reportTabStrip: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 8,
+    padding: '12px 16px',
+    marginBottom: 16,
+    borderRadius: 12,
+    border: '1px solid #e5e7eb',
+    background: '#fafafa',
+    alignItems: 'center',
+  },
+  reportTabBtn: {
+    border: '1px solid #e5e7eb',
+    background: '#fff',
+    borderRadius: 999,
+    padding: '8px 14px',
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#374151',
+    cursor: 'pointer',
+  },
+  reportTabBtnActive: {
+    border: '1px solid #7c3aed',
+    background: '#f5f3ff',
+    color: '#5b21b6',
   },
   metaBar: {
     fontSize: 13,
