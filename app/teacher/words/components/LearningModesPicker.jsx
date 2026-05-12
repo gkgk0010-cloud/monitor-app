@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react'
 import { COLORS, RADIUS } from '@/utils/tokens'
-import { MODE_LABELS, baseKeysForType, extraKeysForType } from '../utils/learningModes'
+import { MODE_LABELS, MODE_DESCRIPTIONS, baseKeysForType, extraKeysForType } from '../utils/learningModes'
 
 function toggleStyle(active) {
   return {
@@ -83,6 +83,9 @@ export default function LearningModesPicker({
           <span style={{ fontSize: 11, color: COLORS.textHint, marginLeft: 24, marginBottom: 8 }}>
             {hasImageWords ? '단어에 이미지가 있으면 앱에서 사용할 수 있어요.' : 'image_url이 있는 단어가 있을 때 앱에서 활성화돼요.'}
           </span>
+        ) : null}
+        {key === 'mypick' && MODE_DESCRIPTIONS.mypick ? (
+          <span style={{ fontSize: 11, color: COLORS.textHint, marginLeft: 24, marginBottom: 8 }}>{MODE_DESCRIPTIONS.mypick}</span>
         ) : null}
         {key === 'test' && checked && !hideTestRubrics ? (
           <div

@@ -879,7 +879,10 @@ export default function RoutineSettingsSection({
                   type="button"
                   disabled={recommendSaving || !selectedSet}
                   onClick={() =>
-                    void applyRecommendedModes(['flashcard', 'recall', 'matching', 'test'], '단어 세트 추천')
+                    void applyRecommendedModes(
+                      ['flashcard', 'recall', 'matching', 'test', 'mypick'],
+                      '단어 세트 추천',
+                    )
                   }
                   style={{
                     padding: '8px 14px',
@@ -902,7 +905,7 @@ export default function RoutineSettingsSection({
                   disabled={recommendSaving || !selectedSet}
                   onClick={() =>
                     void applyRecommendedModes(
-                      ['reading', 'dictation', 'writing', 'scramble'],
+                      ['reading', 'dictation', 'writing', 'scramble', 'mypick'],
                       '문장 세트 라이팅 추천',
                     )
                   }
@@ -927,7 +930,7 @@ export default function RoutineSettingsSection({
                   disabled={recommendSaving || !selectedSet}
                   onClick={() =>
                     void applyRecommendedModes(
-                      ['dictation', 'listening', 'shadowing', 'scramble'],
+                      ['dictation', 'listening', 'shadowing', 'scramble', 'mypick'],
                       '문장 세트 스피킹 추천',
                     )
                   }

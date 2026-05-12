@@ -16,6 +16,7 @@ export const ALL_MODE_KEYS = [
   'dictation',
   'composition',
   'image',
+  'mypick',
   'test',
 ]
 
@@ -32,15 +33,21 @@ export const MODE_LABELS = {
   dictation: '딕테이션',
   composition: '입영작',
   image: '이미지',
+  mypick: '⭐ 마이픽',
   test: '테스트',
 }
 
+/** 사용자 안내용 (마이픽 등) */
+export const MODE_DESCRIPTIONS = {
+  mypick: '별표한 단어·문장만 학습합니다.',
+}
+
 /** word | sentence_writing | sentence_speaking (구 image·sentence 는 normalizeSetType 로 정규화) */
-/** B-2: 세트 타입별 기본 모드(암기=flashcard) */
+/** 세트 타입별 기본(추천) 필수 후보 모드 — create·루틴 추천과 동일 소스 */
 export const DEFAULT_MODES_BY_TYPE = {
-  word: ['flashcard', 'recall', 'matching', 'test'],
-  sentence_writing: ['reading', 'test'],
-  sentence_speaking: ['reading', 'shadowing'],
+  word: ['flashcard', 'recall', 'matching', 'test', 'mypick'],
+  sentence_writing: ['reading', 'dictation', 'writing', 'scramble', 'mypick'],
+  sentence_speaking: ['dictation', 'listening', 'shadowing', 'scramble', 'mypick'],
 }
 
 /** DB·구버전 값 → word | sentence_writing | sentence_speaking */

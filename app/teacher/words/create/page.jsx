@@ -20,12 +20,19 @@ import {
 import { assignDaysEqual, assignDaysChunk, assignDaysFromManualCounts } from '../utils/dayAssign'
 import WorkflowSuccessModal from '../components/WorkflowSuccessModal'
 import WordAddedDaySplitModal from '../components/WordAddedDaySplitModal'
-import { initModesStateForType, buildAvailableModesJson, normalizeSetType } from '../utils/learningModes'
+import LearningModesPicker from '../components/LearningModesPicker'
+import {
+  ALL_MODE_KEYS,
+  initModesStateForType,
+  buildAvailableModesJson,
+  normalizeSetType,
+  defaultRequiredForBaseKeys,
+} from '../utils/learningModes'
 import { showToast } from '@/utils/toastBus'
 import { buildTtsJobsFromManyRowsForcedLang } from '@/utils/ttsJobs'
 import { runTeacherTtsPrefetchWithOverlay } from '@/utils/ttsPrefetchRunner'
 
-async function ensureWordSetIdForCreate(teacherId, setName, createSetType) {
+async function ensureWordSetIdForCreate(teacherId, setName, createSetType, availableModesPayload) {
   const sn = String(setName || '').trim()
   if (!teacherId || !sn) throw new Error('세트 이름과 선생님 정보가 필요합니다.')
   const st = normalizeSetType(createSetType)
@@ -39,7 +46,10 @@ async function ensureWordSetIdForCreate(teacherId, setName, createSetType) {
   if (existing?.id) return String(existing.id)
 
   const init = initModesStateForType(st)
-  const available_modes = buildAvailableModesJson(init.modes, init.requiredByMode, init.passScore, init.maxAttempts)
+  const available_modes =
+    availableModesPayload != null
+      ? availableModesPayload
+      : buildAvailableModesJson(init.modes, init.requiredByMode, init.passScore, init.maxAttempts)
   const { data, error } = await supabase
     .from('word_sets')
     .insert({
@@ -71,6 +81,12 @@ const SET_TYPE_LABELS = {
   sentence_writing: '문장 세트 — 라이팅',
   sentence_speaking: '문장 세트 — 스피킹',
 }
+
+const SET_TYPE_RADIO_OPTIONS = [
+  { id: 'word', label: '단어 세트' },
+  { id: 'sentence_writing', label: '문장 세트 — 라이팅' },
+  { id: 'sentence_speaking', label: '문장 세트 — 스피킹' },
+]
 
 function emptyRow(setName) {
   return {
@@ -140,13 +156,55 @@ function CreateWordSetPageContent() {
     return tableGroupMode
   }, [hasDayPreview, tableGroupMode])
 
-  /** URL `?type=` → WordTable·가져오기·저장 검증 (기본 단어 세트) */
-  const createSetType = useMemo(() => {
+  /** URL `?type=` 초기값 — 페이지에서 라디오로 변경 가능 */
+  const createSetTypeFromQuery = useMemo(() => {
     const t = searchParams.get('type')
     if (t === 'sentence_writing' || t === 'sentence_speaking') return t
     if (t === 'sentence' || t === 'image') return 'sentence_writing'
     return 'word'
   }, [searchParams])
+
+  const [createSetType, setCreateSetType] = useState('word')
+  useEffect(() => {
+    setCreateSetType(createSetTypeFromQuery)
+  }, [createSetTypeFromQuery])
+
+  const [modes, setModes] = useState(() => initModesStateForType('word').modes)
+  const [requiredByMode, setRequiredByMode] = useState(() => initModesStateForType('word').requiredByMode)
+  const [testPassScore, setTestPassScore] = useState(70)
+  const [testMaxAttempts, setTestMaxAttempts] = useState(3)
+
+  useEffect(() => {
+    const init = initModesStateForType(createSetType)
+    setModes(init.modes)
+    setRequiredByMode(init.requiredByMode)
+    setTestPassScore(init.passScore)
+    setTestMaxAttempts(init.maxAttempts)
+  }, [createSetType])
+
+  const handleToggleMode = useCallback(
+    (key) => {
+      setModes((prev) => {
+        const next = { ...prev, [key]: !prev[key] }
+        if (next[key]) {
+          setRequiredByMode((r) => ({
+            ...r,
+            [key]: defaultRequiredForBaseKeys(createSetType)[key] ?? false,
+          }))
+        }
+        return next
+      })
+    },
+    [createSetType],
+  )
+
+  const applyRecommendedModesClick = useCallback(() => {
+    const init = initModesStateForType(createSetType)
+    setModes(init.modes)
+    setRequiredByMode(init.requiredByMode)
+    setTestPassScore(init.passScore)
+    setTestMaxAttempts(init.maxAttempts)
+  }, [createSetType])
 
   const isSentenceStyleCreate =
     createSetType === 'sentence_writing' || createSetType === 'sentence_speaking'
@@ -473,6 +531,11 @@ function CreateWordSetPageContent() {
       alert(formatEmptyMeaningAlert(badMeaning))
       return
     }
+    const selectedModeKeys = ALL_MODE_KEYS.filter((k) => modes[k])
+    if (selectedModeKeys.length === 0) {
+      alert('학습 모드를 하나 이상 선택해 주세요.')
+      return
+    }
     const needsDaySplitModal =
       !hasDayPreview ||
       (isSentenceStyleCreate && candidates.some((r) => rowDayNumberForBulk(r) < 1))
@@ -518,7 +581,12 @@ function CreateWordSetPageContent() {
       if (error) throw error
       let wid
       try {
-        wid = await ensureWordSetIdForCreate(teacherId, sn, createSetType)
+        wid = await ensureWordSetIdForCreate(
+          teacherId,
+          sn,
+          createSetType,
+          buildAvailableModesJson(modes, requiredByMode, testPassScore, testMaxAttempts),
+        )
       } catch (e2) {
         console.warn('[word_sets]', e2)
         showToast(
@@ -690,11 +758,79 @@ function CreateWordSetPageContent() {
               }}
             />
           </label>
-          {searchParams.get('type') ? (
-            <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: COLORS.accentText }}>
-              세트 유형(참고): {SET_TYPE_LABELS[createSetType] || createSetType}
-            </p>
-          ) : null}
+
+          <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary }}>세트 타입</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {SET_TYPE_RADIO_OPTIONS.map((opt) => {
+              const active = createSetType === opt.id
+              return (
+                <label
+                  key={opt.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 10,
+                    padding: '12px 14px',
+                    borderRadius: RADIUS.md,
+                    border: active ? `2px solid ${COLORS.primary}` : `1px solid ${COLORS.border}`,
+                    background: active ? COLORS.primarySoft : COLORS.bg,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="create-set-type"
+                    checked={active}
+                    onChange={() => setCreateSetType(opt.id)}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span style={{ fontWeight: 700, color: COLORS.textPrimary }}>{opt.label}</span>
+                </label>
+              )
+            })}
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              onClick={applyRecommendedModesClick}
+              style={{
+                padding: '10px 16px',
+                borderRadius: RADIUS.md,
+                border: `1px solid ${COLORS.primary}`,
+                background: COLORS.primarySoft,
+                color: COLORS.primary,
+                fontWeight: 800,
+                cursor: 'pointer',
+                fontSize: 14,
+              }}
+            >
+              추천 모드 적용 ({SET_TYPE_LABELS[createSetType] ?? createSetType})
+            </button>
+            <span style={{ fontSize: 12, color: COLORS.textSecondary }}>
+              선택한 세트 타입에 맞춰 필수 후보 모드를 한 번에 켭니다. 이후 각 모드별로 세부 조정하세요.
+            </span>
+          </div>
+
+          <LearningModesPicker
+            setType={createSetType}
+            modes={modes}
+            requiredByMode={requiredByMode}
+            passScore={testPassScore}
+            maxAttempts={testMaxAttempts}
+            hideTestRubrics={false}
+            hasImageWords={false}
+            onToggleMode={handleToggleMode}
+            onRequiredChange={(key, required) =>
+              setRequiredByMode((r) => ({
+                ...r,
+                [key]: required,
+              }))
+            }
+            onPassScoreChange={setTestPassScore}
+            onMaxAttemptsChange={setTestMaxAttempts}
+          />
+
           <p style={{ margin: 0, fontSize: 13, color: COLORS.textSecondary, lineHeight: 1.5 }}>
             DB에 있는 전체 단어 목록은 보이지 않습니다. 카드만 입력한 뒤, Day를 나누고 저장하면 됩니다. 예문
             돋보기·자동채우기는 Anthropic(Claude) API를 쓰며, 계정에 크레딧이 있어야 합니다. 이미지는 검색·URL·
