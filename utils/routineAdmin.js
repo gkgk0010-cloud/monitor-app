@@ -86,7 +86,7 @@ export async function fetchTeacherRoutinesWithStats(teacherId) {
 
   const { data: routines, error } = await supabase
     .from('routines')
-    .select('id, title, set_name, total_days, created_at')
+    .select('id, title, set_name, total_days, created_at, routine_applications(id, set_name, start_date)')
     .eq('teacher_id', teacherId)
     .order('created_at', { ascending: false })
 
@@ -212,6 +212,17 @@ export async function createRoutineWithDaysAndTasks({
     return { ok: false, error: errMessage(err) }
   }
 
+  const { error: eApp } = await supabase.from('routine_applications').insert({
+    routine_id: routineId,
+    set_name: String(setName).trim(),
+    start_date: null,
+  })
+  if (eApp) {
+    await supabase.from('routine_days').delete().eq('routine_id', routineId)
+    await supabase.from('routines').delete().eq('id', routineId)
+    return { ok: false, error: errMessage(eApp) || '세트 적용 등록에 실패했습니다.' }
+  }
+
   return { ok: true, routineId }
 }
 
@@ -317,12 +328,25 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
   /** @type {unknown[]} 문자열 / {mode,wrongOnly?} / {mode:wrong_note} 혼용 */
   const reviewModes = Array.isArray(rawRm) ? rawRm : []
 
+  const { data: appFirst, error: eApp } = await supabase
+    .from('routine_applications')
+    .select('set_name')
+    .eq('routine_id', routineId)
+    .order('created_at', { ascending: true })
+    .limit(1)
+
+  if (eApp) {
+    return { ok: false, error: errMessage(eApp) }
+  }
+
+  const setNameFromApp = appFirst?.[0]?.set_name != null ? String(appFirst[0].set_name) : ''
+
   return {
     ok: true,
     data: {
       routineId: String(r.id),
       title: r.title != null ? String(r.title) : '',
-      setName: r.set_name != null ? String(r.set_name) : '',
+      setName: setNameFromApp || (r.set_name != null ? String(r.set_name) : ''),
       totalDays: Math.max(1, parseInt(String(r.total_days), 10) || 1),
       reviewModes,
       restDayNumbers,
@@ -385,7 +409,6 @@ export async function updateRoutineWithDaysAndTasks(
     .from('routines')
     .update({
       title: String(title).trim(),
-      set_name: String(setName).trim(),
       total_days: td,
       review_modes,
     })
@@ -518,5 +541,115 @@ export async function deleteRoutineForTeacher(routineId, teacherId) {
     return { ok: false, error: errMessage(eR) || '루틴을 삭제하지 못했습니다.' }
   }
 
+  return { ok: true }
+}
+
+/**
+ * 루틴에 연결된 단어세트 적용 목록
+ * @returns {Promise<{ ok: boolean, error?: string, rows?: { id: string, set_name: string, start_date: string | null, created_at: string }[] }>}
+ */
+export async function fetchRoutineApplications(routineId, teacherId) {
+  if (!routineId || !teacherId) {
+    return { ok: false, error: '잘못된 요청입니다.', rows: [] }
+  }
+  const { data: owner, error: eo } = await supabase
+    .from('routines')
+    .select('id')
+    .eq('id', routineId)
+    .eq('teacher_id', teacherId)
+    .maybeSingle()
+  if (eo) return { ok: false, error: errMessage(eo), rows: [] }
+  if (!owner) return { ok: false, error: '루틴을 찾을 수 없습니다.', rows: [] }
+
+  const { data, error } = await supabase
+    .from('routine_applications')
+    .select('id, set_name, start_date, created_at')
+    .eq('routine_id', routineId)
+    .order('created_at', { ascending: true })
+  if (error) return { ok: false, error: errMessage(error), rows: [] }
+  return { ok: true, rows: data || [] }
+}
+
+/**
+ * @param {{ teacherId: string, routineId: string, setName: string, startDate: string | null }} p startDate null = 가입일 기준
+ */
+export async function addRoutineApplication({ teacherId, routineId, setName, startDate }) {
+  if (!teacherId || !routineId || !String(setName || '').trim()) {
+    return { ok: false, error: '잘못된 요청입니다.' }
+  }
+  const { data: owner, error: eo } = await supabase
+    .from('routines')
+    .select('id')
+    .eq('id', routineId)
+    .eq('teacher_id', teacherId)
+    .maybeSingle()
+  if (eo) return { ok: false, error: errMessage(eo) }
+  if (!owner) return { ok: false, error: '루틴을 찾을 수 없습니다.' }
+
+  const sd = startDate != null && String(startDate).trim() !== '' ? String(startDate).trim() : null
+  const { error } = await supabase.from('routine_applications').insert({
+    routine_id: routineId,
+    set_name: String(setName).trim(),
+    start_date: sd,
+  })
+  if (error) return { ok: false, error: errMessage(error) }
+  return { ok: true }
+}
+
+/**
+ * @param {{ teacherId: string, applicationId: string, startDate: string | null }} p
+ */
+export async function updateRoutineApplicationStart({ teacherId, applicationId, startDate }) {
+  if (!teacherId || !applicationId) return { ok: false, error: '잘못된 요청입니다.' }
+  const { data: appRow, error: ea } = await supabase
+    .from('routine_applications')
+    .select('routine_id')
+    .eq('id', applicationId)
+    .maybeSingle()
+  if (ea) return { ok: false, error: errMessage(ea) }
+  if (!appRow?.routine_id) return { ok: false, error: '적용 행을 찾을 수 없습니다.' }
+
+  const { data: owner } = await supabase
+    .from('routines')
+    .select('id')
+    .eq('id', appRow.routine_id)
+    .eq('teacher_id', teacherId)
+    .maybeSingle()
+  if (!owner) return { ok: false, error: '권한이 없습니다.' }
+
+  const sd = startDate != null && String(startDate).trim() !== '' ? String(startDate).trim() : null
+  const { error } = await supabase.from('routine_applications').update({ start_date: sd }).eq('id', applicationId)
+  if (error) return { ok: false, error: errMessage(error) }
+  return { ok: true }
+}
+
+/**
+ * 적용 해제 — FK CASCADE 로 해당 세트 학생 진행 행 삭제. 마지막 1개는 삭제 불가.
+ */
+export async function deleteRoutineApplication({ teacherId, applicationId }) {
+  if (!teacherId || !applicationId) return { ok: false, error: '잘못된 요청입니다.' }
+  const { data: appRow, error: ea } = await supabase
+    .from('routine_applications')
+    .select('routine_id')
+    .eq('id', applicationId)
+    .maybeSingle()
+  if (ea) return { ok: false, error: errMessage(ea) }
+  const rid = appRow?.routine_id
+  if (!rid) return { ok: false, error: '적용 행을 찾을 수 없습니다.' }
+
+  const { data: owner } = await supabase.from('routines').select('id').eq('id', rid).eq('teacher_id', teacherId).maybeSingle()
+  if (!owner) return { ok: false, error: '권한이 없습니다.' }
+
+  const { count, error: ec } = await supabase
+    .from('routine_applications')
+    .select('*', { count: 'exact', head: true })
+    .eq('routine_id', rid)
+  if (ec) return { ok: false, error: errMessage(ec) }
+  if ((count ?? 0) <= 1) {
+    return { ok: false, error: '마지막 적용 세트는 해제할 수 없습니다. 루틴 전체 삭제를 이용해 주세요.' }
+  }
+
+  const { error } = await supabase.from('routine_applications').delete().eq('id', applicationId)
+  if (error) return { ok: false, error: errMessage(error) }
   return { ok: true }
 }

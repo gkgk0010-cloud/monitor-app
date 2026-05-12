@@ -165,7 +165,7 @@ function buildFillBlankOnlyPrompt(wordPoolJson, jobs) {
       const w = String(job.row.word ?? '').trim();
       const ex = job.row.example_sentence != null ? String(job.row.example_sentence).trim() : '';
       const exHint = ex ? ` 참고 예문(활용 가능): ${ex}` : '';
-      return `${k + 1}. 문항 ${k + 1}: 단어는 반드시 "${w}". example 은 이 단어가 들어가는 영문 한 문장이며, 해당 영단어 자리만 ____ 또는 ______ 로 표시. answer 는 "${w}" 와 동일.${exHint}`;
+      return `${k + 1}. 문항 ${k + 1}: 단어는 반드시 "${w}". example 은 이 단어가 들어가는 학습 언어 한 문장이며, 해당 단어 자리만 ____ 또는 ______ 로 표시. answer 는 "${w}" 와 동일.${exHint}`;
     })
     .join('\n');
 

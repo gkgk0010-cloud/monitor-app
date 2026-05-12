@@ -714,7 +714,7 @@ function WordTable({
         }
         if (!word) word = ex0.split(/\s+/).filter(Boolean)[0] || 'a'
       } else if (!word) {
-        alert('영단어를 먼저 입력하세요.')
+        alert('단어를 먼저 입력하세요.')
         return
       }
       setBusyExampleId(String(id))
@@ -778,7 +778,7 @@ function WordTable({
       String(row.meaning || '').trim() ||
       String(row.example_sentence || '').trim().slice(0, 80)
     if (!q) {
-      alert(isSentence ? '뜻·예문 중 하나를 입력한 뒤 검색해 주세요.' : '영단어를 먼저 입력하세요.')
+      alert(isSentence ? '뜻·예문 중 하나를 입력한 뒤 검색해 주세요.' : '단어를 먼저 입력하세요.')
       return
     }
     setImageLoadingId(String(id))
@@ -789,7 +789,7 @@ function WordTable({
       if (!res.ok) throw new Error(json.error || '이미지 검색 실패')
       const photos = json.photos || []
       if (photos.length === 0) {
-        alert('이미지를 찾지 못했습니다. 다른 영단어로 시도해 보세요.')
+        alert('이미지를 찾지 못했습니다. 다른 단어로 시도해 보세요.')
         setImagePicker(null)
         return
       }

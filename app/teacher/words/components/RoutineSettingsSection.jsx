@@ -12,6 +12,7 @@ import {
   parseReviewOffsets,
   updateRoutineWithDaysAndTasks,
 } from '@/utils/routineAdmin'
+import RoutineApplicationsModal from './RoutineApplicationsModal'
 import { COLORS, RADIUS } from '@/utils/tokens'
 import {
   ALL_MODE_KEYS,
@@ -21,6 +22,22 @@ import {
   splitModesForRoutine,
   normalizeSetType,
 } from '../utils/learningModes'
+
+/** @param {{ set_name?: string, routine_applications?: { set_name?: string, start_date?: string | null }[] }} r */
+function formatRoutineApplicationsSummary(r) {
+  const apps = r?.routine_applications
+  if (!Array.isArray(apps) || apps.length === 0) {
+    return r?.set_name ? String(r.set_name) : '적용 세트 없음'
+  }
+  return apps
+    .map((a) => {
+      const sn = String(a.set_name || '').trim()
+      if (!a.start_date) return `${sn} — 학생별 가입일`
+      const d = String(a.start_date)
+      return `${sn} — ${d} 고정 시작`
+    })
+    .join(' · ')
+}
 
 /** 복습 방식 체크박스 키 — DB `routines.review_modes` JSONB 배열에 그대로 저장 (학생 앱과 동일 키).
  * 오답노트는 word_sets 학습모드로 제공 — 복습 큐에는 넣지 않는 것을 권장합니다(기존 루틴에 남아 있으면 로드만 됩니다). */
@@ -148,6 +165,8 @@ export default function RoutineSettingsSection({
   const [recommendSaving, setRecommendSaving] = useState(false)
   /** 루틴 삭제 확인 — { id, title } | null */
   const [deleteTarget, setDeleteTarget] = useState(null)
+  /** 세트 적용 관리 모달 — { id, title, total_days } | null */
+  const [appsModalRoutine, setAppsModalRoutine] = useState(null)
   const [deleting, setDeleting] = useState(false)
   const [totalDaysInput, setTotalDaysInput] = useState('28')
   const [reviewCycleInput, setReviewCycleInput] = useState('+1+3+7')
@@ -620,6 +639,19 @@ export default function RoutineSettingsSection({
         </div>
       ) : null}
 
+      {appsModalRoutine ? (
+        <RoutineApplicationsModal
+          open={Boolean(appsModalRoutine)}
+          onClose={() => setAppsModalRoutine(null)}
+          teacherId={teacherId}
+          routineId={String(appsModalRoutine.id)}
+          routineTitle={appsModalRoutine.title}
+          totalDays={appsModalRoutine.total_days}
+          wordSetNames={defaultSetNames}
+          onChanged={() => void load()}
+        />
+      ) : null}
+
       {toast ? (
         <div
           role="status"
@@ -719,8 +751,10 @@ export default function RoutineSettingsSection({
                 <div style={{ fontWeight: 800, fontSize: 16, color: COLORS.textPrimary }}>{r.title || '—'}</div>
               </div>
               <div>
-                <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 }}>세트명</div>
-                <div style={{ fontWeight: 600, fontSize: 15, color: COLORS.accentText }}>{r.set_name || '—'}</div>
+                <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 }}>적용 단어세트</div>
+                <div style={{ fontWeight: 600, fontSize: 13, color: COLORS.accentText, lineHeight: 1.45 }}>
+                  {formatRoutineApplicationsSummary(r)}
+                </div>
               </div>
               <div>
                 <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 }}>총 DAY</div>
@@ -734,6 +768,30 @@ export default function RoutineSettingsSection({
               </div>
               <div style={{ fontSize: 12, color: COLORS.textHint }}>생성 {fmtDate(r.created_at)}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  disabled={editLoading || saving}
+                  onClick={() =>
+                    setAppsModalRoutine({
+                      id: r.id,
+                      title: r.title || '',
+                      total_days: r.total_days,
+                    })
+                  }
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: RADIUS.sm,
+                    border: `1px solid ${COLORS.border}`,
+                    background: COLORS.bg,
+                    color: COLORS.textPrimary,
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: editLoading || saving ? 'wait' : 'pointer',
+                    opacity: editLoading || saving ? 0.65 : 1,
+                  }}
+                >
+                  세트 적용
+                </button>
                 <button
                   type="button"
                   disabled={editLoading || saving}

@@ -405,7 +405,7 @@ function CreateWordSetPageContent() {
 
     const validCount = rows.filter((r) => isRowValidForCreate(r)).length
     if (validCount === 0) {
-      alert(isSentenceStyleCreate ? '예문·뜻이 있는 행이 없습니다.' : '영단어·뜻이 있는 행이 없습니다.')
+      alert(isSentenceStyleCreate ? '예문·뜻이 있는 행이 없습니다.' : '단어·뜻이 있는 행이 없습니다.')
       return
     }
 
