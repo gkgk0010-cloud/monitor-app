@@ -15,6 +15,7 @@ import {
 } from '@/utils/teacherQueries';
 import { useStudentReport, normalizeReportStudentId } from '@/src/hooks/useStudentReport';
 import StudentReportLayer from './StudentReportLayer';
+import StudentVocabDayReportsTab from './StudentVocabDayReportsTab';
 import { showToast } from '@/utils/toastBus';
 
 const COLOR_ORDER = { gold: 0, red: 1, orange: 2, blue: 3, green: 4, purple: 5, white: 6 };
@@ -421,6 +422,11 @@ export default function TeacherMonitorPage() {
   const [fetchError, setFetchError] = useState(null);
   const [legendOpen, setLegendOpen] = useState(false);
   const [detailStudent, setDetailStudent] = useState(null);
+  /** 학생 상세 모달 탭: 토익·루틴 등 종합 리포트 / 단어 세트·Day 학습 로그 */
+  const [detailModalTab, setDetailModalTab] = useState('routine');
+  /** 개별 Day 탭을 한 번이라도 연 적 있으면 true — 데이터 fetch·복사용 ref 유지 */
+  const [vocabDayReportLoaded, setVocabDayReportLoaded] = useState(false);
+  const vocabDayCopyFnRef = useRef(null);
   const [reportOpen, setReportOpen] = useState(false);
   /** 집중관리존: 10초 후 정답/오답 → 대기 전환을 위해 1초마다 리렌더 */
   const [tick, setTick] = useState(0);
@@ -458,6 +464,14 @@ export default function TeacherMonitorPage() {
 
   useEffect(() => {
     if (!detailStudent) setReportOpen(false);
+  }, [detailStudent]);
+
+  useEffect(() => {
+    if (!detailStudent) {
+      setDetailModalTab('routine');
+      setVocabDayReportLoaded(false);
+      vocabDayCopyFnRef.current = null;
+    }
   }, [detailStudent]);
 
   /** @param {{ skipToast?: boolean }} [options] — 출석 N차 등에서 별도 메시지를 쓸 때 */
@@ -544,6 +558,16 @@ export default function TeacherMonitorPage() {
       }
       lines.push('');
 
+      lines.push('📒 단어장 오답노트');
+      if (!d.wrongAnswerStats) {
+        lines.push('통계를 불러오지 못했어요.');
+      } else {
+        lines.push(`복습 진행 중: ${d.wrongAnswerStats.inCycleCount}개`);
+        lines.push(`졸업 테스트 대기: ${d.wrongAnswerStats.pendingGraduationCount}개`);
+        lines.push(`졸업 누적: ${d.wrongAnswerStats.graduatedLifetimeCount}개`);
+      }
+      lines.push('');
+
       lines.push('📚 오늘의 족보 기록');
       if (!d.isToeic) {
         lines.push('해당 없음');
@@ -575,6 +599,13 @@ export default function TeacherMonitorPage() {
         lines.push(`[${formatLogDateAndTime(log.created_at)}] ${log.message ?? log.event_type ?? ''}`);
       });
     }
+
+    const vocabDayBlock = vocabDayCopyFnRef.current?.();
+    if (vocabDayBlock && String(vocabDayBlock).trim()) {
+      lines.push('');
+      lines.push(String(vocabDayBlock).trim());
+    }
+
     return lines.join('\n');
   };
 
@@ -1234,6 +1265,51 @@ export default function TeacherMonitorPage() {
                 </div>
               </div>
               <div style={styles.modalBody}>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 8,
+                    marginBottom: 16,
+                    flexWrap: 'wrap',
+                  }}
+                  role="tablist"
+                  aria-label="학생 상세 보기 종류"
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={detailModalTab === 'routine'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDetailModalTab('routine');
+                    }}
+                    style={{
+                      ...styles.monitorDetailTabBtn,
+                      ...(detailModalTab === 'routine' ? styles.monitorDetailTabBtnActive : {}),
+                    }}
+                  >
+                    종합 리포트
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={detailModalTab === 'dayVocab'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDetailModalTab('dayVocab');
+                      setVocabDayReportLoaded(true);
+                    }}
+                    style={{
+                      ...styles.monitorDetailTabBtn,
+                      ...(detailModalTab === 'dayVocab' ? styles.monitorDetailTabBtnActive : {}),
+                    }}
+                  >
+                    개별 Day
+                  </button>
+                </div>
+
+                {detailModalTab === 'routine' ? (
+                  <>
                 {reportLoading && (
                   <p style={{ ...styles.detailPlaceholder, marginBottom: 16 }}>불러오는 중...</p>
                 )}
@@ -1365,6 +1441,31 @@ export default function TeacherMonitorPage() {
                     </div>
 
                     <div style={styles.detailBlock}>
+                      <h3 style={styles.detailBlockTitle}>📒 단어장 오답노트</h3>
+                      {!reportData.wrongAnswerStats ? (
+                        <p style={styles.detailPlaceholder}>통계를 불러올 수 없어요. vocab_wrong_* 테이블을 확인해 주세요.</p>
+                      ) : (
+                        <>
+                          <p style={styles.detailScore}>
+                            복습 진행 중
+                            {' '}
+                            <strong>{reportData.wrongAnswerStats.inCycleCount}</strong>
+                            개 · 졸업 테스트 대기
+                            {' '}
+                            <strong>{reportData.wrongAnswerStats.pendingGraduationCount}</strong>
+                            개
+                          </p>
+                          <p style={{ ...styles.detailScoreSub, marginTop: 6 }}>
+                            졸업 누적(통과)
+                            {' '}
+                            <strong>{reportData.wrongAnswerStats.graduatedLifetimeCount}</strong>
+                            개
+                          </p>
+                        </>
+                      )}
+                    </div>
+
+                    <div style={styles.detailBlock}>
                       <h3 style={styles.detailBlockTitle}>📚 오늘의 족보 기록</h3>
                       {!reportData.isToeic ? (
                         <p style={styles.detailNa}>해당 없음</p>
@@ -1419,24 +1520,43 @@ export default function TeacherMonitorPage() {
                   </>
                 )}
 
-                <div style={styles.detailBlock}>
-                  <h3 style={styles.detailBlockTitle}>📜 개인 로그</h3>
-                  <div style={styles.detailLogList}>
-                    {statusLogs.filter((log) => (log.student_name || '').trim() === (detailStudent.student_name || '').trim()).length === 0 ? (
-                      <p style={styles.detailLogEmpty}>이 학생의 사건 기록이 없어요.</p>
-                    ) : (
-                      statusLogs
-                        .filter((log) => (log.student_name || '').trim() === (detailStudent.student_name || '').trim())
-                        .slice(0, 20)
-                        .map((log) => (
-                          <div key={log.id} style={styles.detailLogItem}>
-                            <span style={styles.detailLogTime}>[{formatLogDateAndTime(log.created_at)}]</span>
-                            <span style={styles.detailLogMsg}>{log.message ?? log.event_type ?? ''}</span>
-                          </div>
-                        ))
-                    )}
+                    <div style={styles.detailBlock}>
+                      <h3 style={styles.detailBlockTitle}>📜 개인 로그</h3>
+                      <div style={styles.detailLogList}>
+                        {statusLogs.filter((log) => (log.student_name || '').trim() === (detailStudent.student_name || '').trim()).length === 0 ? (
+                          <p style={styles.detailLogEmpty}>이 학생의 사건 기록이 없어요.</p>
+                        ) : (
+                          statusLogs
+                            .filter((log) => (log.student_name || '').trim() === (detailStudent.student_name || '').trim())
+                            .slice(0, 20)
+                            .map((log) => (
+                              <div key={log.id} style={styles.detailLogItem}>
+                                <span style={styles.detailLogTime}>[{formatLogDateAndTime(log.created_at)}]</span>
+                                <span style={styles.detailLogMsg}>{log.message ?? log.event_type ?? ''}</span>
+                              </div>
+                            ))
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+
+                {(vocabDayReportLoaded || detailModalTab === 'dayVocab') && (
+                  <div
+                    style={{ display: detailModalTab === 'dayVocab' ? 'block' : 'none' }}
+                    aria-hidden={detailModalTab !== 'dayVocab'}
+                  >
+                    <StudentVocabDayReportsTab
+                      key={normalizeReportStudentId(detailStudent.student_id)}
+                      studentId={normalizeReportStudentId(detailStudent.student_id)}
+                      teacherId={teacher?.id ?? ''}
+                      studentName={String(detailStudent.student_name ?? '').trim()}
+                      onCopyReady={(fn) => {
+                        vocabDayCopyFnRef.current = fn;
+                      }}
+                    />
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -1522,6 +1642,22 @@ const styles = {
   modalTitle: { margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#374151' },
   modalClose: { width: 36, height: 36, border: 'none', background: 'transparent', fontSize: 18, color: '#6b7280', cursor: 'pointer', borderRadius: 8 },
   modalBody: { padding: '20px 24px', overflowY: 'auto', flex: 1 },
+  monitorDetailTabBtn: {
+    padding: '8px 14px',
+    borderRadius: 10,
+    border: '1px solid rgba(107,114,128,0.25)',
+    background: 'rgba(255,255,255,0.9)',
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: 'pointer',
+    color: '#374151',
+    fontFamily: 'inherit',
+  },
+  monitorDetailTabBtnActive: {
+    border: '2px solid #764ba2',
+    background: 'linear-gradient(135deg, #f5f3ff 0%, #eef2ff 100%)',
+    color: '#5b21b6',
+  },
   detailBlock: { marginBottom: 24 },
   detailBlockTitle: { margin: '0 0 10px', fontSize: '0.95rem', fontWeight: 700, color: '#374151' },
   detailPlaceholder: { margin: 0, fontSize: 13, color: '#6b7280', lineHeight: 1.5 },

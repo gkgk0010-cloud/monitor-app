@@ -549,6 +549,31 @@ async function buildToeicDetail(studentId: string): Promise<NonNullable<StudentR
   }
 }
 
+async function fetchWrongAnswerStats(studentId: string): Promise<StudentReportData['wrongAnswerStats']> {
+  const [{ count: inC, error: e1 }, { count: pend, error: e2 }, { count: gradC, error: e3 }] = await Promise.all([
+    supabase
+      .from('vocab_wrong_answers')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', studentId)
+      .lt('stage', 7),
+    supabase
+      .from('vocab_wrong_answers')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', studentId)
+      .eq('stage', 7),
+    supabase.from('vocab_wrong_graduated').select('id', { count: 'exact', head: true }).eq('user_id', studentId),
+  ])
+  if (e1 || e2 || e3) {
+    console.warn('[report] wrongAnswerStats', e1?.message || e2?.message || e3?.message)
+    return null
+  }
+  return {
+    inCycleCount: inC ?? 0,
+    pendingGraduationCount: pend ?? 0,
+    graduatedLifetimeCount: gradC ?? 0,
+  }
+}
+
 async function loadReport(rawStudentId: string): Promise<StudentReportData> {
   const id = normalizeReportStudentId(rawStudentId)
   if (!id) {
@@ -572,11 +597,12 @@ async function loadReport(rawStudentId: string): Promise<StudentReportData> {
         }
       })()
 
-  const [isToeic, todayAns, topWrong, rep] = await Promise.all([
+  const [isToeic, todayAns, topWrong, rep, wrongAnswerStats] = await Promise.all([
     fetchTeacherToeicFlags(student.teacherId),
     fetchTodayAnswerStats(id),
     fetchTopWrongTags(id),
     fetchPrimaryActiveRoutine(id),
+    fetchWrongAnswerStats(id),
   ])
 
   const todayJokboTagBreakdown = isToeic ? await fetchTodayJokboTagBreakdown(id) : []
@@ -652,6 +678,7 @@ async function loadReport(rawStudentId: string): Promise<StudentReportData> {
     todayRoutine,
     overallReport: overall,
     toeicDetail,
+    wrongAnswerStats,
   }
 }
 

@@ -17,6 +17,7 @@ export const ALL_MODE_KEYS = [
   'composition',
   'image',
   'mypick',
+  'wrong_note',
   'test',
 ]
 
@@ -34,12 +35,14 @@ export const MODE_LABELS = {
   composition: '입영작',
   image: '이미지',
   mypick: '⭐ 마이픽',
+  wrong_note: '오답노트',
   test: '테스트',
 }
 
 /** 사용자 안내용 (마이픽 등) */
 export const MODE_DESCRIPTIONS = {
   mypick: '별표한 단어·문장만 학습합니다.',
+  wrong_note: '오늘 복습할 오답 단어만 풀어요. Day 학습 독에서도 사용할 수 있어요.',
 }
 
 /** word | sentence_writing | sentence_speaking (구 image·sentence 는 normalizeSetType 로 정규화) */

@@ -52,6 +52,16 @@ export interface StudentReportData {
     requiredTasksCompleted: number
   }
 
+  /** 단어장 오답노트 — `vocab_wrong_answers` / 졸업 누적 (user_id = 학생 로그인 uid) */
+  wrongAnswerStats: {
+    /** stage<7 인 미졸업 오답 행 수 */
+    inCycleCount: number
+    /** stage=7 졸업 테스트 대기 */
+    pendingGraduationCount: number
+    /** `vocab_wrong_graduated` 누적 */
+    graduatedLifetimeCount: number
+  } | null
+
   overallReport: {
     startedAt: string | null
     totalDaysElapsed: number

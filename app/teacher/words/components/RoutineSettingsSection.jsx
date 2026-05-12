@@ -22,7 +22,8 @@ import {
   normalizeSetType,
 } from '../utils/learningModes'
 
-/** 복습 방식 체크박스 키 — DB `routines.review_modes` JSONB 배열에 그대로 저장 (학생 앱과 동일 키) */
+/** 복습 방식 체크박스 키 — DB `routines.review_modes` JSONB 배열에 그대로 저장 (학생 앱과 동일 키).
+ * 오답노트는 word_sets 학습모드로 제공 — 복습 큐에는 넣지 않는 것을 권장합니다(기존 루틴에 남아 있으면 로드만 됩니다). */
 const REVIEW_MODE_OPTIONS = [
   { key: 'test', label: '테스트로 복습' },
   { key: 'reading', label: '직독직해로 복습' },
@@ -31,7 +32,6 @@ const REVIEW_MODE_OPTIONS = [
   { key: 'scramble', label: '스크램블로 복습' },
   { key: 'memorize', label: '암기(플래시카드)' },
   { key: 'recall', label: '리콜' },
-  { key: 'wrong_note', label: '오답노트' },
 ]
 
 /** 루틴 복습 단계 편집(순서 유지) — 드롭다운에 나올 옵션 */
