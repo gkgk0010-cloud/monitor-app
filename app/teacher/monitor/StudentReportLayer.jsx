@@ -10,6 +10,26 @@ import {
   listDayNumbersForSet,
 } from '@/utils/studentVocabDayReports';
 
+/**
+ * 학생 개별 Day 리포트 조회 점검용 SQL 예시 (Supabase SQL Editor, RLS는 서비스 롤 또는 정책에 따라 결과 다름)
+ *
+ * -- B-1 오답노트 행(학생 user_id = 앱 로그인 UUID)
+ * select id, word_id, stage, next_review_at, wrong_count, last_stage_eval_ymd, updated_at
+ * from public.vocab_wrong_answers
+ * where user_id = '<STUDENT_UUID>';
+ *
+ * -- 단어 학습 이력(세트·Day별 활동)
+ * select set_name, day, learning_mode, count(*) as n
+ * from public.word_learning_history
+ * where user_id = '<STUDENT_UUID>'
+ * group by set_name, day, learning_mode
+ * order by set_name, day;
+ *
+ * -- 세트별 words 권한(해당 teacher_id 기준 교재)
+ * select set_name, day, count(*) from public.words
+ * where teacher_id = '<TEACHER_UUID>' group by set_name, day order by set_name, day;
+ */
+
 const Z_LAYER = 10050;
 
 const MODE_LABEL = {
@@ -192,23 +212,54 @@ export default function StudentReportLayer({
   studentId,
 }) {
   const [vocabDayPrintText, setVocabDayPrintText] = useState('');
+  const [vocabDayLoadState, setVocabDayLoadState] = useState('idle');
+  const [vocabDayError, setVocabDayError] = useState(null);
 
   useEffect(() => {
     const tid = String(teacherId || '').trim();
     const sid = String(studentId || '').replace(/\s+/g, '').trim();
     if (!tid || !sid) {
       setVocabDayPrintText('');
+      setVocabDayLoadState('idle');
+      setVocabDayError(null);
       return undefined;
     }
     let cancelled = false;
+    setVocabDayLoadState('loading');
+    setVocabDayError(null);
     void (async () => {
       try {
         const payload = await fetchStudentVocabDayReports(supabase, { studentId: sid, teacherId: tid });
         if (cancelled) return;
         const name = String(studentDisplayName || '').trim() || '학생';
-        setVocabDayPrintText(buildAllSetsVocabDayPrintText(name, payload));
-      } catch {
-        if (!cancelled) setVocabDayPrintText('');
+        const text = buildAllSetsVocabDayPrintText(name, payload);
+        setVocabDayPrintText(text);
+        let nonEmpty = 0;
+        if (payload?.setNames?.length) {
+          for (const setName of payload.setNames) {
+            const nums = listDayNumbersForSet(setName, payload);
+            const list = nums
+              .map((d) => getDayReportViewRow(payload.reports, payload.wordsPerDay, setName, d))
+              .filter(Boolean)
+              .filter((row) => (row.wordsInDay || 0) > 0 || hasDayRowActivity(row));
+            if (list.length) nonEmpty += 1;
+          }
+        }
+        console.log('[student-report] day-reports loaded', {
+          teacherId: tid,
+          studentId: sid,
+          setNames: payload?.setNames?.length ?? 0,
+          setsWithRows: nonEmpty,
+          charCount: text.length,
+        });
+        setVocabDayLoadState('ready');
+      } catch (e) {
+        if (!cancelled) {
+          setVocabDayPrintText('');
+          setVocabDayLoadState('error');
+          setVocabDayError(e instanceof Error ? e.message : String(e));
+          console.warn('[student-report] day-reports failed', e);
+        }
       }
     })();
     return () => {
@@ -282,6 +333,10 @@ export default function StudentReportLayer({
     const summaryLine = hasRoutine && totalDays
       ? `현재 루틴 ${curDay}/${totalDays} DAY 진행 중, 평균 성취도 ${avgDayScore}%`
       : `배정된 활성 루틴이 없습니다. 기록된 평균 DAY 점수는 ${avgDayScore}%입니다.`;
+
+    const tidEff = String(teacherId || '').trim();
+    const sidEff = String(studentId || '').replace(/\s+/g, '').trim();
+    const showVocabDaySection = Boolean(tidEff && sidEff);
 
     body = (
       <>
@@ -423,13 +478,27 @@ export default function StudentReportLayer({
           </div>
         </section>
 
-        {vocabDayPrintText ? (
+        {showVocabDaySection ? (
           <section style={s.section} className="sr-section-vocab-day">
             <h3 style={s.h3}>📗 단어 세트 · 개별 Day 학습 (앱 로그)</h3>
             <p style={s.pSmall}>
-              루틴 DAY 표와 별개로, 세트·Day별 단어장 학습(암기·테스트·매칭 등) 요약입니다.
+              루틴 DAY 표와 별개로, 세트·Day별 단어장 학습(암기·테스트·매칭 등) 요약입니다. (학생 ID·교사 ID로 집계)
             </p>
-            <pre style={s.vocabDayPre}>{vocabDayPrintText}</pre>
+            {vocabDayLoadState === 'loading' || vocabDayLoadState === 'idle' ? (
+              <p style={s.muted}>개별 Day 요약을 불러오는 중…</p>
+            ) : null}
+            {vocabDayLoadState === 'error' ? (
+              <p style={s.errorText}>
+                개별 Day 데이터를 불러오지 못했습니다.
+                {vocabDayError ? ` (${vocabDayError})` : ''}
+              </p>
+            ) : null}
+            {vocabDayLoadState === 'ready' && !vocabDayPrintText ? (
+              <p style={s.muted}>
+                이 학생·교사 기준으로 표시할 개별 Day 기록이 없습니다. (단어 세트·학습 로그·RLS를 확인하세요)
+              </p>
+            ) : null}
+            {vocabDayPrintText ? <pre style={s.vocabDayPre}>{vocabDayPrintText}</pre> : null}
           </section>
         ) : null}
 
