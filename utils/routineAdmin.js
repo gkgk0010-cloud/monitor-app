@@ -27,15 +27,15 @@ export function parseReviewOffsets(input) {
 
 /**
  * "DAY7, DAY14" / "7,14,21" → 양수 배열
+ * 빈 문자열 = 휴식일 없음 (기본 [7,14,21] 자동 적용 금지 — 저장이 반영되지 않는 것처럼 보이던 버그 원인)
  */
 export function parseRestDayNumbers(input, totalDays) {
+  const td = Math.max(1, parseInt(String(totalDays), 10) || 1)
   const s = String(input ?? '').trim()
-  if (!s) return [7, 14, 21].filter((d) => d <= totalDays)
+  if (!s) return []
   const nums = s.match(/\d+/g)
-  if (!nums || nums.length === 0) return [7, 14, 21].filter((d) => d <= totalDays)
-  const set = new Set(
-    nums.map((n) => parseInt(n, 10)).filter((n) => !isNaN(n) && n >= 1 && n <= totalDays),
-  )
+  if (!nums || nums.length === 0) return []
+  const set = new Set(nums.map((n) => parseInt(n, 10)).filter((n) => !isNaN(n) && n >= 1 && n <= td))
   return [...set].sort((a, b) => a - b)
 }
 

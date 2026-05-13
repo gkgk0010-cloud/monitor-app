@@ -1253,7 +1253,9 @@ export default function RoutineSettingsSection({
                 maxWidth: 400,
               }}
             />
-            <span style={{ fontSize: 12, color: COLORS.textHint }}>총 DAY 수를 넘는 번호는 무시됩니다.</span>
+            <span style={{ fontSize: 12, color: COLORS.textHint }}>
+              비워 두면 휴식일 없음으로 저장됩니다. 총 DAY 수를 넘는 번호는 무시됩니다.
+            </span>
           </label>
 
           {saveError ? (
