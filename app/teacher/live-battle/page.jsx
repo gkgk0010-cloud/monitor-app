@@ -5,10 +5,13 @@ import Link from 'next/link';
 import { supabase } from '@/utils/supabaseClient';
 import { useTeacher } from '@/utils/useTeacher';
 import { BATTLE_DURATION_SEC } from '@/constants/battleDuration';
+import { ATTACK_ITEM_KINDS } from '@/constants/battleItems';
 /** 완료 카드 그리드 노출 시간(ms) */
 const RESULT_CARD_TTL_MS = 18000;
-/** 그리드 아이템 미니 깜빡임 */
-const GRID_ITEM_FLASH_MS = 520;
+/** 최근 아이템 줄 교체·강조(ms) — lbStripeBump 애니 */
+const GRID_ITEM_PULSE_MS = 520;
+
+const ATTACK_KIND_SET = new Set(ATTACK_ITEM_KINDS);
 
 const ITEM_LABEL = {
   freeze: '얼리기',
@@ -92,6 +95,118 @@ function blockPayload(row, col) {
   return null;
 }
 
+/** host/guest 각 컬럼의 최근 이벤트 중 더 최신 1건(시각 `at` 기준 — seq는 채널 간 비교 불가). */
+function pickLatestCombinedItemEvt(row) {
+  const hp = itemPayload(row, 'item_evt_host');
+  const gp = itemPayload(row, 'item_evt_guest');
+  if (!hp && !gp) return null;
+  if (!hp) return { side: 'guest', payload: gp };
+  if (!gp) return { side: 'host', payload: hp };
+  const ah = parseIsoMs(hp.at);
+  const ag = parseIsoMs(gp.at);
+  if (ah != null && ag != null) {
+    if (ag !== ah) return ag > ah ? { side: 'guest', payload: gp } : { side: 'host', payload: hp };
+  }
+  return hp.seq >= gp.seq ? { side: 'host', payload: hp } : { side: 'guest', payload: gp };
+}
+
+function shortenName(s, max = 5) {
+  const t = String(s ?? '').trim() || '?';
+  return t.length > max ? `${t.slice(0, Math.max(0, max - 1))}…` : t;
+}
+
+function isAttackKind(kind) {
+  return typeof kind === 'string' && ATTACK_KIND_SET.has(kind);
+}
+
+const HOST_TAILWIND_LIKE = '#67e8f9';
+const GUEST_TAILWIND_LIKE = '#fda4af';
+
+/** 그리드 카드 안: 마지막 아이템 1건 + 교체 순간 펄스 */
+function GridRecentItemStripe({ row, pulseTick }) {
+  const chosen = pickLatestCombinedItemEvt(row);
+  const hostFull = shortenName(row.host_name || '호스트', 8);
+  const guestFull = shortenName(row.guest_name || '게스트', 8);
+
+  if (!chosen) {
+    return <div aria-hidden style={{ minHeight: 22, marginBottom: 8 }} />;
+  }
+
+  const { side, payload } = chosen;
+  const kind = payload.kind || '';
+  const atk = isAttackKind(kind);
+  const label = ITEM_LABEL[kind] || kind;
+  const emoji = ITEM_EMOJI[kind] || '🎯';
+
+  const casterShort = side === 'host' ? hostFull : guestFull;
+  const victimSide = side === 'host' ? 'guest' : 'host';
+  const victimShort = victimSide === 'host' ? hostFull : guestFull;
+
+  const casterCol = side === 'host' ? HOST_TAILWIND_LIKE : GUEST_TAILWIND_LIKE;
+
+  const inner = atk ? (
+    <>
+      <span style={{ fontWeight: 900, color: casterCol }}>{casterShort}</span>
+      <span style={{ opacity: 0.85 }} aria-hidden="true">
+        {' ▶ '}
+      </span>
+      <span style={{ fontWeight: 900, color: victimSide === 'host' ? HOST_TAILWIND_LIKE : GUEST_TAILWIND_LIKE }}>{victimShort}</span>
+    </>
+  ) : (
+    <>
+      <span style={{ fontWeight: 900, color: casterCol }}>{casterShort}</span>
+      <span style={{ opacity: 0.85 }} title="본인에게" aria-hidden="true">
+        {' ↻ '}
+      </span>
+      <span style={{ fontWeight: 900, color: casterCol }}>{casterShort}</span>
+    </>
+  );
+
+  return (
+    <div
+      aria-label={
+        atk
+          ? `${side === 'host' ? '호스트' : '게스트'}가 ${kind} 로 상대 공격`
+          : `${side === 'host' ? '호스트' : '게스트'}가 자기 버프`
+      }
+      style={{
+        marginBottom: 10,
+        minHeight: 28,
+      }}
+    >
+      <div
+        key={`p-${pulseTick ?? 0}`}
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 5,
+          fontSize: 11,
+          lineHeight: 1.3,
+          fontWeight: 700,
+          letterSpacing: '-0.01em',
+          color: '#cbd5e1',
+          borderRadius: 8,
+          padding: '5px 7px',
+          background: 'rgba(15,23,42,0.65)',
+          border: '1px solid rgba(100,116,139,0.35)',
+          boxShadow: pulseTick ? `0 0 0 1px rgba(250,204,21,0.35)` : undefined,
+          animation: pulseTick ? `lbStripeBump ${GRID_ITEM_PULSE_MS}ms ease-out` : undefined,
+        }}
+      >
+        <span aria-hidden style={{ flexShrink: 0, fontSize: 13, lineHeight: 1 }}>
+          {emoji}
+        </span>
+        <span style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 4, minWidth: 0 }}>
+          {inner}
+        </span>
+        <span style={{ flexShrink: 0, opacity: 0.92 }}>·</span>
+        <span style={{ flexShrink: 0, opacity: 0.95 }}>{label}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function LiveBattlePage() {
   const { teacher, loading: teacherLoading } = useTeacher();
   const academyId = teacher?.academy_id ? String(teacher.academy_id) : null;
@@ -102,7 +217,8 @@ export default function LiveBattlePage() {
   const [banner, setBanner] = useState(null);
   const [fallbackEndedAt, setFallbackEndedAt] = useState({});
   const [stickyBroadcast, setStickyBroadcast] = useState(null);
-  const [gridItemFlash, setGridItemFlash] = useState({});
+  /** 카드별 최근 아이템 칸 교체 순간 펄스(값이 바뀌면 애니 1회) */
+  const [gridRecentPulseTick, setGridRecentPulseTick] = useState({});
   const [clock, setClock] = useState(() => Date.now());
 
   const lastHostEvtSeq = useRef({});
@@ -133,18 +249,8 @@ export default function LiveBattlePage() {
     });
   }, []);
 
-  const triggerGridItemFlash = useCallback((roomId, side, kind) => {
-    const token = `${Date.now()}-${Math.random()}`;
-    setGridItemFlash((m) => ({ ...m, [roomId]: { side, kind, token } }));
-    window.setTimeout(() => {
-      setGridItemFlash((m) => {
-        const cur = m[roomId];
-        if (!cur || cur.token !== token) return m;
-        const next = { ...m };
-        delete next[roomId];
-        return next;
-      });
-    }, GRID_ITEM_FLASH_MS);
+  const pulseGridRecentItemStripe = useCallback((roomId) => {
+    setGridRecentPulseTick((m) => ({ ...m, [roomId]: (m[roomId] ?? 0) + 1 }));
   }, []);
 
   useEffect(() => {
@@ -154,7 +260,7 @@ export default function LiveBattlePage() {
     setSelectedId(null);
     setStickyBroadcast(null);
     setFallbackEndedAt({});
-    setGridItemFlash({});
+    setGridRecentPulseTick({});
     selectionBaselineDone.current = null;
     prevStatusRef.current = {};
     lastHostEvtSeq.current = {};
@@ -274,7 +380,7 @@ export default function LiveBattlePage() {
     return () => clearInterval(tid);
   }, []);
 
-  /** 그리드: 아이템 seq 증가 → 미니 깜빡임 */
+  /** 그리드: 어느 쪽이든 item seq 증가 → 줄 유지 + 펄스 1회 */
   useEffect(() => {
     for (const row of Object.values(rowsById)) {
       const id = row.id;
@@ -283,7 +389,7 @@ export default function LiveBattlePage() {
         const ls = gridHostSeqRef.current[id] ?? 0;
         if (h.seq > ls) {
           gridHostSeqRef.current[id] = h.seq;
-          triggerGridItemFlash(id, 'host', h.kind);
+          pulseGridRecentItemStripe(id);
         }
       }
       const g = itemPayload(row, 'item_evt_guest');
@@ -291,11 +397,11 @@ export default function LiveBattlePage() {
         const ls = gridGuestSeqRef.current[id] ?? 0;
         if (g.seq > ls) {
           gridGuestSeqRef.current[id] = g.seq;
-          triggerGridItemFlash(id, 'guest', g.kind);
+          pulseGridRecentItemStripe(id);
         }
       }
     }
-  }, [rowsById, triggerGridItemFlash]);
+  }, [rowsById, pulseGridRecentItemStripe]);
 
   const liveRow = selectedId ? rowsById[selectedId] : null;
 
@@ -739,44 +845,25 @@ export default function LiveBattlePage() {
     );
   }
 
-  const renderMiniFlare = (roomId, absPosition = false) => {
-    const fl = gridItemFlash[roomId];
-    if (!fl) return null;
-    const emoji = ITEM_EMOJI[fl.kind] || '🎯';
-    const bc = fl.side === 'host' ? 'rgba(34,211,238,0.92)' : 'rgba(251,113,133,0.92)';
-    return (
-      <span
-        aria-hidden
-        style={{
-          position: absPosition ? 'absolute' : 'relative',
-          top: absPosition ? 10 : undefined,
-          right: absPosition ? 10 : undefined,
-          marginLeft: absPosition ? undefined : 8,
-          display: 'inline-flex',
-          height: 28,
-          minWidth: 28,
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: 8,
-          fontSize: 16,
-          lineHeight: 1,
-          background: bc,
-          boxShadow: `0 0 14px ${fl.side === 'host' ? 'rgba(34,211,238,0.55)' : 'rgba(251,113,133,0.55)'}`,
-          animation: 'lbGridItemBlink 0.52s ease-out forwards',
-        }}
-      >
-        {emoji}
-      </span>
-    );
-  };
-
   return (
     <div style={darkShell}>
       <style>{`
-        @keyframes lbGridItemBlink {
-          0% { opacity: 0.2; transform: scale(0.82); filter: brightness(1.55); }
-          35% { opacity: 1; transform: scale(1.12); filter: brightness(1.2); }
-          100% { opacity: 0; transform: scale(0.88); }
+        @keyframes lbStripeBump {
+          0% {
+            transform: scale(0.97);
+            filter: brightness(1.38);
+            box-shadow:
+              inset 0 0 12px rgba(250, 204, 21, 0.22),
+              0 0 14px rgba(34, 211, 238, 0.32);
+          }
+          55% {
+            transform: scale(1.02);
+            filter: brightness(1.14);
+          }
+          100% {
+            transform: scale(1);
+            filter: brightness(1);
+          }
         }
       `}</style>
       <div style={{ maxWidth: 1320, margin: '0 auto' }}>
@@ -839,10 +926,10 @@ export default function LiveBattlePage() {
                           transition: 'transform 0.15s ease, border-color 0.15s',
                         }}
                       >
-                        {renderMiniFlare(r.id, true)}
                         <p style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 10 }}>
                           {r.status === 'starting' ? '시작 준비' : '진행 중'}
                         </p>
+                        <GridRecentItemStripe row={r} pulseTick={gridRecentPulseTick[r.id] ?? 0} />
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
                           <span style={{ fontSize: 15, fontWeight: 800, color: '#67e8f9', flex: 1 }}>{r.host_name || '호스트'}</span>
                           <span style={{ fontSize: 20, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{h}</span>
@@ -903,8 +990,8 @@ export default function LiveBattlePage() {
                           transition: 'transform 0.15s ease, border-color 0.15s',
                         }}
                       >
-                        {renderMiniFlare(r.id, true)}
                         <p style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa', marginBottom: 10 }}>결과 · 약 {secsLeft}s 후 사라짐</p>
+                        <GridRecentItemStripe row={r} pulseTick={gridRecentPulseTick[r.id] ?? 0} />
                         <p style={{ fontSize: 18, fontWeight: 900, color: '#fef08a', marginBottom: 12 }}>{winLabel}</p>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
                           <span style={{ fontSize: 14, fontWeight: 800, color: '#67e8f9', flex: 1 }}>{r.host_name || '호스트'}</span>
