@@ -8,6 +8,10 @@ import { BATTLE_DURATION_SEC } from '@/constants/battleDuration';
 import { ATTACK_ITEM_KINDS } from '@/constants/battleItems';
 /** 완료 카드 그리드 노출 시간(ms) */
 const RESULT_CARD_TTL_MS = 18000;
+/** playing: 예정 종료 시각(ends_at·시작+제한) 이후에도 completed 갱신이 없으면 그리드에서 숨김 */
+const STALE_PLAYING_GRACE_AFTER_END_MS = 45000;
+/** starting: 예비 대기가 비정상적으로 길면 숨김 (호스트 미시작·유령 방) */
+const STALE_STARTING_MAX_MS = 50 * 60 * 1000;
 /** 최근 아이템 줄 교체·강조(ms) — lbStripeBump 애니 */
 const GRID_ITEM_PULSE_MS = 520;
 
@@ -61,6 +65,26 @@ function remainingSeconds(row, nowMs = Date.now()) {
   }
   if (end == null) return null;
   return Math.max(0, Math.ceil((end - nowMs) / 1000));
+}
+
+/** 라이브 그리드에서 제외: 찌꺼기 playing / 장기 starting */
+function isGridStaleLiveRow(row, nowMs) {
+  if (row.status === 'playing') {
+    const endFromEnds = parseIsoMs(row.ends_at);
+    const start = parseIsoMs(row.started_at);
+    let endBoundary = endFromEnds;
+    if (endBoundary == null && start != null) {
+      endBoundary = start + BATTLE_DURATION_SEC * 1000;
+    }
+    if (endBoundary == null) return false;
+    return nowMs > endBoundary + STALE_PLAYING_GRACE_AFTER_END_MS;
+  }
+  if (row.status === 'starting') {
+    const c = parseIsoMs(row.created_at);
+    if (c == null) return false;
+    return nowMs - c > STALE_STARTING_MAX_MS;
+  }
+  return false;
 }
 
 function itemPayload(row, col) {
@@ -556,6 +580,7 @@ export default function LiveBattlePage() {
     const done = [];
     for (const r of Object.values(rowsById)) {
       if (r.status === 'playing' || r.status === 'starting') {
+        if (isGridStaleLiveRow(r, now)) continue;
         live.push(r);
         continue;
       }
