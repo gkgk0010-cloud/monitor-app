@@ -211,6 +211,26 @@ export default function LiveBattlePage() {
   const { teacher, loading: teacherLoading } = useTeacher();
   const academyId = teacher?.academy_id ? String(teacher.academy_id) : null;
 
+  /** 콤마/세미콜론 구분. 운영자 계정은 학원 간 대전까지 라이브에 잡히도록 (RLS 허용 전제). */
+  const superTeacherEmails = useMemo(() => {
+    const raw = typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_LIVE_BATTLE_SUPER_TEACHER_EMAILS || '' : '';
+    return new Set(
+      raw
+        .split(/[,;]+/)
+        .map((s) => String(s || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+  }, []);
+
+  const isSuperTeacherLive = Boolean(
+    teacher?.email && superTeacherEmails.has(String(teacher.email).trim().toLowerCase()),
+  );
+
+  /** 일반 선생님: 자기 학원만. 운영자: 전역(쿼리·리얼타임에서 academy 미필터). */
+  const academyFilterStrict = Boolean(academyId && !isSuperTeacherLive);
+
+  const canUseLiveBattle = Boolean(academyId || isSuperTeacherLive);
+
   const [rowsById, setRowsById] = useState(() => ({}));
   const [loadError, setLoadError] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
@@ -270,22 +290,28 @@ export default function LiveBattlePage() {
     gridHostSeqRef.current = {};
     gridGuestSeqRef.current = {};
 
-    if (!academyId) return undefined;
+    if (!canUseLiveBattle) return undefined;
 
     let channel = null;
     let cancelled = false;
 
+    const rtChannelLabel = academyFilterStrict
+      ? `live-battle:${academyId}`
+      : `live-battle:all-${String(teacher?.id || teacher?.email || 'user')}`;
+
     (async () => {
       const sinceIso = new Date(Date.now() - RESULT_CARD_TTL_MS - 5000).toISOString();
-      const { data, error } = await supabase
+      let q = supabase
         .from('battle_rooms')
         .select('*')
-        .eq('academy_id', academyId)
         .in('mode', ['pvp'])
         .in('status', ['starting', 'playing', 'completed'])
         .or(`ended_at.is.null,ended_at.gte.${sinceIso}`)
         .order('created_at', { ascending: false })
         .limit(120);
+      if (academyFilterStrict) q = q.eq('academy_id', academyId);
+
+      const { data, error } = await q;
 
       if (cancelled) return;
       if (error) {
@@ -305,16 +331,24 @@ export default function LiveBattlePage() {
       setRowsById(next);
     })();
 
-    channel = supabase
-      .channel(`live-battle:${academyId}`)
-      .on(
-        'postgres_changes',
-        {
+    const pgConfig = academyFilterStrict
+      ? {
           event: '*',
           schema: 'public',
           table: 'battle_rooms',
           filter: `academy_id=eq.${academyId}`,
-        },
+        }
+      : {
+          event: '*',
+          schema: 'public',
+          table: 'battle_rooms',
+        };
+
+    channel = supabase
+      .channel(rtChannelLabel)
+      .on(
+        'postgres_changes',
+        pgConfig,
         (payload) => {
           if (payload.eventType === 'DELETE') {
             const oldId = payload.old?.id;
@@ -329,7 +363,7 @@ export default function LiveBattlePage() {
           }
           const row = payload.new;
           if (!row?.id || row.mode === 'bot') return;
-          if (String(row.academy_id || '') !== String(academyId)) return;
+          if (academyFilterStrict && String(row.academy_id || '') !== String(academyId)) return;
 
           upsertRow(row);
         },
@@ -340,7 +374,7 @@ export default function LiveBattlePage() {
       cancelled = true;
       if (channel) supabase.removeChannel(channel);
     };
-  }, [academyId, upsertRow]);
+  }, [canUseLiveBattle, academyId, academyFilterStrict, upsertRow, teacher?.id, teacher?.email]);
 
   /** completed 인데 ended_at 없을 때 클라이언트 기준 시각 */
   useEffect(() => {
@@ -566,10 +600,14 @@ export default function LiveBattlePage() {
     );
   }
 
-  if (!academyId) {
+  if (!canUseLiveBattle) {
     return (
       <div style={{ ...darkShell, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ fontSize: 16, fontWeight: 700, color: '#fbbf24' }}>학원(academy_id)이 연결된 선생님 계정에서만 라이브 중계를 사용할 수 있어요.</p>
+        <p style={{ fontSize: 16, fontWeight: 700, color: '#fbbf24', maxWidth: 560, textAlign: 'center', lineHeight: 1.5 }}>
+          라이브 중계를 쓰려면 학원이 연결되어 있거나, 배포 설정의{' '}
+          <code style={{ fontSize: 13, color: '#e2e8f0' }}>NEXT_PUBLIC_LIVE_BATTLE_SUPER_TEACHER_EMAILS</code>에 본인
+          로그인 이메일을 넣어 운영자 모드로 열어 주세요.
+        </p>
       </div>
     );
   }
@@ -869,7 +907,9 @@ export default function LiveBattlePage() {
       <div style={{ maxWidth: 1320, margin: '0 auto' }}>
         <div style={{ marginBottom: 20, display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
           <h1 style={{ fontSize: 30, fontWeight: 900, margin: 0, letterSpacing: '-0.02em' }}>라이브 대전</h1>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8' }}>실시간 · 학원별</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8' }}>
+            {academyFilterStrict ? '실시간 · 학원별' : '실시간 · 전체 학원 (운영자)'}
+          </span>
         </div>
 
         {loadError ? (
