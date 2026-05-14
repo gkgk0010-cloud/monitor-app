@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/utils/supabaseClient';
 import { useTeacher } from '@/utils/useTeacher';
-
-/** vocab-app BattleGameView와 동일한 매칭 제한(초) — ends_at 없을 때 */
-const DEFAULT_MATCH_SEC = 90;
+import { BATTLE_DURATION_SEC } from '@/constants/battleDuration';
+/** 완료 카드 그리드 노출 시간(ms) */
+const RESULT_CARD_TTL_MS = 18000;
+/** 그리드 아이템 미니 깜빡임 */
+const GRID_ITEM_FLASH_MS = 520;
 
 const ITEM_LABEL = {
   freeze: '얼리기',
@@ -14,6 +16,14 @@ const ITEM_LABEL = {
   double: '점수 2배',
   weaken: '약화',
   shield: '공격 막기',
+};
+
+const ITEM_EMOJI = {
+  freeze: '❄️',
+  shuffle: '🌀',
+  double: '✨',
+  weaken: '🐢',
+  shield: '🛡️',
 };
 
 function mergeRow(prev, incoming) {
@@ -30,13 +40,21 @@ function parseIsoMs(s) {
   return Number.isFinite(t) ? t : null;
 }
 
+/** 종료 시각: DB ended_at 우선, 없으면 클라이언트 fallback */
+function endedAtMs(row, fallbackMap) {
+  const e = parseIsoMs(row.ended_at);
+  if (e != null) return e;
+  if (row.status === 'completed' && fallbackMap[row.id]) return fallbackMap[row.id];
+  return null;
+}
+
 /** 남은 초: ends_at 우선, 없으면 started_at + limit */
 function remainingSeconds(row, nowMs = Date.now()) {
   const endFromEnds = parseIsoMs(row.ends_at);
   const start = parseIsoMs(row.started_at);
   let end = endFromEnds;
   if (end == null && start != null) {
-    end = start + DEFAULT_MATCH_SEC * 1000;
+    end = start + BATTLE_DURATION_SEC * 1000;
   }
   if (end == null) return null;
   return Math.max(0, Math.ceil((end - nowMs) / 1000));
@@ -82,6 +100,10 @@ export default function LiveBattlePage() {
   const [loadError, setLoadError] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [banner, setBanner] = useState(null);
+  const [fallbackEndedAt, setFallbackEndedAt] = useState({});
+  const [stickyBroadcast, setStickyBroadcast] = useState(null);
+  const [gridItemFlash, setGridItemFlash] = useState({});
+  const [clock, setClock] = useState(() => Date.now());
 
   const lastHostEvtSeq = useRef({});
   const lastGuestEvtSeq = useRef({});
@@ -90,9 +112,12 @@ export default function LiveBattlePage() {
   const prevStatusRef = useRef({});
   const selectionBaselineDone = useRef(null);
 
-  const showBanner = useCallback((text, emoji) => {
+  const gridHostSeqRef = useRef({});
+  const gridGuestSeqRef = useRef({});
+
+  const showBanner = useCallback((text) => {
     const id = Date.now();
-    setBanner({ id, text, emoji });
+    setBanner({ id, text });
     window.setTimeout(() => {
       setBanner((b) => (b && b.id === id ? null : b));
     }, 3800);
@@ -108,17 +133,36 @@ export default function LiveBattlePage() {
     });
   }, []);
 
+  const triggerGridItemFlash = useCallback((roomId, side, kind) => {
+    const token = `${Date.now()}-${Math.random()}`;
+    setGridItemFlash((m) => ({ ...m, [roomId]: { side, kind, token } }));
+    window.setTimeout(() => {
+      setGridItemFlash((m) => {
+        const cur = m[roomId];
+        if (!cur || cur.token !== token) return m;
+        const next = { ...m };
+        delete next[roomId];
+        return next;
+      });
+    }, GRID_ITEM_FLASH_MS);
+  }, []);
+
   useEffect(() => {
     const map = {};
     setRowsById(map);
     setLoadError(null);
     setSelectedId(null);
+    setStickyBroadcast(null);
+    setFallbackEndedAt({});
+    setGridItemFlash({});
     selectionBaselineDone.current = null;
     prevStatusRef.current = {};
     lastHostEvtSeq.current = {};
     lastGuestEvtSeq.current = {};
     lastBlockGuestSeq.current = {};
     lastBlockHostSeq.current = {};
+    gridHostSeqRef.current = {};
+    gridGuestSeqRef.current = {};
 
     if (!academyId) return undefined;
 
@@ -126,15 +170,16 @@ export default function LiveBattlePage() {
     let cancelled = false;
 
     (async () => {
+      const sinceIso = new Date(Date.now() - RESULT_CARD_TTL_MS - 5000).toISOString();
       const { data, error } = await supabase
         .from('battle_rooms')
         .select('*')
         .eq('academy_id', academyId)
         .in('mode', ['pvp'])
-        .in('status', ['starting', 'playing'])
-        .order('started_at', { ascending: false, nullsFirst: false })
+        .in('status', ['starting', 'playing', 'completed'])
+        .or(`ended_at.is.null,ended_at.gte.${sinceIso}`)
         .order('created_at', { ascending: false })
-        .limit(80);
+        .limit(120);
 
       if (cancelled) return;
       if (error) {
@@ -143,7 +188,12 @@ export default function LiveBattlePage() {
         return;
       }
       const next = {};
+      const now = Date.now();
       for (const r of data || []) {
+        if (r.status === 'completed') {
+          const em = endedAtMs(r, {});
+          if (em != null && now - em > RESULT_CARD_TTL_MS) continue;
+        }
         next[r.id] = r;
       }
       setRowsById(next);
@@ -186,91 +236,212 @@ export default function LiveBattlePage() {
     };
   }, [academyId, upsertRow]);
 
+  /** completed 인데 ended_at 없을 때 클라이언트 기준 시각 */
+  useEffect(() => {
+    setFallbackEndedAt((prev) => {
+      let next = prev;
+      for (const row of Object.values(rowsById)) {
+        if (row.status !== 'completed') continue;
+        if (parseIsoMs(row.ended_at) != null) continue;
+        if (prev[row.id]) continue;
+        if (next === prev) next = { ...prev };
+        next[row.id] = Date.now();
+      }
+      return next;
+    });
+  }, [rowsById]);
+
+  /** 그리드에서 오래된 완료 방 제거 (중계 상세로 보는 방은 유지) */
+  useEffect(() => {
+    setRowsById((prev) => {
+      const now = Date.now();
+      let next = prev;
+      for (const [id, r] of Object.entries(prev)) {
+        if (r.status !== 'completed') continue;
+        if (selectedId === id) continue;
+        const em = endedAtMs(r, fallbackEndedAt);
+        if (em == null) continue;
+        if (now - em <= RESULT_CARD_TTL_MS) continue;
+        if (next === prev) next = { ...prev };
+        delete next[id];
+      }
+      return next;
+    });
+  }, [clock, selectedId, fallbackEndedAt]);
+
+  useEffect(() => {
+    const tid = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(tid);
+  }, []);
+
+  /** 그리드: 아이템 seq 증가 → 미니 깜빡임 */
+  useEffect(() => {
+    for (const row of Object.values(rowsById)) {
+      const id = row.id;
+      const h = itemPayload(row, 'item_evt_host');
+      if (h) {
+        const ls = gridHostSeqRef.current[id] ?? 0;
+        if (h.seq > ls) {
+          gridHostSeqRef.current[id] = h.seq;
+          triggerGridItemFlash(id, 'host', h.kind);
+        }
+      }
+      const g = itemPayload(row, 'item_evt_guest');
+      if (g) {
+        const ls = gridGuestSeqRef.current[id] ?? 0;
+        if (g.seq > ls) {
+          gridGuestSeqRef.current[id] = g.seq;
+          triggerGridItemFlash(id, 'guest', g.kind);
+        }
+      }
+    }
+  }, [rowsById, triggerGridItemFlash]);
+
+  const liveRow = selectedId ? rowsById[selectedId] : null;
+
+  useEffect(() => {
+    if (!selectedId) {
+      setStickyBroadcast(null);
+      return;
+    }
+    const r = rowsById[selectedId];
+    if (!r) return;
+    if (r.status === 'completed') {
+      setStickyBroadcast((s) => mergeRow(s ?? {}, r));
+    } else {
+      setStickyBroadcast(null);
+    }
+  }, [selectedId, rowsById]);
+
+  const detailRow = useMemo(() => {
+    if (!selectedId) return null;
+    const live = rowsById[selectedId];
+    if (stickyBroadcast && stickyBroadcast.id === selectedId) {
+      if (!live) return stickyBroadcast;
+      if (live.status === 'completed') return mergeRow(stickyBroadcast, live);
+      return live;
+    }
+    return live ?? null;
+  }, [selectedId, rowsById, stickyBroadcast]);
+
   useEffect(() => {
     if (!selectedId) {
       selectionBaselineDone.current = null;
       return;
     }
-    const r = rowsById[selectedId];
-    if (!r) return;
+    const r = detailRow;
+    if (!r || r.id !== selectedId) return;
     if (selectionBaselineDone.current === selectedId) return;
     selectionBaselineDone.current = selectedId;
     lastHostEvtSeq.current[selectedId] = itemPayload(r, 'item_evt_host')?.seq ?? 0;
     lastGuestEvtSeq.current[selectedId] = itemPayload(r, 'item_evt_guest')?.seq ?? 0;
     lastBlockGuestSeq.current[selectedId] = blockPayload(r, 'item_blocked_by_guest')?.blocked_seq ?? 0;
     lastBlockHostSeq.current[selectedId] = blockPayload(r, 'item_blocked_by_host')?.blocked_seq ?? 0;
-    prevStatusRef.current[selectedId] = r.status;
-  }, [selectedId, rowsById]);
-
-  /** 상세 선택 중 아이템·막힘 배너 */
-  const selected = selectedId ? rowsById[selectedId] : null;
+    prevStatusRef.current[selectedId] = r.status || '';
+  }, [selectedId, detailRow]);
 
   useEffect(() => {
-    if (!selected?.id) return;
-    const id = selected.id;
+    if (!detailRow?.id) return;
+    const id = detailRow.id;
 
-    const ih = itemPayload(selected, 'item_evt_host');
+    const ih = itemPayload(detailRow, 'item_evt_host');
     if (ih && ih.seq > (lastHostEvtSeq.current[id] ?? 0)) {
       lastHostEvtSeq.current[id] = ih.seq;
-      const name = selected.host_name || '호스트';
+      const name = detailRow.host_name || '호스트';
       const label = ITEM_LABEL[ih.kind] || ih.kind;
       const emoji =
-        ih.kind === 'freeze' ? '❄️' : ih.kind === 'shuffle' ? '🌀' : ih.kind === 'weaken' ? '🐢' : ih.kind === 'double' ? '✨' : ih.kind === 'shield' ? '🛡️' : '🎯';
+        ih.kind === 'freeze'
+          ? '❄️'
+          : ih.kind === 'shuffle'
+            ? '🌀'
+            : ih.kind === 'weaken'
+              ? '🐢'
+              : ih.kind === 'double'
+                ? '✨'
+                : ih.kind === 'shield'
+                  ? '🛡️'
+                  : '🎯';
       showBanner(`${emoji} ${name} — ${label} 사용!`);
     }
 
-    const ig = itemPayload(selected, 'item_evt_guest');
+    const ig = itemPayload(detailRow, 'item_evt_guest');
     if (ig && ig.seq > (lastGuestEvtSeq.current[id] ?? 0)) {
       lastGuestEvtSeq.current[id] = ig.seq;
-      const name = selected.guest_name || '게스트';
+      const name = detailRow.guest_name || '게스트';
       const label = ITEM_LABEL[ig.kind] || ig.kind;
       const emoji =
-        ig.kind === 'freeze' ? '❄️' : ig.kind === 'shuffle' ? '🌀' : ig.kind === 'weaken' ? '🐢' : ig.kind === 'double' ? '✨' : ig.kind === 'shield' ? '🛡️' : '🎯';
+        ig.kind === 'freeze'
+          ? '❄️'
+          : ig.kind === 'shuffle'
+            ? '🌀'
+            : ig.kind === 'weaken'
+              ? '🐢'
+              : ig.kind === 'double'
+                ? '✨'
+                : ig.kind === 'shield'
+                  ? '🛡️'
+                  : '🎯';
       showBanner(`${emoji} ${name} — ${label} 사용!`);
     }
 
-    const bg = blockPayload(selected, 'item_blocked_by_guest');
+    const bg = blockPayload(detailRow, 'item_blocked_by_guest');
     if (bg && bg.blocked_seq > (lastBlockGuestSeq.current[id] ?? 0)) {
       lastBlockGuestSeq.current[id] = bg.blocked_seq;
-      showBanner('🛡️ 막힘! (방어 성공)', '🛡️');
+      showBanner('🛡️ 막힘! (방어 성공)');
     }
 
-    const bh = blockPayload(selected, 'item_blocked_by_host');
+    const bh = blockPayload(detailRow, 'item_blocked_by_host');
     if (bh && bh.blocked_seq > (lastBlockHostSeq.current[id] ?? 0)) {
       lastBlockHostSeq.current[id] = bh.blocked_seq;
-      showBanner('🛡️ 막힘! (방어 성공)', '🛡️');
+      showBanner('🛡️ 막힘! (방어 성공)');
     }
 
     const prevSt = prevStatusRef.current[id];
-    if (selected.status === 'completed' && prevSt && prevSt !== 'completed') {
-      const w = selected.winner;
-      const hn = selected.host_name || '호스트';
-      const gn = selected.guest_name || '게스트';
+    if (detailRow.status === 'completed' && prevSt && prevSt !== 'completed') {
+      const w = detailRow.winner;
+      const hn = detailRow.host_name || '호스트';
+      const gn = detailRow.guest_name || '게스트';
       let msg = '🎉 대전 종료!';
       if (w === 'host') msg = `🎉 ${hn} 승리!`;
       else if (w === 'guest') msg = `🎉 ${gn} 승리!`;
       else if (w === 'draw') msg = '🤝 무승부!';
-      showBanner(msg, '🏆');
+      showBanner(msg);
     }
-    prevStatusRef.current[id] = selected.status || '';
-  }, [selected, showBanner]);
+    prevStatusRef.current[id] = detailRow.status || '';
+  }, [detailRow, showBanner]);
 
-  const activeList = useMemo(() => {
-    return Object.values(rowsById).filter((r) => r.status === 'playing' || r.status === 'starting');
-  }, [rowsById]);
+  const gridRows = useMemo(() => {
+    const now = clock;
+    const live = [];
+    const done = [];
+    for (const r of Object.values(rowsById)) {
+      if (r.status === 'playing' || r.status === 'starting') {
+        live.push(r);
+        continue;
+      }
+      if (r.status !== 'completed') continue;
+      const em = endedAtMs(r, fallbackEndedAt);
+      if (em == null || now - em > RESULT_CARD_TTL_MS) continue;
+      done.push({ row: r, endedMs: em });
+    }
+    done.sort((a, b) => b.endedMs - a.endedMs);
+    live.sort((a, b) => new Date(b.started_at || b.created_at) - new Date(a.started_at || a.created_at));
+    return { live, done };
+  }, [rowsById, clock, fallbackEndedAt]);
 
-  const hostScore = selected ? Number(selected.host_score) || 0 : 0;
-  const guestScore = selected ? Number(selected.guest_score) || 0 : 0;
+  const gridHasAny = gridRows.live.length > 0 || gridRows.done.length > 0;
+
+  const remainSecDetail = detailRow ? remainingSeconds(detailRow, clock) : null;
+  const hostScore = detailRow ? Number(detailRow.host_score) || 0 : 0;
+  const guestScore = detailRow ? Number(detailRow.guest_score) || 0 : 0;
   const total = Math.max(1, hostScore + guestScore);
   const hostPct = (hostScore / total) * 100;
+  const broadcastDone = detailRow?.status === 'completed';
 
-  const [clock, setClock] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setClock(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const remainSec = selected ? remainingSeconds(selected, clock) : null;
+  const clearBroadcastAndGoGrid = () => {
+    setSelectedId(null);
+    setStickyBroadcast(null);
+  };
 
   const darkShell = {
     minHeight: 'calc(100vh - 64px)',
@@ -297,10 +468,9 @@ export default function LiveBattlePage() {
     );
   }
 
-  if (selected) {
-    const done = selected.status === 'completed';
-    const hn = selected.host_name || '호스트';
-    const gn = selected.guest_name || '게스트';
+  if (selectedId && detailRow) {
+    const hn = detailRow.host_name || '호스트';
+    const gn = detailRow.guest_name || '게스트';
 
     return (
       <div style={darkShell}>
@@ -320,26 +490,50 @@ export default function LiveBattlePage() {
             12% { opacity: 1; transform: translate(-50%, 0); }
             100% { opacity: 1; transform: translate(-50%, 0); }
           }
+          @keyframes lbGridItemBlink {
+            0% { opacity: 0.25; transform: scale(0.85); filter: brightness(1.6); }
+            40% { opacity: 1; transform: scale(1.15); filter: brightness(1.25); }
+            100% { opacity: 0; transform: scale(0.9); }
+          }
         `}</style>
 
         <div style={{ maxWidth: 1280, margin: '0 auto' }}>
-          <button
-            type="button"
-            onClick={() => setSelectedId(null)}
-            style={{
-              marginBottom: 20,
-              padding: '12px 20px',
-              fontSize: 16,
-              fontWeight: 800,
-              borderRadius: 12,
-              border: '1px solid rgba(148,163,184,0.4)',
-              background: 'rgba(30,41,59,0.9)',
-              color: '#e2e8f0',
-              cursor: 'pointer',
-            }}
-          >
-            ← 그리드로 돌아가기
-          </button>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
+            <button
+              type="button"
+              onClick={() => clearBroadcastAndGoGrid()}
+              style={{
+                padding: '12px 20px',
+                fontSize: 16,
+                fontWeight: 800,
+                borderRadius: 12,
+                border: '1px solid rgba(148,163,184,0.4)',
+                background: 'rgba(30,41,59,0.9)',
+                color: '#e2e8f0',
+                cursor: 'pointer',
+              }}
+            >
+              {broadcastDone ? '← 그리드로 (결과 종료)' : '← 그리드로 돌아가기'}
+            </button>
+            {broadcastDone ? (
+              <button
+                type="button"
+                onClick={() => clearBroadcastAndGoGrid()}
+                style={{
+                  padding: '12px 20px',
+                  fontSize: 15,
+                  fontWeight: 800,
+                  borderRadius: 12,
+                  border: '1px solid rgba(251,191,36,0.55)',
+                  background: 'linear-gradient(135deg, rgba(251,191,36,0.25), rgba(244,114,182,0.22))',
+                  color: '#fef9c3',
+                  cursor: 'pointer',
+                }}
+              >
+                결과 닫기
+              </button>
+            ) : null}
+          </div>
 
           {banner ? (
             <div
@@ -384,6 +578,7 @@ export default function LiveBattlePage() {
                 background: 'linear-gradient(180deg, rgba(6,182,212,0.22) 0%, rgba(15,23,42,0.6) 100%)',
                 border: '2px solid rgba(34,211,238,0.45)',
                 boxShadow: '0 0 40px rgba(34,211,238,0.15)',
+                opacity: broadcastDone && detailRow.winner === 'guest' ? 0.62 : 1,
               }}
             >
               <p style={{ fontSize: 22, fontWeight: 800, color: '#67e8f9', marginBottom: 12 }}>{hn}</p>
@@ -414,7 +609,7 @@ export default function LiveBattlePage() {
               }}
             >
               <span style={{ fontSize: 44, fontWeight: 900, color: '#64748b' }}>VS</span>
-              {remainSec != null && !done ? (
+              {remainSecDetail != null && !broadcastDone ? (
                 <div
                   style={{
                     padding: '10px 16px',
@@ -424,11 +619,11 @@ export default function LiveBattlePage() {
                   }}
                 >
                   <p style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', marginBottom: 4 }}>남은 시간</p>
-                  <p style={{ fontSize: 28, fontWeight: 900, color: '#fbbf24', fontVariantNumeric: 'tabular-nums' }}>{remainSec}s</p>
+                  <p style={{ fontSize: 28, fontWeight: 900, color: '#fbbf24', fontVariantNumeric: 'tabular-nums' }}>{remainSecDetail}s</p>
                 </div>
               ) : null}
               <p style={{ fontSize: 12, fontWeight: 600, color: '#64748b', textAlign: 'center', maxWidth: 120 }}>
-                {selected.set_name || '세트'}
+                {detailRow.set_name || '세트'}
               </p>
             </div>
 
@@ -440,6 +635,7 @@ export default function LiveBattlePage() {
                 background: 'linear-gradient(180deg, rgba(244,63,94,0.22) 0%, rgba(15,23,42,0.6) 100%)',
                 border: '2px solid rgba(251,113,133,0.45)',
                 boxShadow: '0 0 40px rgba(244,63,94,0.12)',
+                opacity: broadcastDone && detailRow.winner === 'host' ? 0.62 : 1,
               }}
             >
               <p style={{ fontSize: 22, fontWeight: 800, color: '#fda4af', marginBottom: 12 }}>{gn}</p>
@@ -470,6 +666,7 @@ export default function LiveBattlePage() {
               display: 'flex',
               width: '100%',
               marginBottom: 16,
+              opacity: broadcastDone ? 0.72 : 1,
             }}
           >
             <div
@@ -489,7 +686,7 @@ export default function LiveBattlePage() {
               }}
             />
           </div>
-          <p style={{ textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#94a3b8' }}>
+          <p style={{ textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#94a3b8', marginBottom: 20 }}>
             점수 격차: <span style={{ color: '#e2e8f0' }}>{Math.abs(hostScore - guestScore)}</span>점
             {hostScore > guestScore ? (
               <span style={{ color: '#67e8f9' }}> · 호스트 우세</span>
@@ -500,10 +697,10 @@ export default function LiveBattlePage() {
             )}
           </p>
 
-          {done ? (
+          {broadcastDone ? (
             <div
               style={{
-                marginTop: 36,
+                marginTop: 8,
                 textAlign: 'center',
                 padding: '36px 24px',
                 borderRadius: 24,
@@ -514,7 +711,7 @@ export default function LiveBattlePage() {
             >
               <p style={{ fontSize: 42, fontWeight: 900, color: '#fef08a', marginBottom: 12 }}>종료!</p>
               <p style={{ fontSize: 26, fontWeight: 800, color: '#fafafa' }}>
-                {selected.winner === 'host' ? `${hn} 승리` : selected.winner === 'guest' ? `${gn} 승리` : '무승부'}
+                {detailRow.winner === 'host' ? `${hn} 승리` : detailRow.winner === 'guest' ? `${gn} 승리` : '무승부'}
               </p>
               <p style={{ fontSize: 18, marginTop: 12, opacity: 0.9 }}>
                 {hostScore} : {guestScore}
@@ -526,13 +723,60 @@ export default function LiveBattlePage() {
     );
   }
 
+  /** 선택했는데 행이 아직 없을 때 */
+  if (selectedId && !detailRow) {
+    return (
+      <div style={{ ...darkShell, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+        <p style={{ fontWeight: 800 }}>방 정보를 불러올 수 없어요.</p>
+        <button
+          type="button"
+          onClick={() => setSelectedId(null)}
+          style={{ padding: '10px 18px', fontWeight: 800, borderRadius: 10, cursor: 'pointer' }}
+        >
+          그리드로
+        </button>
+      </div>
+    );
+  }
+
+  const renderMiniFlare = (roomId, absPosition = false) => {
+    const fl = gridItemFlash[roomId];
+    if (!fl) return null;
+    const emoji = ITEM_EMOJI[fl.kind] || '🎯';
+    const bc = fl.side === 'host' ? 'rgba(34,211,238,0.92)' : 'rgba(251,113,133,0.92)';
+    return (
+      <span
+        aria-hidden
+        style={{
+          position: absPosition ? 'absolute' : 'relative',
+          top: absPosition ? 10 : undefined,
+          right: absPosition ? 10 : undefined,
+          marginLeft: absPosition ? undefined : 8,
+          display: 'inline-flex',
+          height: 28,
+          minWidth: 28,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 8,
+          fontSize: 16,
+          lineHeight: 1,
+          background: bc,
+          boxShadow: `0 0 14px ${fl.side === 'host' ? 'rgba(34,211,238,0.55)' : 'rgba(251,113,133,0.55)'}`,
+          animation: 'lbGridItemBlink 0.52s ease-out forwards',
+        }}
+      >
+        {emoji}
+      </span>
+    );
+  };
+
   return (
     <div style={darkShell}>
       <style>{`
-        @keyframes lbCardGlow {
-          0% { box-shadow: 0 0 0 rgba(34,211,238,0); }
-          50% { box-shadow: 0 0 24px rgba(34,211,238,0.25); }
-          100% { box-shadow: 0 0 0 rgba(34,211,238,0); }
+        @keyframes lbGridItemBlink {
+          0% { opacity: 0.2; transform: scale(0.82); filter: brightness(1.55); }
+          35% { opacity: 1; transform: scale(1.12); filter: brightness(1.2); }
+          100% { opacity: 0; transform: scale(0.88); }
         }
       `}</style>
       <div style={{ maxWidth: 1320, margin: '0 auto' }}>
@@ -545,7 +789,7 @@ export default function LiveBattlePage() {
           <p style={{ color: '#f97316', fontWeight: 700, marginBottom: 16 }}>{loadError}</p>
         ) : null}
 
-        {activeList.length === 0 ? (
+        {!gridHasAny ? (
           <div
             style={{
               padding: '48px 24px',
@@ -556,66 +800,128 @@ export default function LiveBattlePage() {
             }}
           >
             <p style={{ fontSize: 22, fontWeight: 800, marginBottom: 8 }}>진행 중인 대전 없음</p>
-            <p style={{ fontSize: 15, color: '#94a3b8' }}>학생들이 1대1을 시작하면 여기에 자동으로 나타나요.</p>
+            <p style={{ fontSize: 15, color: '#94a3b8' }}>
+              학생들이 1대1을 시작하면 여기에 나타나고, 종료 직후 잠깐 결과 카드도 표시됩니다.
+            </p>
           </div>
         ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-              gap: 16,
-            }}
-          >
-            {activeList.map((r) => {
-              const h = Number(r.host_score) || 0;
-              const g = Number(r.guest_score) || 0;
-              const rem = remainingSeconds(r, clock);
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => setSelectedId(r.id)}
+          <>
+            {gridRows.live.length > 0 ? (
+              <>
+                <p style={{ fontSize: 14, fontWeight: 800, color: '#94a3b8', marginBottom: 10 }}>진행 중</p>
+                <div
                   style={{
-                    textAlign: 'left',
-                    padding: 20,
-                    borderRadius: 18,
-                    border: '1px solid rgba(148,163,184,0.25)',
-                    background: 'linear-gradient(145deg, rgba(30,41,59,0.95), rgba(15,23,42,0.85))',
-                    color: '#e2e8f0',
-                    cursor: 'pointer',
-                    transition: 'transform 0.15s ease, border-color 0.15s',
-                  }}
-                  className="live-battle-card"
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-3px)';
-                    e.currentTarget.style.borderColor = 'rgba(34,211,238,0.5)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'none';
-                    e.currentTarget.style.borderColor = 'rgba(148,163,184,0.25)';
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                    gap: 16,
+                    marginBottom: gridRows.done.length ? 28 : 0,
                   }}
                 >
-                  <p style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 10 }}>
-                    {r.status === 'starting' ? '시작 준비' : '진행 중'}
-                  </p>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-                    <span style={{ fontSize: 15, fontWeight: 800, color: '#67e8f9', flex: 1 }}>{r.host_name || '호스트'}</span>
-                    <span style={{ fontSize: 20, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{h}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                    <span style={{ fontSize: 15, fontWeight: 800, color: '#fda4af', flex: 1 }}>{r.guest_name || '게스트'}</span>
-                    <span style={{ fontSize: 20, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{g}</span>
-                  </div>
-                  <p style={{ fontSize: 13, color: '#94a3b8', fontWeight: 600 }}>{r.set_name || '단어 세트'}</p>
-                  {rem != null ? (
-                    <p style={{ fontSize: 13, marginTop: 8, fontWeight: 800, color: '#fbbf24' }}>남은 {rem}s</p>
-                  ) : (
-                    <p style={{ fontSize: 12, marginTop: 8, color: '#64748b' }}>시간 정보 없음</p>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                  {gridRows.live.map((r) => {
+                    const h = Number(r.host_score) || 0;
+                    const g = Number(r.guest_score) || 0;
+                    const rem = remainingSeconds(r, clock);
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => setSelectedId(r.id)}
+                        style={{
+                          position: 'relative',
+                          textAlign: 'left',
+                          padding: 20,
+                          paddingTop: 24,
+                          borderRadius: 18,
+                          border: '1px solid rgba(148,163,184,0.25)',
+                          background: 'linear-gradient(145deg, rgba(30,41,59,0.95), rgba(15,23,42,0.85))',
+                          color: '#e2e8f0',
+                          cursor: 'pointer',
+                          transition: 'transform 0.15s ease, border-color 0.15s',
+                        }}
+                      >
+                        {renderMiniFlare(r.id, true)}
+                        <p style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 10 }}>
+                          {r.status === 'starting' ? '시작 준비' : '진행 중'}
+                        </p>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: '#67e8f9', flex: 1 }}>{r.host_name || '호스트'}</span>
+                          <span style={{ fontSize: 20, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{h}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: '#fda4af', flex: 1 }}>{r.guest_name || '게스트'}</span>
+                          <span style={{ fontSize: 20, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{g}</span>
+                        </div>
+                        <p style={{ fontSize: 13, color: '#94a3b8', fontWeight: 600 }}>{r.set_name || '단어 세트'}</p>
+                        {rem != null ? (
+                          <p style={{ fontSize: 13, marginTop: 8, fontWeight: 800, color: '#fbbf24' }}>남은 {rem}s</p>
+                        ) : (
+                          <p style={{ fontSize: 12, marginTop: 8, color: '#64748b' }}>시간 정보 없음</p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            ) : null}
+            {gridRows.done.length > 0 ? (
+              <>
+                <p style={{ fontSize: 14, fontWeight: 800, color: '#a78bfa', marginBottom: 10 }}>
+                  최근 종료 (~{Math.round(RESULT_CARD_TTL_MS / 1000)}초)
+                </p>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                    gap: 16,
+                  }}
+                >
+                  {gridRows.done.map(({ row: r, endedMs }) => {
+                    const h = Number(r.host_score) || 0;
+                    const g = Number(r.guest_score) || 0;
+                    const w = r.winner;
+                    let winLabel = '무승부';
+                    if (w === 'host') winLabel = `${r.host_name || '호스트'} 승`;
+                    else if (w === 'guest') winLabel = `${r.guest_name || '게스트'} 승`;
+                    const secsLeft = Math.max(0, Math.ceil((RESULT_CARD_TTL_MS - (clock - endedMs)) / 1000));
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => setSelectedId(r.id)}
+                        style={{
+                          position: 'relative',
+                          textAlign: 'left',
+                          padding: 20,
+                          paddingTop: 24,
+                          borderRadius: 18,
+                          border: '1px solid rgba(107,114,128,0.45)',
+                          background: 'linear-gradient(145deg, rgba(51,65,85,0.55), rgba(15,23,42,0.75))',
+                          color: '#cbd5e1',
+                          cursor: 'pointer',
+                          opacity: 0.88,
+                          filter: 'brightness(0.97)',
+                          transition: 'transform 0.15s ease, border-color 0.15s',
+                        }}
+                      >
+                        {renderMiniFlare(r.id, true)}
+                        <p style={{ fontSize: 11, fontWeight: 800, color: '#a78bfa', marginBottom: 10 }}>결과 · 약 {secsLeft}s 후 사라짐</p>
+                        <p style={{ fontSize: 18, fontWeight: 900, color: '#fef08a', marginBottom: 12 }}>{winLabel}</p>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                          <span style={{ fontSize: 14, fontWeight: 800, color: '#67e8f9', flex: 1 }}>{r.host_name || '호스트'}</span>
+                          <span style={{ fontSize: 17, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{h}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                          <span style={{ fontSize: 14, fontWeight: 800, color: '#fda4af', flex: 1 }}>{r.guest_name || '게스트'}</span>
+                          <span style={{ fontSize: 17, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{g}</span>
+                        </div>
+                        <p style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>{r.set_name || '단어 세트'}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            ) : null}
+          </>
         )}
 
         <p style={{ marginTop: 28, fontSize: 13, color: '#64748b' }}>
