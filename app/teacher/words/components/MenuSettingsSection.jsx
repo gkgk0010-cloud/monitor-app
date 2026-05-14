@@ -35,18 +35,30 @@ function normalizeMenus(raw) {
   return base
 }
 
+function clampDailyResearchQuota(raw) {
+  const n = Math.floor(Number(raw))
+  if (Number.isNaN(n)) return 80
+  return Math.min(200, Math.max(1, n))
+}
+
 /**
  * 학생 앱(tokpass-app) 메뉴 표시 여부 — teachers.visible_menus JSON
- * @param {{ teacherId: string | undefined, visibleMenus: object | null | undefined, onSaved?: () => void }} props
+ * @param {{ teacherId: string | undefined, visibleMenus: object | null | undefined, dailyResearchQuota?: number | null, onSaved?: () => void }} props
  */
-export default function MenuSettingsSection({ teacherId, visibleMenus, onSaved }) {
+export default function MenuSettingsSection({ teacherId, visibleMenus, dailyResearchQuota, onSaved }) {
   const [menus, setMenus] = useState(DEFAULT_MENUS)
+  const [dailyQuotaInput, setDailyQuotaInput] = useState('80')
   const [saving, setSaving] = useState(false)
   const [statusMsg, setStatusMsg] = useState(null)
 
   useEffect(() => {
     setMenus(normalizeMenus(visibleMenus))
   }, [teacherId, visibleMenus])
+
+  useEffect(() => {
+    const q = dailyResearchQuota != null && dailyResearchQuota !== '' ? clampDailyResearchQuota(dailyResearchQuota) : 80
+    setDailyQuotaInput(String(q))
+  }, [teacherId, dailyResearchQuota])
 
   const toggle = useCallback((key) => {
     setMenus((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -56,10 +68,11 @@ export default function MenuSettingsSection({ teacherId, visibleMenus, onSaved }
     if (!teacherId) return
     setSaving(true)
     setStatusMsg(null)
+    const quotaNum = clampDailyResearchQuota(dailyQuotaInput)
     const payload = { ...menus }
     const { data, error } = await supabase
       .from('teachers')
-      .update({ visible_menus: payload })
+      .update({ visible_menus: payload, daily_research_quota: quotaNum })
       .eq('id', teacherId)
       .select('id')
     setSaving(false)
@@ -245,6 +258,45 @@ export default function MenuSettingsSection({ teacherId, visibleMenus, onSaved }
             ))}
           </div>
         </div>
+      </div>
+
+      <div
+        style={{
+          padding: '14px 16px',
+          borderRadius: RADIUS.md,
+          border: `1px solid ${COLORS.border}`,
+          background: COLORS.bg,
+          marginBottom: 18,
+        }}
+      >
+        <div style={{ fontSize: 13, fontWeight: 800, color: '#374151', marginBottom: 8 }}>
+          오늘의 연구 · 일일 할당량
+        </div>
+        <p style={{ margin: '0 0 10px', fontSize: 12, lineHeight: 1.55, color: COLORS.textSecondary }}>
+          학생 메인 화면「오늘의 연구」에서 하루에 풀 수 있는 문제 수 상한입니다. (독해 모드 일일 한도와는 별도입니다.)
+        </p>
+        <label style={{ fontSize: 14, fontWeight: 600, color: COLORS.textPrimary, display: 'block', marginBottom: 6 }}>
+          하루 최대 문제 수
+        </label>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={200}
+          value={dailyQuotaInput}
+          onChange={(e) => setDailyQuotaInput(e.target.value)}
+          disabled={!teacherId || saving}
+          style={{
+            width: '100%',
+            maxWidth: 120,
+            padding: '10px 12px',
+            borderRadius: RADIUS.sm,
+            border: `1px solid ${COLORS.border}`,
+            fontSize: 16,
+            boxSizing: 'border-box',
+          }}
+        />
+        <span style={{ marginLeft: 10, fontSize: 13, color: COLORS.textSecondary }}>1–200 · 기본 80</span>
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>

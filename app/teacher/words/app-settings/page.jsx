@@ -70,6 +70,7 @@ export default function WordAppMenuSettingsPage() {
       <MenuSettingsSection
         teacherId={teacherId}
         visibleMenus={teacher?.visible_menus}
+        dailyResearchQuota={teacher?.daily_research_quota}
         onSaved={() => void refreshTeacher()}
       />
 
