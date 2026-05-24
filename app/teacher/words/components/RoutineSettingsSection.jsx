@@ -49,6 +49,8 @@ const REVIEW_MODE_OPTIONS = [
   { key: 'scramble', label: '스크램블로 복습' },
   { key: 'memorize', label: '암기(플래시카드)' },
   { key: 'recall', label: '리콜' },
+  { key: 'booster', label: '🤖 AI 부스터 (별표 단어 복습)' },
+  { key: 'wrong_note', label: '오답노트' },
 ]
 
 /** 루틴 복습 단계 편집(순서 유지) — 드롭다운에 나올 옵션 */
@@ -72,6 +74,7 @@ function normalizeReviewModesToSteps(rm) {
         .trim()
         .toLowerCase()
       if (m === 'wrong_note') return { id: `r-${i}-wn`, key: 'wrong_note', wrongOnly: false }
+      if (m === 'booster' || m === 'ai_booster') return { id: `r-${i}-booster`, key: 'booster', wrongOnly: false }
       return { id: `r-${i}-${m}`, key: m || 'test', wrongOnly: Boolean(/** @type {{ wrongOnly?: unknown }} */ (x).wrongOnly) }
     }
     return { id: `r-${i}-f`, key: 'test', wrongOnly: false }
@@ -455,7 +458,11 @@ export default function RoutineSettingsSection({
       return
     }
     const review_modes = reviewSteps.map((s) =>
-      s.key === 'wrong_note' ? { mode: 'wrong_note' } : { mode: s.key, wrongOnly: Boolean(s.wrongOnly) },
+      s.key === 'wrong_note'
+        ? { mode: 'wrong_note' }
+        : s.key === 'booster'
+          ? { mode: 'booster' }
+          : { mode: s.key, wrongOnly: Boolean(s.wrongOnly) },
     )
 
     const learningModeTasks = [
@@ -1111,7 +1118,11 @@ export default function RoutineSettingsSection({
                     onChange={(e) => {
                       const v = e.target.value
                       setReviewSteps((prev) =>
-                        prev.map((r) => (r.id === row.id ? { ...r, key: v, wrongOnly: v === 'wrong_note' ? false : r.wrongOnly } : r)),
+                        prev.map((r) =>
+                          r.id === row.id
+                            ? { ...r, key: v, wrongOnly: v === 'wrong_note' || v === 'booster' ? false : r.wrongOnly }
+                            : r,
+                        ),
                       )
                     }}
                     style={{ flex: 1, minWidth: 160, padding: '8px 10px', fontSize: 14, fontWeight: 600 }}
@@ -1122,7 +1133,7 @@ export default function RoutineSettingsSection({
                       </option>
                     ))}
                   </select>
-                  {row.key !== 'wrong_note' ? (
+                  {row.key !== 'wrong_note' && row.key !== 'booster' ? (
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
                       <input
                         type="checkbox"

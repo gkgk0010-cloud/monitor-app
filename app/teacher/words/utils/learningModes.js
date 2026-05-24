@@ -6,19 +6,19 @@
 export const ALL_MODE_KEYS = [
   'flashcard',
   'recall',
-  'matching',
+  'mypick',
   'writing',
   'reading',
   'readAloud',
   'shadowing',
   'listening',
-  'scramble',
   'dictation',
   'composition',
   'image',
-  'mypick',
   'wrong_note',
   'test',
+  'scramble',
+  'matching',
 ]
 
 export const MODE_LABELS = {
@@ -48,9 +48,67 @@ export const MODE_DESCRIPTIONS = {
 /** word | sentence_writing | sentence_speaking (구 image·sentence 는 normalizeSetType 로 정규화) */
 /** 세트 타입별 기본(추천) 필수 후보 모드 — create·루틴 추천과 동일 소스 */
 export const DEFAULT_MODES_BY_TYPE = {
-  word: ['flashcard', 'recall', 'matching', 'test', 'mypick'],
-  sentence_writing: ['reading', 'dictation', 'writing', 'scramble', 'mypick'],
-  sentence_speaking: ['dictation', 'listening', 'shadowing', 'scramble', 'mypick'],
+  word: ['flashcard', 'recall', 'mypick', 'test', 'matching'],
+  sentence_writing: ['reading', 'dictation', 'writing', 'mypick', 'scramble'],
+  sentence_speaking: ['dictation', 'listening', 'shadowing', 'mypick', 'scramble'],
+}
+
+const HEAD_CANON_ORDER = ['flashcard', 'recall', 'mypick']
+
+function canonLearningModeKey(raw) {
+  const k = String(raw || '')
+    .trim()
+    .toLowerCase()
+  if (!k) return ''
+  if (k === 'memorize') return 'flashcard'
+  if (k === 'quiz' || k === 'vocabtest') return 'test'
+  if (k === 'readaloud' || k === 'read_aloud') return 'readaloud'
+  if (k === 'wrongnote') return 'wrong_note'
+  return k
+}
+
+function headRank(canon) {
+  const i = HEAD_CANON_ORDER.indexOf(canon)
+  return i >= 0 ? i : 99
+}
+
+function tailBucket(canon) {
+  if (canon === 'flashcard' || canon === 'recall' || canon === 'mypick') return 'head'
+  if (canon === 'test') return 'test'
+  if (canon === 'scramble') return 'scramble'
+  if (canon === 'matching') return 'matching'
+  return 'mid'
+}
+
+/** DB 저장·표시 공통: 암기→리콜→마이픽 → 중간 → 테스트·스크램블 → 매칭 */
+export function sortLearningModeDbKeys(keys) {
+  const seen = new Set()
+  const unique = []
+  for (const k of keys || []) {
+    const t = String(k || '').trim()
+    if (!t || seen.has(t)) continue
+    seen.add(t)
+    unique.push(t)
+  }
+  const head = []
+  const mid = []
+  const test = []
+  const scramble = []
+  const matching = []
+  for (const k of unique) {
+    const bucket = tailBucket(canonLearningModeKey(k))
+    if (bucket === 'head') head.push(k)
+    else if (bucket === 'test') test.push(k)
+    else if (bucket === 'scramble') scramble.push(k)
+    else if (bucket === 'matching') matching.push(k)
+    else mid.push(k)
+  }
+  head.sort((a, b) => headRank(canonLearningModeKey(a)) - headRank(canonLearningModeKey(b)))
+  mid.sort((a, b) => a.localeCompare(b, 'ko', { sensitivity: 'base' }))
+  test.sort((a, b) => a.localeCompare(b, 'ko', { sensitivity: 'base' }))
+  scramble.sort((a, b) => a.localeCompare(b, 'ko', { sensitivity: 'base' }))
+  matching.sort((a, b) => a.localeCompare(b, 'ko', { sensitivity: 'base' }))
+  return [...head, ...mid, ...test, ...scramble, ...matching]
 }
 
 /** DB·구버전 값 → word | sentence_writing | sentence_speaking */
@@ -135,7 +193,7 @@ export function normalizeRawAvailableModes(raw) {
  * @returns {object[]}
  */
 export function buildModesDataForWordSetSave(modes, requiredByMode, _passScore, _maxAttempts) {
-  const selectedKeys = ALL_MODE_KEYS.filter((k) => modes[k])
+  const selectedKeys = sortLearningModeDbKeys(ALL_MODE_KEYS.filter((k) => modes[k]))
   const modesData = selectedKeys.map((modeName) => ({
     mode: modeName,
     required: !!requiredByMode[modeName],
@@ -143,12 +201,12 @@ export function buildModesDataForWordSetSave(modes, requiredByMode, _passScore, 
   return JSON.parse(JSON.stringify(modesData))
 }
 
-/** 사이드바 등 한 줄 요약: 암기·리콜·매칭·테스트 */
+/** 사이드바 등 한 줄 요약: 암기·리콜·마이픽·테스트·매칭 */
 export function formatAvailableModesSummary(am, setType) {
   const parsed = parseAvailableModes(am, setType)
   const labels = []
-  for (const k of ALL_MODE_KEYS) {
-    if (parsed.modes[k]) labels.push(MODE_LABELS[k] || k)
+  for (const k of sortLearningModeDbKeys(ALL_MODE_KEYS.filter((key) => parsed.modes[key]))) {
+    labels.push(MODE_LABELS[k] || k)
   }
   if (labels.length === 0) return '—'
   return labels.join('·')
