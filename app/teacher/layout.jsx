@@ -35,6 +35,7 @@ export default function TeacherLayout({ children }) {
 
   const isMonitor = pathname === '/teacher/monitor';
   const isTest = pathname === '/teacher/test';
+  const isGrammarLab = pathname === '/teacher/grammar-lab';
   const isWordsAppSettings = pathname === '/teacher/words/app-settings';
   const isLiveBattle = pathname === '/teacher/live-battle';
   const isProfileSettings = pathname === '/teacher/settings';
@@ -111,6 +112,9 @@ export default function TeacherLayout({ children }) {
           </Link>
           <Link href="/teacher/live-battle" style={navItemStyle(isLiveBattle)}>
             라이브 중계
+          </Link>
+          <Link href="/teacher/grammar-lab" style={navItemStyle(isGrammarLab)}>
+            문법 해무무실
           </Link>
           <Link href="/teacher/words/app-settings" style={navItemStyle(isWordsAppSettings)}>
             앱 기능 설정
