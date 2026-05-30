@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useTeacher } from '@/utils/useTeacher'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import MenuSettingsSection from '../components/MenuSettingsSection'
+import JogboSettingsSection from '../components/JogboSettingsSection'
 
 /**
  * 학생 앱(토큰·메뉴) 표시 설정 — teachers.visible_menus
@@ -71,6 +72,13 @@ export default function WordAppMenuSettingsPage() {
         teacherId={teacherId}
         visibleMenus={teacher?.visible_menus}
         dailyResearchQuota={teacher?.daily_research_quota}
+        onSaved={() => void refreshTeacher()}
+      />
+
+      <JogboSettingsSection
+        teacherId={teacherId}
+        defaultJogboQuestionCount={teacher?.default_jogbo_question_count}
+        jogboDailyCompleteMinQuestions={teacher?.jogbo_daily_complete_min_questions}
         onSaved={() => void refreshTeacher()}
       />
 
