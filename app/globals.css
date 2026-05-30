@@ -43,6 +43,25 @@ html, body {
   }
 }
 
+/* 문법 해묀실: 대형 모니터에서도 main 전체 폭 사용 (단어 세트 상세와 동일) */
+.teacher-grammar-lab-shell {
+  width: 100%;
+  max-width: none;
+  --teacher-shell-px: clamp(16px, 1.5vw, 32px);
+}
+
+.teacher-grammar-lab-page {
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.teacher-grammar-lab-page .word-table-wrap {
+  width: 100%;
+  max-width: none;
+}
+
 /* 상단 그라데이션 헤더를 레이아웃 네비와 동일하게 풀블리드 */
 .teacher-page-header-bleed {
   margin-left: calc(-1 * var(--teacher-shell-px, 12px));

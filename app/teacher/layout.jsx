@@ -35,7 +35,7 @@ export default function TeacherLayout({ children }) {
 
   const isMonitor = pathname === '/teacher/monitor';
   const isTest = pathname === '/teacher/test';
-  const isGrammarLab = pathname === '/teacher/grammar-lab';
+  const isGrammarLab = pathname?.startsWith('/teacher/grammar-lab');
   const isWordsAppSettings = pathname === '/teacher/words/app-settings';
   const isLiveBattle = pathname === '/teacher/live-battle';
   const isProfileSettings = pathname === '/teacher/settings';
@@ -191,7 +191,10 @@ export default function TeacherLayout({ children }) {
         </div>
       </header>
 
-      <main className="teacher-main-shell" style={{ flex: 1, minHeight: 'auto', width: '100%', maxWidth: '100%', overflow: 'visible' }}>
+      <main
+        className={`teacher-main-shell${isGrammarLab ? ' teacher-grammar-lab-shell' : ''}`}
+        style={{ flex: 1, minHeight: 'auto', width: '100%', maxWidth: '100%', overflow: 'visible' }}
+      >
         {children}
       </main>
       <TeacherToastPortal />

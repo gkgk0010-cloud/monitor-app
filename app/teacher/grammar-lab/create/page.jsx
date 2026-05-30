@@ -161,7 +161,7 @@ function CreateGrammarSetContent() {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', minHeight: '100%' }}>
+    <div className="teacher-grammar-lab-page" style={{ width: '100%', maxWidth: 'none', minHeight: '100%' }}>
       <Link href="/teacher/grammar-lab" style={{ fontSize: 14, color: COLORS.textSecondary }}>
         ← 문법 해부실
       </Link>
@@ -234,6 +234,8 @@ function CreateGrammarSetContent() {
         onRowDelete={(row) => setRows((p) => p.filter((r) => r.id !== row.id))}
         highlightRowIds={meaningHighlightRowIds}
         rowGroupMode={hasDayPreview ? 'day' : 'chunk10'}
+        scrollContainer="window"
+        stickyHeaderOffsetPx={120}
       />
 
       <BulkImport

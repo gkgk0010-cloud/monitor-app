@@ -133,7 +133,7 @@ function GrammarSetDetailContent() {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '100%', minHeight: '100%' }}>
+    <div className="teacher-grammar-lab-page" style={{ width: '100%', maxWidth: 'none', minHeight: '100%' }}>
       <Link href="/teacher/grammar-lab" style={{ fontSize: 14, color: COLORS.textSecondary }}>
         ← 문법 해부실
       </Link>
@@ -215,6 +215,8 @@ function GrammarSetDetailContent() {
         showDeleteColumn
         onRowDelete={(row) => void handleRowDelete(row)}
         rowGroupMode="day"
+        scrollContainer="window"
+        stickyHeaderOffsetPx={120}
         getRowBackground={(row) =>
           trainingKind === 'box_drill' && !row._boxCount ? 'rgba(254,226,226,0.35)' : undefined
         }
