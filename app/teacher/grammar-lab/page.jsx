@@ -112,8 +112,9 @@ export default function GrammarLabDashboardPage() {
   }
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto', padding: '8px 0 32px' }}>
+    <div style={{ width: '100%', maxWidth: '100%', minHeight: '100%' }}>
       <header
+        className="teacher-page-header-bleed"
         style={{
           marginBottom: 20,
           padding: '14px 18px',

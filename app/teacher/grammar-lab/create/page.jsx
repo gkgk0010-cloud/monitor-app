@@ -161,7 +161,7 @@ function CreateGrammarSetContent() {
   }
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', padding: '8px 0 48px' }}>
+    <div style={{ width: '100%', maxWidth: '100%', minHeight: '100%' }}>
       <Link href="/teacher/grammar-lab" style={{ fontSize: 14, color: COLORS.textSecondary }}>
         ← 문법 해부실
       </Link>
