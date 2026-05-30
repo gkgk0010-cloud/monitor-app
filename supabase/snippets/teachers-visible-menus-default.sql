@@ -3,4 +3,4 @@
 
 ALTER TABLE public.teachers
   ALTER COLUMN visible_menus
-  SET DEFAULT '{"quiz": false, "result": false, "homework": false, "absence": false, "vocab": true, "jokbo": false}'::jsonb;
+  SET DEFAULT '{"quiz": false, "result": false, "homework": false, "absence": false, "vocab": true, "jokbo": false, "grammar_lab": true}'::jsonb;

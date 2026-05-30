@@ -114,7 +114,7 @@ export default function TeacherLayout({ children }) {
             라이브 중계
           </Link>
           <Link href="/teacher/grammar-lab" style={navItemStyle(isGrammarLab)}>
-            문법 해무무실
+            문법 해부실
           </Link>
           <Link href="/teacher/words/app-settings" style={navItemStyle(isWordsAppSettings)}>
             앱 기능 설정
