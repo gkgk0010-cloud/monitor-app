@@ -1,0 +1,289 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useState, Suspense } from 'react'
+import Link from 'next/link'
+import { useParams, useSearchParams } from 'next/navigation'
+import { supabase } from '@/utils/supabaseClient'
+import { useTeacher } from '@/utils/useTeacher'
+import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
+import WordTable from '../../words/components/WordTable'
+import BulkImport from '../../words/components/BulkImport'
+import BoxAnswerModal from '../components/BoxAnswerModal'
+import {
+  emptyGrammarRow,
+  isGrammarRowValid,
+  rowToStiInsert,
+  rowToStiUpdate,
+  stiToTableRow,
+  TRAINING_KIND_LABELS,
+} from '../utils/grammarLabRows'
+
+function GrammarSetDetailContent() {
+  const params = useParams()
+  const searchParams = useSearchParams()
+  const setName = decodeURIComponent(String(params.setName || ''))
+  const trainingKind = searchParams.get('kind') === 'box_drill' ? 'box_drill' : 'word_order'
+  const { teacher, loading: teacherLoading } = useTeacher()
+  const teacherId = teacher?.id
+
+  const [rows, setRows] = useState([])
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [loading, setLoading] = useState(true)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [boxItem, setBoxItem] = useState(null)
+  const [boxCounts, setBoxCounts] = useState({})
+
+  const loadItems = useCallback(async () => {
+    if (!teacherId || !setName) return
+    setLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('sentence_training_items')
+        .select('id, sentence_text, hint_ko, set_name, day, sort_order, difficulty, image_url, youtube_url, training_kind')
+        .eq('teacher_id', teacherId)
+        .eq('set_name', setName)
+        .eq('training_kind', trainingKind)
+        .order('day')
+        .order('sort_order')
+      if (error) {
+        console.warn('[grammar-lab detail]', error.message)
+        setRows([])
+        return
+      }
+      const ids = (data || []).map((d) => d.id)
+      const counts = {}
+      if (trainingKind === 'box_drill' && ids.length) {
+        const { data: boxes } = await supabase.from('box_drill_answers').select('item_id').in('item_id', ids)
+        for (const b of boxes || []) {
+          counts[b.item_id] = (counts[b.item_id] || 0) + 1
+        }
+      }
+      setBoxCounts(counts)
+      setRows((data || []).map((item) => stiToTableRow(item, counts[item.id] || 0)))
+    } finally {
+      setLoading(false)
+    }
+  }, [teacherId, setName, trainingKind])
+
+  useEffect(() => {
+    void loadItems()
+  }, [loadItems])
+
+  const stats = useMemo(() => {
+    const total = rows.length
+    if (trainingKind !== 'box_drill') return { total, complete: total, incomplete: 0 }
+    let incomplete = 0
+    for (const r of rows) {
+      if (!(boxCounts[r.id] > 0)) incomplete++
+    }
+    return { total, complete: total - incomplete, incomplete }
+  }, [rows, boxCounts, trainingKind])
+
+  const handleRowCommit = async (row) => {
+    if (!teacherId || !isGrammarRowValid(row)) {
+      alert('예문과 해석(뜻)은 필수입니다.')
+      return
+    }
+    const payload = rowToStiUpdate(row, trainingKind)
+    if (String(row.id).startsWith('temp-')) {
+      const insertPayload = rowToStiInsert({ ...row, set_name: setName }, teacherId, trainingKind, rows.length)
+      if (!insertPayload) return
+      const { data, error } = await supabase.from('sentence_training_items').insert(insertPayload).select('id').single()
+      if (error) {
+        alert('저장 실패: ' + error.message)
+        return
+      }
+      setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, id: data.id, _boxCount: 0 } : r)))
+      return
+    }
+    const { error } = await supabase
+      .from('sentence_training_items')
+      .update(payload)
+      .eq('id', row.id)
+      .eq('teacher_id', teacherId)
+    if (error) {
+      alert('저장 실패: ' + error.message)
+      return
+    }
+  }
+
+  const handleRowDelete = async (row) => {
+    if (!confirm('이 구문을 삭제할까요?')) return
+    if (String(row.id).startsWith('temp-')) {
+      setRows((p) => p.filter((r) => r.id !== row.id))
+      return
+    }
+    const { error } = await supabase.from('sentence_training_items').delete().eq('id', row.id).eq('teacher_id', teacherId)
+    if (error) {
+      alert('삭제 실패: ' + error.message)
+      return
+    }
+    void loadItems()
+  }
+
+  const openBoxEditor = (row) => {
+    setBoxItem({ id: row.id, sentence_text: row.example_sentence })
+  }
+
+  if (teacherLoading || loading) {
+    return <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
+  }
+  if (!teacherId) {
+    return <p style={{ color: COLORS.textSecondary }}>선생님 정보가 없습니다.</p>
+  }
+
+  return (
+    <div style={{ maxWidth: 960, margin: '0 auto', padding: '8px 0 48px' }}>
+      <Link href="/teacher/grammar-lab" style={{ fontSize: 14, color: COLORS.textSecondary }}>
+        ← 문법 해부실
+      </Link>
+      <header
+        style={{
+          margin: '12px 0 20px',
+          padding: '14px 18px',
+          borderRadius: RADIUS.lg,
+          background: COLORS.headerGradient,
+          color: COLORS.textOnGreen,
+          boxShadow: SHADOW.card,
+        }}
+      >
+        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>{setName}</h1>
+        <p style={{ margin: '8px 0 0', fontSize: 14, opacity: 0.92 }}>
+          {TRAINING_KIND_LABELS[trainingKind]} · 구문 {stats.total}건
+          {trainingKind === 'box_drill'
+            ? ` · 박스 완료 ${stats.complete} / 미완료 ${stats.incomplete}`
+            : ''}
+        </p>
+      </header>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        <button type="button" onClick={() => setBulkOpen(true)} style={primaryBtn}>
+          가져오기 추가
+        </button>
+        <button
+          type="button"
+          onClick={() => setRows((p) => [emptyGrammarRow(setName), ...p])}
+          style={secondaryBtn}
+        >
+          + 행 추가
+        </button>
+      </div>
+
+      {trainingKind === 'box_drill' ? (
+        <div style={{ marginBottom: 12 }}>
+          {rows.map((row) => (
+            <div
+              key={row.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 0',
+                borderBottom: `1px solid ${COLORS.border}`,
+                fontSize: 14,
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: row._boxCount > 0 ? '#22c55e' : '#ef4444',
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {String(row.example_sentence || '').slice(0, 60)}
+              </span>
+              <button type="button" onClick={() => openBoxEditor(row)} style={secondaryBtn}>
+                박스 정답 {row._boxCount > 0 ? `(${row._boxCount})` : ''}
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <WordTable
+        rows={rows}
+        onRowsChange={setRows}
+        selectedIds={selectedIds}
+        onSelectedIdsChange={setSelectedIds}
+        onRowCommit={handleRowCommit}
+        columnPreset="sentence"
+        showSetNameColumn={false}
+        showDeleteColumn
+        onRowDelete={(row) => void handleRowDelete(row)}
+        rowGroupMode="day"
+        getRowBackground={(row) =>
+          trainingKind === 'box_drill' && !row._boxCount ? 'rgba(254,226,226,0.35)' : undefined
+        }
+      />
+
+      <BulkImport
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        onSaved={() => {}}
+        existingSetNames={[setName]}
+        localOnly
+        initialSetName={setName}
+        teacherId={teacherId}
+        importSetType="sentence"
+        onLocalImported={async (imported) => {
+          if (!teacherId) return
+          const payload = imported
+            .filter(isGrammarRowValid)
+            .map((r, i) =>
+              rowToStiInsert({ ...r, set_name: setName }, teacherId, trainingKind, rows.length + i),
+            )
+            .filter(Boolean)
+          if (!payload.length) {
+            alert('저장할 유효 구문이 없습니다.')
+            return
+          }
+          const { error } = await supabase.from('sentence_training_items').insert(payload)
+          if (error) {
+            alert('저장 실패: ' + error.message)
+            return
+          }
+          setBulkOpen(false)
+          void loadItems()
+        }}
+      />
+
+      <BoxAnswerModal
+        open={Boolean(boxItem)}
+        item={boxItem}
+        onClose={() => setBoxItem(null)}
+        onSaved={() => void loadItems()}
+      />
+    </div>
+  )
+}
+
+const primaryBtn = {
+  padding: '10px 16px',
+  borderRadius: RADIUS.md,
+  border: 'none',
+  background: COLORS.primary,
+  color: COLORS.textOnGreen,
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontSize: 14,
+}
+const secondaryBtn = {
+  padding: '8px 14px',
+  borderRadius: RADIUS.md,
+  border: `1px solid ${COLORS.border}`,
+  background: '#fff',
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontSize: 13,
+}
+
+export default function GrammarSetDetailPage() {
+  return (
+    <Suspense fallback={<p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>}>
+      <GrammarSetDetailContent />
+    </Suspense>
+  )
+}
