@@ -327,6 +327,8 @@ export default function StudentReportLayer({
     const totalDays = tr.totalDays;
     const hasRoutine = tr.hasActiveRoutine && totalDays != null && totalDays > 0;
     const curDay = ov.currentDay || 0;
+    const lapCount = tr.lapCount != null ? Math.max(1, Number(tr.lapCount) || 1) : 1;
+    const lapPrefix = lapCount >= 2 ? `${lapCount}회독 · ` : '';
     const progressPct =
       hasRoutine && totalDays ? Math.min(100, Math.round((curDay / totalDays) * 1000) / 10) : null;
 
@@ -364,7 +366,7 @@ export default function StudentReportLayer({
       : [];
 
     const summaryLine = hasRoutine && totalDays
-      ? `현재 루틴 ${curDay}/${totalDays} DAY 진행 중, 평균 성취도 ${avgDayScore}%`
+      ? `현재 루틴 ${lapPrefix}${curDay}/${totalDays} DAY 진행 중, 평균 성취도 ${avgDayScore}%`
       : `배정된 활성 루틴이 없습니다. 기록된 평균 DAY 점수는 ${avgDayScore}%입니다.`;
 
     const tidEff = String(teacherId || '').trim();
@@ -428,7 +430,9 @@ export default function StudentReportLayer({
             {' / '}
             현재 DAY
             {' '}
-            {hasRoutine && tr.currentDay != null ? tr.currentDay : '—'}
+            {hasRoutine && tr.currentDay != null
+              ? `${lapPrefix}${tr.currentDay}`
+              : '—'}
           </p>
           <p style={s.parentSummaryHighlight}>{summaryLine}</p>
           <p style={s.parentSummaryEncourage}>
@@ -460,7 +464,7 @@ export default function StudentReportLayer({
             <>
               {tr.routineTitle || '—'}
               {' '}
-              | DAY
+              | {lapPrefix}DAY
               {' '}
               {tr.currentDay}
               {' '}

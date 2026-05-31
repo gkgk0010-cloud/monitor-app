@@ -205,6 +205,7 @@ type RoutineRep = {
   srId: string
   routineId: string
   currentDay: number
+  lapCount: number
   startedAt: string | null
   title: string | null
   totalDays: number
@@ -217,6 +218,7 @@ async function fetchPrimaryActiveRoutine(studentId: string): Promise<RoutineRep 
       `
       id,
       current_day,
+      lap_count,
       started_at,
       routine_id,
       is_active,
@@ -240,10 +242,12 @@ async function fetchPrimaryActiveRoutine(studentId: string): Promise<RoutineRep 
   const title = one?.title != null ? String(one.title) : null
   const totalDays = one?.total_days != null ? Math.max(1, Number(one.total_days) || 1) : 1
   const cd = r0.current_day != null ? Math.max(1, Number(r0.current_day) || 1) : 1
+  const lc = r0.lap_count != null ? Math.max(1, Number(r0.lap_count) || 1) : 1
   return {
     srId: String(r0.id ?? ''),
     routineId: rid,
     currentDay: cd,
+    lapCount: lc,
     startedAt: r0.started_at != null ? String(r0.started_at) : null,
     title,
     totalDays,
@@ -614,6 +618,7 @@ async function loadReport(rawStudentId: string): Promise<StudentReportData> {
     routineTitle: null,
     currentDay: null,
     totalDays: null,
+    lapCount: null,
     todayProgress: 0,
     requiredTasksTotal: 0,
     requiredTasksCompleted: 0,
@@ -640,6 +645,7 @@ async function loadReport(rawStudentId: string): Promise<StudentReportData> {
       routineTitle: rep.title,
       currentDay: rep.currentDay,
       totalDays: rep.totalDays,
+      lapCount: rep.lapCount,
       todayProgress: progress,
       requiredTasksTotal: total,
       requiredTasksCompleted: completed,

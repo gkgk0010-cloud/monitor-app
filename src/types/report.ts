@@ -47,6 +47,8 @@ export interface StudentReportData {
     currentDay: number | null
     /** routines.total_days (활성 루틴이 있을 때만) */
     totalDays: number | null
+    /** 1회독=1, 2회독 이상일 때 UI 표시용 */
+    lapCount: number | null
     todayProgress: number
     requiredTasksTotal: number
     requiredTasksCompleted: number

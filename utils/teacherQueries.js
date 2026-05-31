@@ -194,6 +194,7 @@ export async function fetchStudentRoutineSummariesForTeacher(teacherId) {
   const selectCols = `
     student_id,
     current_day,
+    lap_count,
     last_activity_at,
     is_active,
     routine:routines ( title, set_name, total_days )
@@ -271,8 +272,12 @@ export async function fetchStudentRoutineSummariesForTeacher(teacherId) {
     const rest = list.length - 1;
     const name = pickRoutine(rep);
     const cd = rep.current_day != null ? Math.max(1, Number(rep.current_day) || 1) : 1;
+    const lc = rep.lap_count != null ? Math.max(1, Number(rep.lap_count) || 1) : 1;
+    const lapPrefix = lc >= 2 ? `${lc}회독 · ` : '';
     const line1 =
-      rest > 0 ? `${name} · DAY${cd} 진행중 · 외 ${rest}개` : `${name} · DAY${cd} 진행중`;
+      rest > 0
+        ? `${name} · ${lapPrefix}DAY${cd} 진행중 · 외 ${rest}개`
+        : `${name} · ${lapPrefix}DAY${cd} 진행중`;
 
     out[displayKey] = {
       line1,
