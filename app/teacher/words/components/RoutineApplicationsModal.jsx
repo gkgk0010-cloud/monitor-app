@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   addRoutineApplication,
   deleteRoutineApplication,
@@ -8,6 +8,9 @@ import {
   updateRoutineApplicationStart,
 } from '@/utils/routineAdmin'
 import { COLORS, RADIUS } from '@/utils/tokens'
+
+const DUPLICATE_APPLICATION_MSG =
+  '이미 이 세트에 적용 중입니다. 변경하려면 위쪽 적용 카드에서 수정해주세요.'
 
 function formatRoutineError(err) {
   if (err == null) return '오류가 발생했습니다.'
@@ -19,6 +22,15 @@ function formatRoutineError(err) {
   } catch {
     return String(err)
   }
+}
+
+function isDuplicateApplicationError(err) {
+  const msg = formatRoutineError(err).toLowerCase()
+  return (
+    msg.includes('duplicate') ||
+    msg.includes('unique constraint') ||
+    msg.includes('routine_applications_unique')
+  )
 }
 
 /**
@@ -52,6 +64,20 @@ export default function RoutineApplicationsModal({
   const [newStartDate, setNewStartDate] = useState('')
   const [saving, setSaving] = useState(false)
 
+  const appliedSetNames = useMemo(() => {
+    const set = new Set()
+    for (const row of rows) {
+      const sn = String(row.set_name || '').trim()
+      if (sn) set.add(sn)
+    }
+    return set
+  }, [rows])
+
+  const availableSetNames = useMemo(
+    () => (wordSetNames || []).filter((n) => !appliedSetNames.has(String(n || '').trim())),
+    [wordSetNames, appliedSetNames],
+  )
+
   const load = useCallback(async () => {
     if (!open || !teacherId || !routineId) return
     setLoading(true)
@@ -78,11 +104,22 @@ export default function RoutineApplicationsModal({
     }
   }, [open])
 
+  useEffect(() => {
+    const sn = String(newSet || '').trim()
+    if (sn && appliedSetNames.has(sn)) {
+      setNewSet('')
+    }
+  }, [appliedSetNames, newSet])
+
   const handleAdd = async () => {
     if (!teacherId || !routineId || saving) return
     const sn = String(newSet || '').trim()
     if (!sn) {
       setError('단어 세트를 선택하세요.')
+      return
+    }
+    if (appliedSetNames.has(sn)) {
+      setError(DUPLICATE_APPLICATION_MSG)
       return
     }
     const startDate = newMode === 'fixed' && newStartDate.trim() ? newStartDate.trim() : null
@@ -91,7 +128,7 @@ export default function RoutineApplicationsModal({
     const res = await addRoutineApplication({ teacherId, routineId, setName: sn, startDate })
     setSaving(false)
     if (!res.ok) {
-      setError(formatRoutineError(res.error))
+      setError(isDuplicateApplicationError(res.error) ? DUPLICATE_APPLICATION_MSG : formatRoutineError(res.error))
       return
     }
     setNewSet('')
@@ -134,6 +171,7 @@ export default function RoutineApplicationsModal({
   if (!open) return null
 
   const td = Math.max(1, parseInt(String(totalDays), 10) || 30)
+  const canAddMore = availableSetNames.length > 0
 
   return (
     <div
@@ -170,137 +208,180 @@ export default function RoutineApplicationsModal({
           id="routine-apps-title"
           style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800, color: COLORS.textPrimary }}
         >
-          세트 적용 관리
+          시작일 / 세트 적용 관리
         </h3>
         <p style={{ margin: '0 0 16px', fontSize: 13, lineHeight: 1.5, color: COLORS.textSecondary }}>
-          「{String(routineTitle || '').trim() || '루틴'}」 — 총 {td}일 템플릿을 어떤 단어세트에 연결할지 관리합니다.
+          「{String(routineTitle || '').trim() || '루틴'}」 — 총 {td}일 템플릿을 어떤 단어세트에 연결할지, 시작일을 어떻게
+          잡을지 설정합니다.
         </p>
 
         {error ? (
           <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600, color: COLORS.danger }}>{error}</p>
         ) : null}
 
-        {loading ? (
-          <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
-        ) : (
-          <ul style={{ listStyle: 'none', margin: '0 0 20px', padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {rows.map((row) => {
-              const fixed = Boolean(row.start_date)
-              const label = fixed
-                ? `${row.start_date} 고정 시작 (KST · 현재 일수는 학생 앱 동기화)`
-                : '학생별 가입일 기준 (자율 학습)'
-              return (
-                <li
-                  key={row.id}
-                  style={{
-                    border: `1px solid ${COLORS.border}`,
-                    borderRadius: RADIUS.md,
-                    padding: 12,
-                    background: 'rgba(255,255,255,0.9)',
-                  }}
-                >
-                  <div style={{ fontWeight: 800, fontSize: 15, color: COLORS.textPrimary, marginBottom: 6 }}>{row.set_name}</div>
-                  <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 10 }}>{label}</div>
-                  <EditStartInline
-                    applicationId={row.id}
-                    fixed={fixed}
-                    startDate={row.start_date ? String(row.start_date).slice(0, 10) : ''}
-                    disabled={saving}
-                    onSave={(mode, d) => void handleUpdateStart(row.id, mode, d)}
-                  />
-                  <button
-                    type="button"
-                    disabled={saving || rows.length <= 1}
-                    onClick={() => void handleRemove(row.id)}
-                    style={{
-                      marginTop: 10,
-                      padding: '6px 12px',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      borderRadius: RADIUS.sm,
-                      border: `1px solid ${COLORS.danger}`,
-                      background: COLORS.dangerBg,
-                      color: COLORS.danger,
-                      cursor: saving ? 'wait' : 'pointer',
-                      opacity: rows.length <= 1 ? 0.45 : 1,
-                    }}
-                  >
-                    적용 해제
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-
-        <div
+        <section
           style={{
-            borderTop: `1px dashed ${COLORS.border}`,
-            paddingTop: 16,
-            marginTop: 8,
+            marginBottom: 16,
+            padding: '14px 12px',
+            borderRadius: RADIUS.md,
+            border: `1px solid ${COLORS.border}`,
+            background: 'rgba(248,250,252,0.95)',
           }}
         >
-          <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 800, color: COLORS.textPrimary }}>세트 추가</p>
+          <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 800, color: COLORS.textPrimary }}>현재 적용 중</p>
+          {loading ? (
+            <p style={{ margin: 0, color: COLORS.textSecondary }}>불러오는 중…</p>
+          ) : rows.length === 0 ? (
+            <p style={{ margin: 0, fontSize: 13, color: COLORS.textSecondary }}>적용된 세트가 없습니다.</p>
+          ) : (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {rows.map((row) => {
+                const fixed = Boolean(row.start_date)
+                const label = fixed
+                  ? `${row.start_date} 고정 시작 (KST · 현재 일수는 학생 앱 동기화)`
+                  : '학생별 가입일 기준 (자율 학습)'
+                return (
+                  <li
+                    key={row.id}
+                    style={{
+                      border: `1px solid ${COLORS.border}`,
+                      borderRadius: RADIUS.md,
+                      padding: 12,
+                      background: '#fff',
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, fontSize: 15, color: COLORS.textPrimary, marginBottom: 6 }}>
+                      {row.set_name}
+                    </div>
+                    <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 10 }}>{label}</div>
+                    <EditStartInline
+                      applicationId={row.id}
+                      fixed={fixed}
+                      startDate={row.start_date ? String(row.start_date).slice(0, 10) : ''}
+                      disabled={saving}
+                      onSave={(mode, d) => void handleUpdateStart(row.id, mode, d)}
+                    />
+                    <button
+                      type="button"
+                      disabled={saving || rows.length <= 1}
+                      onClick={() => void handleRemove(row.id)}
+                      style={{
+                        marginTop: 10,
+                        padding: '6px 12px',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.danger}`,
+                        background: COLORS.dangerBg,
+                        color: COLORS.danger,
+                        cursor: saving ? 'wait' : 'pointer',
+                        opacity: rows.length <= 1 ? 0.45 : 1,
+                      }}
+                    >
+                      적용 해제
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+
+        <section
+          style={{
+            borderTop: `2px solid ${COLORS.border}`,
+            paddingTop: 16,
+            marginTop: 4,
+            padding: '16px 12px 0',
+            borderRadius: RADIUS.md,
+            background: 'rgba(255,255,255,0.6)',
+          }}
+        >
+          <p style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 800, color: COLORS.textPrimary }}>
+            다른 세트에 적용하기
+          </p>
           <p style={{ margin: '0 0 12px', fontSize: 12, lineHeight: 1.55, color: COLORS.textSecondary }}>
-            루틴을 이 단어세트에 어떻게 적용할까요?
+            아직 연결하지 않은 단어 세트를 선택해 이 루틴을 추가로 적용할 수 있습니다.
           </p>
 
-          <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>단어 세트</label>
-          <select
-            value={newSet}
-            onChange={(e) => setNewSet(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              borderRadius: RADIUS.sm,
-              border: `1px solid ${COLORS.border}`,
-              marginBottom: 14,
-              fontSize: 14,
-            }}
-          >
-            <option value="">선택…</option>
-            {(wordSetNames || []).map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
+          {!canAddMore ? (
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: COLORS.textHint }}>
+              추가할 수 있는 세트가 없습니다. (모든 세트가 이미 적용 중이거나 등록된 세트가 없습니다.)
+            </p>
+          ) : (
+            <>
+              <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>단어 세트</label>
+              <select
+                value={newSet}
+                onChange={(e) => setNewSet(e.target.value)}
+                disabled={saving}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  marginBottom: 14,
+                  fontSize: 14,
+                }}
+              >
+                <option value="">선택…</option>
+                {(wordSetNames || []).map((n) => {
+                  const applied = appliedSetNames.has(String(n || '').trim())
+                  return (
+                    <option key={n} value={n} disabled={applied}>
+                      {applied ? `${n} (이미 적용됨)` : n}
+                    </option>
+                  )
+                })}
+              </select>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
-              <input type="radio" name="newRoutineApplyMode" checked={newMode === 'join'} onChange={() => setNewMode('join')} />
-              <span>
-                <strong>학생별 가입일 기준 (자유 학습)</strong>
-                <span style={{ display: 'block', fontSize: 12, color: COLORS.textSecondary, marginTop: 4 }}>
-                  학생이 세트에 가입한 날부터 DAY 1로 시작합니다. 학생마다 진도가 다릅니다.
-                </span>
-              </span>
-            </label>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
-              <input type="radio" name="newRoutineApplyMode" checked={newMode === 'fixed'} onChange={() => setNewMode('fixed')} />
-              <span style={{ flex: 1 }}>
-                <strong>학원 고정 시작일 (단체 수강)</strong>
-                <span style={{ display: 'block', fontSize: 12, color: COLORS.textSecondary, marginTop: 4 }}>
-                  선택한 날짜(KST)부터 전원 DAY 1. 늦게 가입한 학생은 그날 기준 현재 DAY로 들어갑니다. 시작 전에는 DAY 1 대기입니다.
-                  시작 후 경과가 총 {td}일을 넘으면 마지막 DAY로 고정됩니다.
-                </span>
-                {newMode === 'fixed' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
                   <input
-                    type="date"
-                    value={newStartDate}
-                    onChange={(e) => setNewStartDate(e.target.value)}
-                    style={{
-                      marginTop: 8,
-                      padding: '8px 10px',
-                      borderRadius: RADIUS.sm,
-                      border: `1px solid ${COLORS.border}`,
-                      fontSize: 14,
-                    }}
+                    type="radio"
+                    name="newRoutineApplyMode"
+                    checked={newMode === 'join'}
+                    onChange={() => setNewMode('join')}
                   />
-                ) : null}
-              </span>
-            </label>
-          </div>
+                  <span>
+                    <strong>학생별 가입일 기준 (자유 학습)</strong>
+                    <span style={{ display: 'block', fontSize: 12, color: COLORS.textSecondary, marginTop: 4 }}>
+                      학생이 세트에 가입한 날부터 DAY 1로 시작합니다. 학생마다 진도가 다릅니다.
+                    </span>
+                  </span>
+                </label>
+                <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
+                  <input
+                    type="radio"
+                    name="newRoutineApplyMode"
+                    checked={newMode === 'fixed'}
+                    onChange={() => setNewMode('fixed')}
+                  />
+                  <span style={{ flex: 1 }}>
+                    <strong>학원 고정 시작일 (단체 수강)</strong>
+                    <span style={{ display: 'block', fontSize: 12, color: COLORS.textSecondary, marginTop: 4 }}>
+                      선택한 날짜(KST)부터 전원 DAY 1. 늦게 가입한 학생은 그날 기준 현재 DAY로 들어갑니다. 시작 전에는 DAY
+                      1 대기입니다. 시작 후 경과가 총 {td}일을 넘으면 마지막 DAY로 고정됩니다.
+                    </span>
+                    {newMode === 'fixed' ? (
+                      <input
+                        type="date"
+                        value={newStartDate}
+                        onChange={(e) => setNewStartDate(e.target.value)}
+                        style={{
+                          marginTop: 8,
+                          padding: '8px 10px',
+                          borderRadius: RADIUS.sm,
+                          border: `1px solid ${COLORS.border}`,
+                          fontSize: 14,
+                        }}
+                      />
+                    ) : null}
+                  </span>
+                </label>
+              </div>
+            </>
+          )}
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
             <button
@@ -320,7 +401,7 @@ export default function RoutineApplicationsModal({
             </button>
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || !canAddMore || !newSet.trim()}
               onClick={() => void handleAdd()}
               style={{
                 padding: '10px 16px',
@@ -329,13 +410,14 @@ export default function RoutineApplicationsModal({
                 background: COLORS.headerGradient,
                 color: COLORS.textOnGreen,
                 fontWeight: 700,
-                cursor: saving ? 'wait' : 'pointer',
+                cursor: saving || !canAddMore || !newSet.trim() ? 'not-allowed' : 'pointer',
+                opacity: saving || !canAddMore || !newSet.trim() ? 0.55 : 1,
               }}
             >
               {saving ? '처리 중…' : '세트 추가'}
             </button>
           </div>
-        </div>
+        </section>
       </div>
     </div>
   )

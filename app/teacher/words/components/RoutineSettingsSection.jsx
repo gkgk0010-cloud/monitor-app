@@ -1427,7 +1427,7 @@ export default function RoutineSettingsSection({
                   cursor: 'pointer',
                 }}
               >
-                세트 적용 관리 →
+                시작일 변경하기 →
               </button>
             </div>
           ) : null}
