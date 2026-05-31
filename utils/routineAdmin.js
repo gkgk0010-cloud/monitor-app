@@ -42,8 +42,11 @@ export function parseRestDayNumbers(input, totalDays) {
 /**
  * 비휴일 day_number 한 개에 대한 routine_tasks 행 (order_index 순)
  * @param {{ task_type: string, is_required: boolean }[]} [learningModeTasks] 세트 available_modes 기반 학습 모드 태스크 (암기·리콜 등)
+ * @param {{ totalDays?: number, dayDirection?: 'forward' | 'reverse' }} [opts]
  */
-export function buildTasksForStudyDay(dayNumber, reviewOffsets, learningModeTasks = []) {
+export function buildTasksForStudyDay(dayNumber, reviewOffsets, learningModeTasks = [], opts = {}) {
+  const td = opts.totalDays != null ? Math.max(1, parseInt(String(opts.totalDays), 10) || 1) : null
+  const dayDirection = opts.dayDirection === 'reverse' ? 'reverse' : 'forward'
   const tasks = []
   let order = 0
   tasks.push({
@@ -67,7 +70,19 @@ export function buildTasksForStudyDay(dayNumber, reviewOffsets, learningModeTask
   }
   for (let i = 0; i < reviewOffsets.length; i++) {
     const off = reviewOffsets[i]
-    if (dayNumber > off) {
+    if (dayDirection === 'reverse') {
+      const targetDay = dayNumber + off
+      if (td == null || targetDay <= td) {
+        tasks.push({
+          task_type: 'vocab_review',
+          target_day: targetDay,
+          review_round: i + 1,
+          pass_score: null,
+          order_index: order++,
+          is_available: true,
+        })
+      }
+    } else if (dayNumber > off) {
       tasks.push({
         task_type: 'vocab_review',
         target_day: dayNumber - off,
@@ -192,7 +207,10 @@ export async function createRoutineWithDaysAndTasks({
     for (const day of sortedDays) {
       if (day.is_rest) continue
       const dn = Number(day.day_number)
-      const taskDefs = buildTasksForStudyDay(dn, reviewOffsets, learningModeTasks)
+      const taskDefs = buildTasksForStudyDay(dn, reviewOffsets, learningModeTasks, {
+        totalDays: td,
+        dayDirection: day_direction,
+      })
       if (taskDefs.length === 0) continue
 
       const taskRows = taskDefs.map((t) => {
@@ -303,6 +321,7 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
     .sort((a, b) => a - b)
 
   const offsets = new Set()
+  const dayDir = r.day_direction === 'reverse' ? 'reverse' : 'forward'
   for (const d of dayList) {
     if (d.is_rest) continue
     const dn = Number(d.day_number)
@@ -311,7 +330,7 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
       const tt = String(t.task_type || '').toLowerCase()
       if (tt === 'vocab_review' && t.target_day != null) {
         const td = Number(t.target_day)
-        const off = dn - td
+        const off = dayDir === 'reverse' ? td - dn : dn - td
         if (off > 0) offsets.add(off)
       }
     }
@@ -489,7 +508,10 @@ export async function updateRoutineWithDaysAndTasks(
     for (const day of sortedDays) {
       if (day.is_rest) continue
       const dn = Number(day.day_number)
-      const taskDefs = buildTasksForStudyDay(dn, reviewOffsets, learningModeTasks)
+      const taskDefs = buildTasksForStudyDay(dn, reviewOffsets, learningModeTasks, {
+        totalDays: td,
+        dayDirection: day_direction,
+      })
       if (taskDefs.length === 0) continue
 
       const taskRows = taskDefs.map((t) => {
