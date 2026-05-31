@@ -86,7 +86,7 @@ export async function fetchTeacherRoutinesWithStats(teacherId) {
 
   const { data: routines, error } = await supabase
     .from('routines')
-    .select('id, title, set_name, total_days, created_at, routine_applications(id, set_name, start_date)')
+    .select('id, title, set_name, total_days, created_at, reset_policy, day_direction, routine_applications(id, set_name, start_date)')
     .eq('teacher_id', teacherId)
     .order('created_at', { ascending: false })
 
@@ -136,11 +136,17 @@ export async function createRoutineWithDaysAndTasks({
   learningModeTasks = [],
   /** @type {string[]} 복습 방식 키 (예: ['test','reading']) */
   reviewModes = ['test'],
+  /** @type {'none' | 'monthly_kst'} */
+  resetPolicy = 'none',
+  /** @type {'forward' | 'reverse'} */
+  dayDirection = 'forward',
 }) {
   const td = Math.max(1, parseInt(String(totalDays), 10) || 1)
   const restSet = new Set(restDayNumbers.filter((d) => d >= 1 && d <= td))
 
   const review_modes = Array.isArray(reviewModes) && reviewModes.length > 0 ? reviewModes : ['test']
+  const reset_policy = resetPolicy === 'monthly_kst' ? 'monthly_kst' : 'none'
+  const day_direction = dayDirection === 'reverse' ? 'reverse' : 'forward'
 
   const { data: routineRow, error: e1 } = await supabase
     .from('routines')
@@ -150,6 +156,8 @@ export async function createRoutineWithDaysAndTasks({
       set_name: String(setName).trim(),
       total_days: td,
       review_modes,
+      reset_policy,
+      day_direction,
     })
     .select('id')
     .single()
@@ -246,7 +254,7 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
 
   const { data: r, error: er } = await supabase
     .from('routines')
-    .select('id, title, set_name, total_days, review_modes, teacher_id')
+    .select('id, title, set_name, total_days, review_modes, teacher_id, reset_policy, day_direction')
     .eq('id', routineId)
     .eq('teacher_id', teacherId)
     .maybeSingle()
@@ -341,6 +349,21 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
 
   const setNameFromApp = appFirst?.[0]?.set_name != null ? String(appFirst[0].set_name) : ''
 
+  const { data: appRows, error: eAppList } = await supabase
+    .from('routine_applications')
+    .select('set_name, start_date')
+    .eq('routine_id', routineId)
+    .order('created_at', { ascending: true })
+
+  if (eAppList) {
+    return { ok: false, error: errMessage(eAppList) }
+  }
+
+  const applications = (appRows || []).map((a) => ({
+    set_name: a.set_name != null ? String(a.set_name) : '',
+    start_date: a.start_date != null ? String(a.start_date).slice(0, 10) : null,
+  }))
+
   return {
     ok: true,
     data: {
@@ -352,6 +375,9 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
       restDayNumbers,
       reviewOffsets: reviewOffsets.length > 0 ? reviewOffsets : [1, 3, 7],
       learningModeTasks,
+      resetPolicy: r.reset_policy === 'monthly_kst' ? 'monthly_kst' : 'none',
+      dayDirection: r.day_direction === 'reverse' ? 'reverse' : 'forward',
+      applications,
     },
   }
 }
@@ -372,6 +398,10 @@ export async function updateRoutineWithDaysAndTasks(
     learningModeTasks = [],
     /** @type {string[]} */
     reviewModes = ['test'],
+    /** @type {'none' | 'monthly_kst'} */
+    resetPolicy = 'none',
+    /** @type {'forward' | 'reverse'} */
+    dayDirection = 'forward',
   },
 ) {
   if (!routineId || !teacherId) {
@@ -395,6 +425,8 @@ export async function updateRoutineWithDaysAndTasks(
   const td = Math.max(1, parseInt(String(totalDays), 10) || 1)
   const restSet = new Set(restDayNumbers.filter((d) => d >= 1 && d <= td))
   const review_modes = Array.isArray(reviewModes) && reviewModes.length > 0 ? reviewModes : ['test']
+  const reset_policy = resetPolicy === 'monthly_kst' ? 'monthly_kst' : 'none'
+  const day_direction = dayDirection === 'reverse' ? 'reverse' : 'forward'
 
   const { data: existingDays, error: eDay } = await supabase
     .from('routine_days')
@@ -411,6 +443,8 @@ export async function updateRoutineWithDaysAndTasks(
       title: String(title).trim(),
       total_days: td,
       review_modes,
+      reset_policy,
+      day_direction,
     })
     .eq('id', routineId)
     .eq('teacher_id', teacherId)

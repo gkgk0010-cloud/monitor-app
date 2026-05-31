@@ -174,6 +174,9 @@ export default function RoutineSettingsSection({
   const [totalDaysInput, setTotalDaysInput] = useState('28')
   const [reviewCycleInput, setReviewCycleInput] = useState('+1+3+7')
   const [restDaysInput, setRestDaysInput] = useState('DAY7, DAY14, DAY21')
+  const [resetPolicy, setResetPolicy] = useState('none')
+  const [dayDirection, setDayDirection] = useState('forward')
+  const [editApplications, setEditApplications] = useState([])
   /** 해당 선생님 word_sets.name 전부 — 세트 상세에서만 넘어오는 setNames 한 줄 문제 보완 */
   const [wordSetNamesFromDb, setWordSetNamesFromDb] = useState([])
 
@@ -314,6 +317,9 @@ export default function RoutineSettingsSection({
     setTotalDaysInput('28')
     setReviewCycleInput('+1+3+7')
     setRestDaysInput('DAY7, DAY14, DAY21')
+    setResetPolicy('none')
+    setDayDirection('forward')
+    setEditApplications([])
     setSaveError(null)
   }
 
@@ -335,6 +341,9 @@ export default function RoutineSettingsSection({
       setReviewCycleInput(d.reviewOffsets?.length ? `+${d.reviewOffsets.join('+')}` : '+1+3+7')
       setRestDaysInput(d.restDayNumbers?.length ? d.restDayNumbers.map((n) => `DAY${n}`).join(', ') : '')
       setReviewSteps(normalizeReviewModesToSteps(d.reviewModes))
+      setResetPolicy(d.resetPolicy === 'monthly_kst' ? 'monthly_kst' : 'none')
+      setDayDirection(d.dayDirection === 'reverse' ? 'reverse' : 'forward')
+      setEditApplications(Array.isArray(d.applications) ? d.applications : [])
       setFormOpen(true)
       const keys = await loadModesForSet(d.setName)
       const optionalKeys = keys?.optionalKeys ?? []
@@ -480,6 +489,8 @@ export default function RoutineSettingsSection({
           restDayNumbers,
           learningModeTasks,
           reviewModes: review_modes,
+          resetPolicy,
+          dayDirection,
         })
       : await createRoutineWithDaysAndTasks({
           teacherId,
@@ -490,6 +501,8 @@ export default function RoutineSettingsSection({
           restDayNumbers,
           learningModeTasks,
           reviewModes: review_modes,
+          resetPolicy,
+          dayDirection,
         })
     setSaving(false)
 
@@ -655,7 +668,16 @@ export default function RoutineSettingsSection({
           routineTitle={appsModalRoutine.title}
           totalDays={appsModalRoutine.total_days}
           wordSetNames={defaultSetNames}
-          onChanged={() => void load()}
+          onChanged={() => {
+            void load()
+            if (editingRoutineId && teacherId) {
+              void fetchRoutineForEdit(editingRoutineId, teacherId).then((res) => {
+                if (res.ok && res.data?.applications) {
+                  setEditApplications(res.data.applications)
+                }
+              })
+            }
+          }}
         />
       ) : null}
 
@@ -1268,6 +1290,147 @@ export default function RoutineSettingsSection({
               비워 두면 휴식일 없음으로 저장됩니다. 총 DAY 수를 넘는 번호는 무시됩니다.
             </span>
           </label>
+
+          <div
+            style={{
+              marginTop: 8,
+              padding: '16px 14px',
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.border}`,
+              background: 'rgba(248,250,252,0.9)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+            }}
+          >
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: COLORS.textPrimary }}>고급 설정</p>
+
+            <fieldset style={{ margin: 0, padding: 0, border: 'none' }}>
+              <legend style={{ fontSize: 13, fontWeight: 600, color: COLORS.textSecondary, marginBottom: 8 }}>
+                월 초기화 정책
+              </legend>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer', fontSize: 13 }}>
+                  <input
+                    type="radio"
+                    name="routineResetPolicy"
+                    checked={resetPolicy === 'none'}
+                    onChange={() => setResetPolicy('none')}
+                  />
+                  <span>
+                    <strong>누적 (기본)</strong>
+                    <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
+                      DAY 진행이 계속 이어집니다.
+                    </span>
+                  </span>
+                </label>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer', fontSize: 13 }}>
+                  <input
+                    type="radio"
+                    name="routineResetPolicy"
+                    checked={resetPolicy === 'monthly_kst'}
+                    onChange={() => setResetPolicy('monthly_kst')}
+                  />
+                  <span>
+                    <strong>매월 1일 초기화 (KST)</strong>
+                    <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
+                      학생별 가입일(자율) 루틴에 적용됩니다. 매월 1일 DAY가 처음으로 돌아가며 완료 기록은 보존됩니다. 고정
+                      시작일(단체) 세트는 날짜 달력이 우선합니다.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset style={{ margin: 0, padding: 0, border: 'none' }}>
+              <legend style={{ fontSize: 13, fontWeight: 600, color: COLORS.textSecondary, marginBottom: 8 }}>
+                진행 방향
+              </legend>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer', fontSize: 13 }}>
+                  <input
+                    type="radio"
+                    name="routineDayDirection"
+                    checked={dayDirection === 'forward'}
+                    onChange={() => setDayDirection('forward')}
+                  />
+                  <span>
+                    <strong>정방향 (기본)</strong>
+                    <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
+                      DAY 1 → 총 DAY 수까지 진행
+                    </span>
+                  </span>
+                </label>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer', fontSize: 13 }}>
+                  <input
+                    type="radio"
+                    name="routineDayDirection"
+                    checked={dayDirection === 'reverse'}
+                    onChange={() => setDayDirection('reverse')}
+                  />
+                  <span>
+                    <strong>역방향</strong>
+                    <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
+                      DAY N(총 DAY) → 1까지 내려갑니다. 복습 주기(+1·+3·+7)는 며칠 뒤 다시 보기로 동일합니다.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          {editingRoutineId && editApplications.length > 0 ? (
+            <div
+              style={{
+                padding: '14px 14px',
+                borderRadius: RADIUS.md,
+                border: `1px dashed ${COLORS.border}`,
+                background: 'rgba(255,255,255,0.95)',
+              }}
+            >
+              <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 800, color: COLORS.textPrimary }}>
+                시작일 적용 상태
+              </p>
+              <ul style={{ margin: '0 0 12px', paddingLeft: 18, fontSize: 13, lineHeight: 1.55, color: COLORS.textSecondary }}>
+                {editApplications.map((a) => {
+                  const sn = String(a.set_name || '').trim() || '—'
+                  const label = a.start_date
+                    ? `${String(a.start_date).slice(0, 10)} 고정`
+                    : '학생 가입일 기준'
+                  return (
+                    <li key={sn}>
+                      <strong style={{ color: COLORS.textPrimary }}>{sn}</strong>: {label}
+                    </li>
+                  )
+                })}
+              </ul>
+              <button
+                type="button"
+                onClick={() => {
+                  const row = routines.find((r) => String(r.id) === String(editingRoutineId))
+                  if (row) {
+                    setAppsModalRoutine({
+                      id: row.id,
+                      title: row.title || '',
+                      total_days: row.total_days,
+                    })
+                  }
+                }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.primary}`,
+                  background: COLORS.bg,
+                  color: COLORS.primary,
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                세트 적용 관리 →
+              </button>
+            </div>
+          ) : null}
 
           {saveError ? (
             <p style={{ color: COLORS.danger, margin: 0, fontSize: 14, fontWeight: 600 }}>{saveError}</p>
