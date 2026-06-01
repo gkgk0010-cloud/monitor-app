@@ -123,19 +123,18 @@ function orderQuestionsByTypeGroups(questions, typesList, orderSeed) {
 
 const ANSWER_KEY_COLUMN_COUNT = 3;
 
-/** 답안지: 세로 우선 칼럼 분배 — 앞 칼럼부터 나머지 +1 */
-function distributeAnswerKeyToColumns(items, columnCount = ANSWER_KEY_COLUMN_COUNT) {
+/** 답안지: 세로 우선 칼럼 분배 (앞 칼럼부터 나머지 +1) */
+function distributeAnswerKeyColumns(items, columnCount = ANSWER_KEY_COLUMN_COUNT) {
   const n = items.length;
   if (n === 0 || columnCount <= 0) return [];
-  const cols = Array.from({ length: columnCount }, () => []);
   const base = Math.floor(n / columnCount);
   const rem = n % columnCount;
+  const cols = [];
   let idx = 0;
   for (let c = 0; c < columnCount; c++) {
     const size = base + (c < rem ? 1 : 0);
-    for (let i = 0; i < size; i++) {
-      if (idx < n) cols[c].push(items[idx++]);
-    }
+    cols.push(items.slice(idx, idx + size));
+    idx += size;
   }
   return cols;
 }
@@ -1132,20 +1131,20 @@ export default function TeacherTestPage() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: '8px 24px',
-                  alignItems: 'start',
+                  gridTemplateColumns: `repeat(${ANSWER_KEY_COLUMN_COUNT}, 1fr)`,
+                  gap: '8px 16px',
                   fontSize: 13,
                   marginBottom: 16,
+                  alignItems: 'start',
                 }}
               >
-                {distributeAnswerKeyToColumns(
+                {distributeAnswerKeyColumns(
                   previewQuestions.filter((q) => {
                     const t = normalizeType(q.type);
                     return t === 'word_to_meaning' || t === 'meaning_to_word';
                   }),
-                ).map((col, ci) => (
-                  <div key={`mc-col-${ci}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                ).map((col, colIdx) => (
+                  <div key={`mc-col-${colIdx}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {col.map((q) => (
                       <div key={`k-${q.number}`}>
                         {q.number}. {formatKeyLine(q)}
@@ -1158,19 +1157,19 @@ export default function TeacherTestPage() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: '8px 24px',
-                  alignItems: 'start',
+                  gridTemplateColumns: `repeat(${ANSWER_KEY_COLUMN_COUNT}, 1fr)`,
+                  gap: '8px 16px',
                   fontSize: 13,
+                  alignItems: 'start',
                 }}
               >
-                {distributeAnswerKeyToColumns(
+                {distributeAnswerKeyColumns(
                   previewQuestions.filter((q) => {
                     const t = normalizeType(q.type);
                     return t !== 'word_to_meaning' && t !== 'meaning_to_word';
                   }),
-                ).map((col, ci) => (
-                  <div key={`sub-col-${ci}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                ).map((col, colIdx) => (
+                  <div key={`sub-col-${colIdx}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {col.map((q) => (
                       <div key={`sk-${q.number}`}>
                         {q.number}. {formatKeyLine(q)}
