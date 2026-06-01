@@ -121,6 +121,25 @@ function orderQuestionsByTypeGroups(questions, typesList, orderSeed) {
   return out.map((q, i) => ({ ...q, type: normalizeType(q.type), number: i + 1 }));
 }
 
+const ANSWER_KEY_COLUMN_COUNT = 3;
+
+/** 답안지: 세로 우선 칼럼 분배 — 앞 칼럼부터 나머지 +1 */
+function distributeAnswerKeyToColumns(items, columnCount = ANSWER_KEY_COLUMN_COUNT) {
+  const n = items.length;
+  if (n === 0 || columnCount <= 0) return [];
+  const cols = Array.from({ length: columnCount }, () => []);
+  const base = Math.floor(n / columnCount);
+  const rem = n % columnCount;
+  let idx = 0;
+  for (let c = 0; c < columnCount; c++) {
+    const size = base + (c < rem ? 1 : 0);
+    for (let i = 0; i < size; i++) {
+      if (idx < n) cols[c].push(items[idx++]);
+    }
+  }
+  return cols;
+}
+
 function validateQuestions(questions, wordPool, expectedLen) {
   if (!Array.isArray(questions) || questions.length !== expectedLen) {
     return { ok: false, reason: `문항 개수 불일치 (기대 ${expectedLen}개)` };
@@ -1114,33 +1133,51 @@ export default function TeacherTestPage() {
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: '8px 16px',
+                  gap: '8px 24px',
+                  alignItems: 'start',
                   fontSize: 13,
                   marginBottom: 16,
                 }}
               >
-                {previewQuestions
-                  .filter((q) => {
+                {distributeAnswerKeyToColumns(
+                  previewQuestions.filter((q) => {
                     const t = normalizeType(q.type);
                     return t === 'word_to_meaning' || t === 'meaning_to_word';
-                  })
-                  .map((q) => (
-                    <div key={`k-${q.number}`}>
-                      {q.number}. {formatKeyLine(q)}
-                    </div>
-                  ))}
+                  }),
+                ).map((col, ci) => (
+                  <div key={`mc-col-${ci}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {col.map((q) => (
+                      <div key={`k-${q.number}`}>
+                        {q.number}. {formatKeyLine(q)}
+                      </div>
+                    ))}
+                  </div>
+                ))}
               </div>
               <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 8, color: '#334155' }}>[주관식·빈칸 답]</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-                {previewQuestions.map((q) => {
-                  const t = normalizeType(q.type);
-                  if (t === 'word_to_meaning' || t === 'meaning_to_word') return null;
-                  return (
-                    <div key={`sk-${q.number}`}>
-                      {q.number}. {formatKeyLine(q)}
-                    </div>
-                  );
-                })}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '8px 24px',
+                  alignItems: 'start',
+                  fontSize: 13,
+                }}
+              >
+                {distributeAnswerKeyToColumns(
+                  previewQuestions.filter((q) => {
+                    const t = normalizeType(q.type);
+                    return t !== 'word_to_meaning' && t !== 'meaning_to_word';
+                  }),
+                ).map((col, ci) => (
+                  <div key={`sub-col-${ci}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {col.map((q) => (
+                      <div key={`sk-${q.number}`}>
+                        {q.number}. {formatKeyLine(q)}
+                      </div>
+                    ))}
+                  </div>
+                ))}
               </div>
             </div>
           ) : null}
