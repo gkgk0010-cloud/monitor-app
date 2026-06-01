@@ -23,8 +23,9 @@ import {
   normalizeSetType,
 } from '../utils/learningModes'
 
-/** @param {{ set_name?: string, routine_applications?: { set_name?: string, start_date?: string | null }[] }} r */
+/** @param {{ set_name?: string, routine_type?: string, routine_applications?: { set_name?: string, start_date?: string | null }[] }} r */
 function formatRoutineApplicationsSummary(r) {
+  const isWhole = r?.routine_type === 'whole_set'
   const apps = r?.routine_applications
   if (!Array.isArray(apps) || apps.length === 0) {
     return r?.set_name ? String(r.set_name) : '적용 세트 없음'
@@ -32,6 +33,7 @@ function formatRoutineApplicationsSummary(r) {
   return apps
     .map((a) => {
       const sn = String(a.set_name || '').trim()
+      if (isWhole) return `${sn} — 자율 전용`
       if (!a.start_date) return `${sn} — 학생별 가입일`
       const d = String(a.start_date)
       return `${sn} — ${d} 고정 시작`
@@ -52,6 +54,15 @@ const REVIEW_MODE_OPTIONS = [
   { key: 'booster', label: '🤖 AI 부스터 (별표 단어 복습)' },
   { key: 'wrong_note', label: '오답노트' },
 ]
+
+/** whole_set MVP — 오답노트 / AI부스터 / 테스트만 */
+const WHOLE_SET_REVIEW_STEP_OPTIONS = [
+  { key: 'wrong_note', label: '오답노트' },
+  { key: 'booster', label: '🤖 AI 부스터 (별표 단어 복습)' },
+  { key: 'test', label: '테스트로 복습' },
+]
+
+const WHOLE_SET_MVP_KEYS = new Set(['wrong_note', 'booster', 'test'])
 
 /** 루틴 복습 단계 편집(순서 유지) — 드롭다운에 나올 옵션 */
 const REVIEW_STEP_ADD_OPTIONS = [...REVIEW_MODE_OPTIONS]
@@ -153,6 +164,8 @@ export default function RoutineSettingsSection({
 
   const [routineName, setRoutineName] = useState('')
   const [selectedSet, setSelectedSet] = useState('')
+  /** @type {'day_split' | 'whole_set'} */
+  const [routineType, setRoutineType] = useState('day_split')
   const [modesLoading, setModesLoading] = useState(false)
   const [currentSetType, setCurrentSetType] = useState('word')
   const [testPassScore, setTestPassScore] = useState(80)
@@ -188,6 +201,9 @@ export default function RoutineSettingsSection({
     () => buildDropdownSetNames(wordSetNamesFromDb, setNames, selectedSet),
     [wordSetNamesFromDb, setNames, selectedSet],
   )
+
+  const isWholeSet = routineType === 'whole_set'
+  const reviewStepOptions = isWholeSet ? WHOLE_SET_REVIEW_STEP_OPTIONS : REVIEW_STEP_ADD_OPTIONS
 
   const load = useCallback(async () => {
     if (!teacherId) {
@@ -297,16 +313,17 @@ export default function RoutineSettingsSection({
     }
   }, [teacherId])
 
-  /** 신규 루틴 폼: 세트 선택 시 모드 로드. 편집 진입은 handleStartEdit에서만 로드해 덮어쓰기 방지 */
+  /** 신규 day_split 루틴 폼: 세트 선택 시 모드 로드. whole_set·편집 진입은 제외 */
   useEffect(() => {
-    if (!formOpen || !selectedSet || editingRoutineId) return
+    if (!formOpen || !selectedSet || editingRoutineId || isWholeSet) return
     void loadModesForSet(selectedSet)
-  }, [formOpen, selectedSet, loadModesForSet, editingRoutineId])
+  }, [formOpen, selectedSet, loadModesForSet, editingRoutineId, isWholeSet])
 
   const resetForm = () => {
     setEditingRoutineId(null)
     setRoutineName('')
     setSelectedSet(defaultSetNames[0] || '')
+    setRoutineType('day_split')
     setRequiredModeKeys([])
     setOptionalModeKeys([])
     setIncludeOptional({})
@@ -335,6 +352,7 @@ export default function RoutineSettingsSection({
       }
       const d = res.data
       setEditingRoutineId(d.routineId)
+      setRoutineType(d.routineType === 'whole_set' ? 'whole_set' : 'day_split')
       setRoutineName(d.title || '')
       setSelectedSet(d.setName || '')
       setTotalDaysInput(String(d.totalDays ?? 28))
@@ -345,13 +363,15 @@ export default function RoutineSettingsSection({
       setDayDirection(d.dayDirection === 'reverse' ? 'reverse' : 'forward')
       setEditApplications(Array.isArray(d.applications) ? d.applications : [])
       setFormOpen(true)
-      const keys = await loadModesForSet(d.setName)
-      const optionalKeys = keys?.optionalKeys ?? []
-      const inc = {}
-      for (const k of optionalKeys) {
-        inc[k] = d.learningModeTasks.some((t) => t.task_type === k)
+      if (d.routineType !== 'whole_set') {
+        const keys = await loadModesForSet(d.setName)
+        const optionalKeys = keys?.optionalKeys ?? []
+        const inc = {}
+        for (const k of optionalKeys) {
+          inc[k] = d.learningModeTasks.some((t) => t.task_type === k)
+        }
+        setIncludeOptional(inc)
       }
-      setIncludeOptional(inc)
     } catch (err) {
       setToast({ tone: 'err', message: formatRoutineError(err) })
     } finally {
@@ -459,13 +479,19 @@ export default function RoutineSettingsSection({
       return
     }
 
-    const reviewOffsets = parseReviewOffsets(reviewCycleInput)
-    const restDayNumbers = parseRestDayNumbers(restDaysInput, totalDays)
-
     if (!reviewSteps.length) {
       setSaveError('복습 방식(단계)을 1개 이상 추가하세요.')
       return
     }
+
+    if (isWholeSet) {
+      const invalid = reviewSteps.some((s) => !WHOLE_SET_MVP_KEYS.has(s.key))
+      if (invalid) {
+        setSaveError('전체 루틴은 오답노트·AI부스터·테스트만 선택할 수 있습니다.')
+        return
+      }
+    }
+
     const review_modes = reviewSteps.map((s) =>
       s.key === 'wrong_note'
         ? { mode: 'wrong_note' }
@@ -474,36 +500,69 @@ export default function RoutineSettingsSection({
           : { mode: s.key, wrongOnly: Boolean(s.wrongOnly) },
     )
 
-    const learningModeTasks = [
-      ...requiredModeKeys.map((k) => ({ task_type: k, is_required: true })),
-      ...optionalModeKeys.filter((k) => includeOptional[k]).map((k) => ({ task_type: k, is_required: false })),
-    ]
-
     setSaving(true)
-    const result = editingRoutineId
-      ? await updateRoutineWithDaysAndTasks(editingRoutineId, teacherId, {
-          title,
-          setName,
-          totalDays,
-          reviewOffsets,
-          restDayNumbers,
-          learningModeTasks,
-          reviewModes: review_modes,
-          resetPolicy,
-          dayDirection,
-        })
-      : await createRoutineWithDaysAndTasks({
-          teacherId,
-          title,
-          setName,
-          totalDays,
-          reviewOffsets,
-          restDayNumbers,
-          learningModeTasks,
-          reviewModes: review_modes,
-          resetPolicy,
-          dayDirection,
-        })
+    let result
+    if (isWholeSet) {
+      result = editingRoutineId
+        ? await updateRoutineWithDaysAndTasks(editingRoutineId, teacherId, {
+            title,
+            setName,
+            totalDays: 1,
+            reviewOffsets: [],
+            restDayNumbers: [],
+            learningModeTasks: [],
+            reviewModes: review_modes,
+            resetPolicy: 'none',
+            dayDirection: 'forward',
+            routineType: 'whole_set',
+          })
+        : await createRoutineWithDaysAndTasks({
+            teacherId,
+            title,
+            setName,
+            totalDays: 1,
+            reviewOffsets: [],
+            restDayNumbers: [],
+            learningModeTasks: [],
+            reviewModes: review_modes,
+            resetPolicy: 'none',
+            dayDirection: 'forward',
+            routineType: 'whole_set',
+          })
+    } else {
+      const reviewOffsets = parseReviewOffsets(reviewCycleInput)
+      const restDayNumbers = parseRestDayNumbers(restDaysInput, totalDays)
+      const learningModeTasks = [
+        ...requiredModeKeys.map((k) => ({ task_type: k, is_required: true })),
+        ...optionalModeKeys.filter((k) => includeOptional[k]).map((k) => ({ task_type: k, is_required: false })),
+      ]
+      result = editingRoutineId
+        ? await updateRoutineWithDaysAndTasks(editingRoutineId, teacherId, {
+            title,
+            setName,
+            totalDays,
+            reviewOffsets,
+            restDayNumbers,
+            learningModeTasks,
+            reviewModes: review_modes,
+            resetPolicy,
+            dayDirection,
+            routineType: 'day_split',
+          })
+        : await createRoutineWithDaysAndTasks({
+            teacherId,
+            title,
+            setName,
+            totalDays,
+            reviewOffsets,
+            restDayNumbers,
+            learningModeTasks,
+            reviewModes: review_modes,
+            resetPolicy,
+            dayDirection,
+            routineType: 'day_split',
+          })
+    }
     setSaving(false)
 
     if (!result.ok) {
@@ -666,6 +725,7 @@ export default function RoutineSettingsSection({
           teacherId={teacherId}
           routineId={String(appsModalRoutine.id)}
           routineTitle={appsModalRoutine.title}
+          routineType={appsModalRoutine.routine_type === 'whole_set' ? 'whole_set' : 'day_split'}
           totalDays={appsModalRoutine.total_days}
           wordSetNames={defaultSetNames}
           onChanged={() => {
@@ -786,8 +846,20 @@ export default function RoutineSettingsSection({
                 </div>
               </div>
               <div>
+                <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 }}>루틴 타입</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>
+                  {r.routine_type === 'whole_set' ? (
+                    <span style={{ color: '#0d9488' }}>전체 (유지·복습)</span>
+                  ) : (
+                    <span>DAY 분할</span>
+                  )}
+                </div>
+              </div>
+              <div>
                 <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 }}>총 DAY</div>
-                <div style={{ fontWeight: 700, fontSize: 16 }}>{r.total_days != null ? String(r.total_days) : '—'}</div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>
+                  {r.routine_type === 'whole_set' ? '—' : r.total_days != null ? String(r.total_days) : '—'}
+                </div>
               </div>
               <div>
                 <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 4 }}>진행 중 학생</div>
@@ -805,6 +877,7 @@ export default function RoutineSettingsSection({
                       id: r.id,
                       title: r.title || '',
                       total_days: r.total_days,
+                      routine_type: r.routine_type,
                     })
                   }
                   style={{
@@ -921,7 +994,7 @@ export default function RoutineSettingsSection({
               onChange={(e) => {
                 const v = e.target.value
                 setSelectedSet(v)
-                if (teacherId && v.trim()) void loadModesForSet(v.trim())
+                if (teacherId && v.trim() && !isWholeSet) void loadModesForSet(v.trim())
               }}
               required
               style={{
@@ -944,6 +1017,66 @@ export default function RoutineSettingsSection({
             ) : null}
           </label>
 
+          <fieldset
+            style={{
+              margin: 0,
+              padding: '14px 16px',
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.border}`,
+              background: 'rgba(249, 250, 251, 0.95)',
+            }}
+            disabled={Boolean(editingRoutineId)}
+          >
+            <legend style={{ fontSize: 14, fontWeight: 800, color: COLORS.accentText, padding: '0 6px' }}>
+              루틴 타입
+            </legend>
+            {editingRoutineId ? (
+              <p style={{ margin: '0 0 8px', fontSize: 12, color: COLORS.textHint }}>
+                저장된 루틴은 타입을 변경할 수 없습니다.
+              </p>
+            ) : null}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: editingRoutineId ? 'default' : 'pointer', fontSize: 13 }}>
+                <input
+                  type="radio"
+                  name="routineType"
+                  checked={routineType === 'day_split'}
+                  onChange={() => setRoutineType('day_split')}
+                  disabled={Boolean(editingRoutineId)}
+                />
+                <span>
+                  <strong>DAY 분할 (기본)</strong>
+                  <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
+                    신규 학습 DAY + 복습 주기. 기존 루틴과 동일합니다.
+                  </span>
+                </span>
+              </label>
+              <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: editingRoutineId ? 'default' : 'pointer', fontSize: 13 }}>
+                <input
+                  type="radio"
+                  name="routineType"
+                  checked={routineType === 'whole_set'}
+                  onChange={() => {
+                    setRoutineType('whole_set')
+                    setReviewSteps((prev) => {
+                      const filtered = prev.filter((s) => WHOLE_SET_MVP_KEYS.has(s.key))
+                      if (filtered.length > 0) return filtered
+                      return [{ id: `ws-${Date.now()}`, key: 'test', wrongOnly: false }]
+                    })
+                  }}
+                  disabled={Boolean(editingRoutineId)}
+                />
+                <span>
+                  <strong>전체 (유지·복습)</strong>
+                  <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
+                    DAY 없이 세트 전체에서 매일 같은 활동(오답노트·AI부스터·테스트)을 반복합니다. 자율 모드 전용.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          {!isWholeSet ? (
           <div
             style={{
               padding: '14px 16px',
@@ -1101,6 +1234,7 @@ export default function RoutineSettingsSection({
               </>
             )}
           </div>
+          ) : null}
 
           <div
             style={{
@@ -1113,12 +1247,20 @@ export default function RoutineSettingsSection({
               gap: 10,
             }}
           >
-            <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.accentText }}>복습 단계 구성 (순서대로 실행)</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.accentText }}>
+              {isWholeSet ? '활동 구성 (순서대로 실행)' : '복습 단계 구성 (순서대로 실행)'}
+            </div>
             <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary }}>(1단계 이상 · 위에서 아래 순서)</p>
+            {isWholeSet ? (
+              <p style={{ margin: 0, fontSize: 12, color: '#0f766e', lineHeight: 1.45 }}>
+                전체 루틴 MVP: 오답노트 · AI부스터 · 테스트만 선택 가능합니다.
+              </p>
+            ) : (
             <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
               값은 <span style={{ fontWeight: 600 }}>routines.review_modes</span>(JSON 배열)에 저장됩니다. 모드·오답노트·&quot;틀린
               단어만&quot; 옵션을 사용할 수 있어요.
             </p>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {reviewSteps.map((row, idx) => (
                 <div
@@ -1149,7 +1291,7 @@ export default function RoutineSettingsSection({
                     }}
                     style={{ flex: 1, minWidth: 160, padding: '8px 10px', fontSize: 14, fontWeight: 600 }}
                   >
-                    {REVIEW_STEP_ADD_OPTIONS.map((o) => (
+                    {reviewStepOptions.map((o) => (
                       <option key={o.key} value={o.key}>
                         {o.label}
                       </option>
@@ -1237,6 +1379,8 @@ export default function RoutineSettingsSection({
             </button>
           </div>
 
+          {!isWholeSet ? (
+          <>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textSecondary }}>총 DAY 수</span>
             <input
@@ -1378,8 +1522,10 @@ export default function RoutineSettingsSection({
               </div>
             </fieldset>
           </div>
+          </>
+          ) : null}
 
-          {editingRoutineId && editApplications.length > 0 ? (
+          {editingRoutineId && editApplications.length > 0 && !isWholeSet ? (
             <div
               style={{
                 padding: '14px 14px',
@@ -1413,6 +1559,7 @@ export default function RoutineSettingsSection({
                       id: row.id,
                       title: row.title || '',
                       total_days: row.total_days,
+                      routine_type: row.routine_type,
                     })
                   }
                 }}
@@ -1452,7 +1599,7 @@ export default function RoutineSettingsSection({
                 boxShadow: dropdownSetNames.length === 0 ? 'none' : '0 4px 16px rgba(102, 126, 234, 0.28)',
               }}
             >
-              {saving ? '저장 중…' : editingRoutineId ? '저장 (수정)' : '저장 (routine_days + routine_tasks 생성)'}
+              {saving ? '저장 중…' : editingRoutineId ? '저장 (수정)' : isWholeSet ? '저장 (전체 루틴)' : '저장 (routine_days + routine_tasks 생성)'}
             </button>
             <button
               type="button"

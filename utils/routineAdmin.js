@@ -101,7 +101,9 @@ export async function fetchTeacherRoutinesWithStats(teacherId) {
 
   const { data: routines, error } = await supabase
     .from('routines')
-    .select('id, title, set_name, total_days, created_at, reset_policy, day_direction, routine_applications(id, set_name, start_date)')
+    .select(
+      'id, title, set_name, total_days, created_at, reset_policy, day_direction, routine_type, routine_applications(id, set_name, start_date)',
+    )
     .eq('teacher_id', teacherId)
     .order('created_at', { ascending: false })
 
@@ -139,6 +141,7 @@ export async function fetchTeacherRoutinesWithStats(teacherId) {
 /**
  * routines 1행 + routine_days N행 + routine_tasks 자동 생성
  * @param {{ task_type: string, is_required: boolean }[]} [learningModeTasks] 세트 필수/선택 학습 모드 (routine_tasks.task_type)
+ * @param {'day_split' | 'whole_set'} [routineType]
  * @returns {{ ok: boolean, error?: string, routineId?: string }}
  */
 export async function createRoutineWithDaysAndTasks({
@@ -155,7 +158,43 @@ export async function createRoutineWithDaysAndTasks({
   resetPolicy = 'none',
   /** @type {'forward' | 'reverse'} */
   dayDirection = 'forward',
+  routineType = 'day_split',
 }) {
+  if (routineType === 'whole_set') {
+    const review_modes = Array.isArray(reviewModes) && reviewModes.length > 0 ? reviewModes : ['test']
+    const { data: routineRow, error: e1 } = await supabase
+      .from('routines')
+      .insert({
+        teacher_id: teacherId,
+        title: String(title).trim(),
+        set_name: String(setName).trim(),
+        total_days: 1,
+        review_modes,
+        reset_policy: 'none',
+        day_direction: 'forward',
+        routine_type: 'whole_set',
+      })
+      .select('id')
+      .single()
+
+    if (e1 || !routineRow?.id) {
+      return { ok: false, error: errMessage(e1) || '루틴을 저장하지 못했습니다.' }
+    }
+
+    const routineId = routineRow.id
+    const { error: eApp } = await supabase.from('routine_applications').insert({
+      routine_id: routineId,
+      set_name: String(setName).trim(),
+      start_date: null,
+    })
+    if (eApp) {
+      await supabase.from('routines').delete().eq('id', routineId)
+      return { ok: false, error: errMessage(eApp) || '세트 적용 등록에 실패했습니다.' }
+    }
+
+    return { ok: true, routineId }
+  }
+
   const td = Math.max(1, parseInt(String(totalDays), 10) || 1)
   const restSet = new Set(restDayNumbers.filter((d) => d >= 1 && d <= td))
 
@@ -272,7 +311,7 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
 
   const { data: r, error: er } = await supabase
     .from('routines')
-    .select('id, title, set_name, total_days, review_modes, teacher_id, reset_policy, day_direction')
+    .select('id, title, set_name, total_days, review_modes, teacher_id, reset_policy, day_direction, routine_type')
     .eq('id', routineId)
     .eq('teacher_id', teacherId)
     .maybeSingle()
@@ -283,6 +322,8 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
   if (!r) {
     return { ok: false, error: '루틴을 찾을 수 없습니다.' }
   }
+
+  const routineType = r.routine_type === 'whole_set' ? 'whole_set' : 'day_split'
 
   const { data: days, error: ed } = await supabase
     .from('routine_days')
@@ -387,6 +428,7 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
     ok: true,
     data: {
       routineId: String(r.id),
+      routineType,
       title: r.title != null ? String(r.title) : '',
       setName: setNameFromApp || (r.set_name != null ? String(r.set_name) : ''),
       totalDays: Math.max(1, parseInt(String(r.total_days), 10) || 1),
@@ -421,6 +463,8 @@ export async function updateRoutineWithDaysAndTasks(
     resetPolicy = 'none',
     /** @type {'forward' | 'reverse'} */
     dayDirection = 'forward',
+    /** @type {'day_split' | 'whole_set'} */
+    routineType = 'day_split',
   },
 ) {
   if (!routineId || !teacherId) {
@@ -429,7 +473,7 @@ export async function updateRoutineWithDaysAndTasks(
 
   const { data: owner, error: eo } = await supabase
     .from('routines')
-    .select('id')
+    .select('id, routine_type')
     .eq('id', routineId)
     .eq('teacher_id', teacherId)
     .maybeSingle()
@@ -439,6 +483,26 @@ export async function updateRoutineWithDaysAndTasks(
   }
   if (!owner) {
     return { ok: false, error: '루틴을 찾을 수 없거나 권한이 없습니다.' }
+  }
+
+  const effectiveType =
+    owner.routine_type === 'whole_set' || routineType === 'whole_set' ? 'whole_set' : 'day_split'
+
+  if (effectiveType === 'whole_set') {
+    const review_modes = Array.isArray(reviewModes) && reviewModes.length > 0 ? reviewModes : ['test']
+    const { error: eUp } = await supabase
+      .from('routines')
+      .update({
+        title: String(title).trim(),
+        review_modes,
+      })
+      .eq('id', routineId)
+      .eq('teacher_id', teacherId)
+
+    if (eUp) {
+      return { ok: false, error: errMessage(eUp) || '루틴 정보를 갱신하지 못했습니다.' }
+    }
+    return { ok: true }
   }
 
   const td = Math.max(1, parseInt(String(totalDays), 10) || 1)
@@ -635,7 +699,7 @@ export async function addRoutineApplication({ teacherId, routineId, setName, sta
   }
   const { data: owner, error: eo } = await supabase
     .from('routines')
-    .select('id')
+    .select('id, routine_type')
     .eq('id', routineId)
     .eq('teacher_id', teacherId)
     .maybeSingle()
@@ -643,6 +707,10 @@ export async function addRoutineApplication({ teacherId, routineId, setName, sta
   if (!owner) return { ok: false, error: '루틴을 찾을 수 없습니다.' }
 
   const sd = startDate != null && String(startDate).trim() !== '' ? String(startDate).trim() : null
+  if (owner.routine_type === 'whole_set' && sd) {
+    return { ok: false, error: '전체 루틴은 고정 시작일(start_date)을 사용할 수 없습니다.' }
+  }
+
   const { error } = await supabase.from('routine_applications').insert({
     routine_id: routineId,
     set_name: String(setName).trim(),
@@ -667,13 +735,16 @@ export async function updateRoutineApplicationStart({ teacherId, applicationId, 
 
   const { data: owner } = await supabase
     .from('routines')
-    .select('id')
+    .select('id, routine_type')
     .eq('id', appRow.routine_id)
     .eq('teacher_id', teacherId)
     .maybeSingle()
   if (!owner) return { ok: false, error: '권한이 없습니다.' }
 
   const sd = startDate != null && String(startDate).trim() !== '' ? String(startDate).trim() : null
+  if (owner.routine_type === 'whole_set' && sd) {
+    return { ok: false, error: '전체 루틴은 고정 시작일(start_date)을 사용할 수 없습니다.' }
+  }
   const { error } = await supabase.from('routine_applications').update({ start_date: sd }).eq('id', applicationId)
   if (error) return { ok: false, error: errMessage(error) }
   return { ok: true }

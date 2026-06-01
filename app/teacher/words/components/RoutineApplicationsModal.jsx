@@ -40,6 +40,7 @@ function isDuplicateApplicationError(err) {
  *   teacherId: string,
  *   routineId: string,
  *   routineTitle: string,
+ *   routineType?: 'day_split' | 'whole_set',
  *   totalDays: number,
  *   wordSetNames: string[],
  *   onChanged: () => void,
@@ -51,10 +52,12 @@ export default function RoutineApplicationsModal({
   teacherId,
   routineId,
   routineTitle,
+  routineType = 'day_split',
   totalDays,
   wordSetNames,
   onChanged,
 }) {
+  const isWholeSet = routineType === 'whole_set'
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
   const [error, setError] = useState(null)
@@ -122,7 +125,8 @@ export default function RoutineApplicationsModal({
       setError(DUPLICATE_APPLICATION_MSG)
       return
     }
-    const startDate = newMode === 'fixed' && newStartDate.trim() ? newStartDate.trim() : null
+    const startDate =
+      isWholeSet || newMode !== 'fixed' || !newStartDate.trim() ? null : newStartDate.trim()
     setSaving(true)
     setError(null)
     const res = await addRoutineApplication({ teacherId, routineId, setName: sn, startDate })
@@ -140,6 +144,10 @@ export default function RoutineApplicationsModal({
 
   const handleUpdateStart = async (applicationId, mode, dateStr) => {
     if (!teacherId || saving) return
+    if (isWholeSet) {
+      setError('전체 루틴은 고정 시작일을 사용할 수 없습니다.')
+      return
+    }
     const startDate = mode === 'fixed' && String(dateStr || '').trim() ? String(dateStr).trim() : null
     setSaving(true)
     setError(null)
@@ -211,8 +219,10 @@ export default function RoutineApplicationsModal({
           시작일 / 세트 적용 관리
         </h3>
         <p style={{ margin: '0 0 16px', fontSize: 13, lineHeight: 1.5, color: COLORS.textSecondary }}>
-          「{String(routineTitle || '').trim() || '루틴'}」 — 총 {td}일 템플릿을 어떤 단어세트에 연결할지, 시작일을 어떻게
-          잡을지 설정합니다.
+          「{String(routineTitle || '').trim() || '루틴'}」 —{' '}
+          {isWholeSet
+            ? '전체(유지·복습) 루틴을 어떤 단어세트에 연결할지 설정합니다. 자율 모드 전용(고정 시작일 불가).'
+            : `총 ${td}일 템플릿을 어떤 단어세트에 연결할지, 시작일을 어떻게 잡을지 설정합니다.`}
         </p>
 
         {error ? (
@@ -237,9 +247,11 @@ export default function RoutineApplicationsModal({
             <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
               {rows.map((row) => {
                 const fixed = Boolean(row.start_date)
-                const label = fixed
-                  ? `${row.start_date} 고정 시작 (KST · 현재 일수는 학생 앱 동기화)`
-                  : '학생별 가입일 기준 (자율 학습)'
+                const label = isWholeSet
+                  ? '자율 모드 전용 (학생별 가입일 기준, 고정 시작일 불가)'
+                  : fixed
+                    ? `${row.start_date} 고정 시작 (KST · 현재 일수는 학생 앱 동기화)`
+                    : '학생별 가입일 기준 (자율 학습)'
                 return (
                   <li
                     key={row.id}
@@ -254,6 +266,7 @@ export default function RoutineApplicationsModal({
                       {row.set_name}
                     </div>
                     <div style={{ fontSize: 12, color: COLORS.textSecondary, marginBottom: 10 }}>{label}</div>
+                    {!isWholeSet ? (
                     <EditStartInline
                       applicationId={row.id}
                       fixed={fixed}
@@ -261,6 +274,7 @@ export default function RoutineApplicationsModal({
                       disabled={saving}
                       onSave={(mode, d) => void handleUpdateStart(row.id, mode, d)}
                     />
+                    ) : null}
                     <button
                       type="button"
                       disabled={saving || rows.length <= 1}
@@ -335,6 +349,11 @@ export default function RoutineApplicationsModal({
                 })}
               </select>
 
+              {isWholeSet ? (
+                <p style={{ margin: '0 0 8px', fontSize: 12, lineHeight: 1.55, color: '#0f766e' }}>
+                  전체 루틴은 학생별 가입일(자율) 기준으로만 적용됩니다. 고정 시작일은 선택할 수 없습니다.
+                </p>
+              ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
                   <input
@@ -380,6 +399,7 @@ export default function RoutineApplicationsModal({
                   </span>
                 </label>
               </div>
+              )}
             </>
           )}
 
