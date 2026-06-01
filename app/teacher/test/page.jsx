@@ -96,6 +96,31 @@ function buildSlots(typesList, counts) {
   return slots;
 }
 
+/**
+ * 선생님 테스트지: UI 유형 순서대로 블록 묶음 → 블록 내부만 version seed 셔uffle.
+ * @param {object[]} questions
+ * @param {string[]} typesList 체크박스 표시 순서
+ * @param {number} orderSeed
+ */
+function orderQuestionsByTypeGroups(questions, typesList, orderSeed) {
+  const byType = new Map();
+  for (const t of typesList) byType.set(t, []);
+  for (const q of questions) {
+    const t = normalizeType(q.type);
+    if (!byType.has(t)) byType.set(t, []);
+    byType.get(t).push(q);
+  }
+  const out = [];
+  let seedOffset = orderSeed >>> 0;
+  for (const t of typesList) {
+    const group = byType.get(t) || [];
+    if (group.length === 0) continue;
+    out.push(...shuffleSeeded(group, seedOffset));
+    seedOffset = (seedOffset + group.length * 7919) >>> 0;
+  }
+  return out.map((q, i) => ({ ...q, type: normalizeType(q.type), number: i + 1 }));
+}
+
 function validateQuestions(questions, wordPool, expectedLen) {
   if (!Array.isArray(questions) || questions.length !== expectedLen) {
     return { ok: false, reason: `문항 개수 불일치 (기대 ${expectedLen}개)` };
@@ -576,8 +601,7 @@ export default function TeacherTestPage() {
       setGenProgress({ done: 1, total: 1 });
 
       const orderSeed = (VERSION_SEED[version] || 1) + n * 17;
-      const shuffled = shuffleSeeded(flat, orderSeed);
-      const renumbered = shuffled.map((q, i) => ({ ...q, type: normalizeType(q.type), number: i + 1 }));
+      const renumbered = orderQuestionsByTypeGroups(flat, typesList, orderSeed);
 
       const lo = Math.min(Number(startDay) || 1, Number(endDay) || 1);
       const hi = Math.max(Number(startDay) || 1, Number(endDay) || 1);
