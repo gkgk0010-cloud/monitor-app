@@ -39,6 +39,19 @@ export function parseRestDayNumbers(input, totalDays) {
   return [...set].sort((a, b) => a - b)
 }
 
+/** routines.review_offsets (whole_set) → 양수 배열 */
+function normalizeReviewOffsetsFromDb(raw) {
+  if (Array.isArray(raw)) {
+    const nums = raw
+      .map((n) => parseInt(String(n), 10))
+      .filter((n) => !Number.isNaN(n) && n > 0)
+    if (nums.length > 0) {
+      return [...new Set(nums)].sort((a, b) => a - b)
+    }
+  }
+  return [1, 3, 7]
+}
+
 /**
  * 비휴일 day_number 한 개에 대한 routine_tasks 행 (order_index 순)
  * @param {{ task_type: string, is_required: boolean }[]} [learningModeTasks] 세트 available_modes 기반 학습 모드 태스크 (암기·리콜 등)
@@ -162,6 +175,7 @@ export async function createRoutineWithDaysAndTasks({
 }) {
   if (routineType === 'whole_set') {
     const review_modes = Array.isArray(reviewModes) && reviewModes.length > 0 ? reviewModes : ['test']
+    const review_offsets = normalizeReviewOffsetsFromDb(reviewOffsets)
     const { data: routineRow, error: e1 } = await supabase
       .from('routines')
       .insert({
@@ -170,6 +184,7 @@ export async function createRoutineWithDaysAndTasks({
         set_name: String(setName).trim(),
         total_days: 1,
         review_modes,
+        review_offsets,
         reset_policy: 'none',
         day_direction: 'forward',
         routine_type: 'whole_set',
@@ -311,7 +326,7 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
 
   const { data: r, error: er } = await supabase
     .from('routines')
-    .select('id, title, set_name, total_days, review_modes, teacher_id, reset_policy, day_direction, routine_type')
+    .select('id, title, set_name, total_days, review_modes, review_offsets, teacher_id, reset_policy, day_direction, routine_type')
     .eq('id', routineId)
     .eq('teacher_id', teacherId)
     .maybeSingle()
@@ -324,6 +339,58 @@ export async function fetchRoutineForEdit(routineId, teacherId) {
   }
 
   const routineType = r.routine_type === 'whole_set' ? 'whole_set' : 'day_split'
+
+  if (routineType === 'whole_set') {
+    const rawRm = r.review_modes
+    const reviewModes = Array.isArray(rawRm) ? rawRm : []
+    const reviewOffsets = normalizeReviewOffsetsFromDb(r.review_offsets)
+
+    const { data: appFirst, error: eApp } = await supabase
+      .from('routine_applications')
+      .select('set_name')
+      .eq('routine_id', routineId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+
+    if (eApp) {
+      return { ok: false, error: errMessage(eApp) }
+    }
+
+    const setNameFromApp = appFirst?.[0]?.set_name != null ? String(appFirst[0].set_name) : ''
+
+    const { data: appRows, error: eAppList } = await supabase
+      .from('routine_applications')
+      .select('set_name, start_date')
+      .eq('routine_id', routineId)
+      .order('created_at', { ascending: true })
+
+    if (eAppList) {
+      return { ok: false, error: errMessage(eAppList) }
+    }
+
+    const applications = (appRows || []).map((a) => ({
+      set_name: a.set_name != null ? String(a.set_name) : '',
+      start_date: a.start_date != null ? String(a.start_date).slice(0, 10) : null,
+    }))
+
+    return {
+      ok: true,
+      data: {
+        routineId: String(r.id),
+        routineType,
+        title: r.title != null ? String(r.title) : '',
+        setName: setNameFromApp || (r.set_name != null ? String(r.set_name) : ''),
+        totalDays: Math.max(1, parseInt(String(r.total_days), 10) || 1),
+        reviewModes,
+        restDayNumbers: [],
+        reviewOffsets,
+        learningModeTasks: [],
+        resetPolicy: 'none',
+        dayDirection: 'forward',
+        applications,
+      },
+    }
+  }
 
   const { data: days, error: ed } = await supabase
     .from('routine_days')
@@ -490,11 +557,13 @@ export async function updateRoutineWithDaysAndTasks(
 
   if (effectiveType === 'whole_set') {
     const review_modes = Array.isArray(reviewModes) && reviewModes.length > 0 ? reviewModes : ['test']
+    const review_offsets = normalizeReviewOffsetsFromDb(reviewOffsets)
     const { error: eUp } = await supabase
       .from('routines')
       .update({
         title: String(title).trim(),
         review_modes,
+        review_offsets,
       })
       .eq('id', routineId)
       .eq('teacher_id', teacherId)

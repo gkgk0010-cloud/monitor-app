@@ -79,23 +79,10 @@ const WHOLE_SET_OPTIONAL_STEP_OPTIONS = [
 
 const WHOLE_SET_OPTIONAL_KEYS = new Set(['recall', 'mypick', 'test'])
 
-const WHOLE_SET_CYCLE_OPTIONS = [
-  { value: 'daily', label: '매일' },
-  { value: 'cycle_1_3_7', label: '+1/+3/+7' },
-  { value: 'weekly', label: '+7일' },
-]
-
-/** @param {unknown} v */
-function parseWholeSetCycleValue(v) {
-  const s = String(v ?? '').trim()
-  if (s === 'daily' || s === 'cycle_1_3_7' || s === 'weekly') return s
-  return 'daily'
-}
-
 /**
  * whole_set 편집 로드 — review_modes 에서 추가 활동만 추출 (필수는 UI 고정)
  * @param {unknown} rm
- * @returns {{ id: string, key: string, wrongOnly: boolean, cycle?: string }[]}
+ * @returns {{ id: string, key: string, wrongOnly: boolean }[]}
  */
 function extractWholeSetOptionalStepsFromReviewModes(rm) {
   if (!Array.isArray(rm) || rm.length === 0) return []
@@ -105,11 +92,11 @@ function extractWholeSetOptionalStepsFromReviewModes(rm) {
     if (typeof x === 'string') {
       const k = x.trim().toLowerCase()
       if (!WHOLE_SET_OPTIONAL_KEYS.has(k)) continue
-      out.push({ id: `ws-${i}-${k}`, key: k, wrongOnly: false, cycle: 'daily' })
+      out.push({ id: `ws-${i}-${k}`, key: k, wrongOnly: false })
       continue
     }
     if (x && typeof x === 'object' && 'mode' in x) {
-      const o = /** @type {{ mode?: unknown, wrongOnly?: unknown, cycle?: unknown }} */ (x)
+      const o = /** @type {{ mode?: unknown, wrongOnly?: unknown }} */ (x)
       const k = String(o.mode ?? '')
         .trim()
         .toLowerCase()
@@ -118,7 +105,6 @@ function extractWholeSetOptionalStepsFromReviewModes(rm) {
         id: `ws-${i}-${k}`,
         key: k,
         wrongOnly: Boolean(o.wrongOnly),
-        cycle: parseWholeSetCycleValue(o.cycle),
       })
     }
   }
@@ -126,14 +112,14 @@ function extractWholeSetOptionalStepsFromReviewModes(rm) {
 }
 
 /**
- * @param {{ key: string, wrongOnly?: boolean, cycle?: string }[]} optionalSteps UI 추가 활동만
+ * @param {{ key: string, wrongOnly?: boolean }[]} optionalSteps UI 추가 활동만
  * @returns {object[]}
  */
 function buildWholeSetReviewModesForSave(optionalSteps) {
   return [...WHOLE_SET_REQUIRED_SAVE_STEPS, ...optionalSteps].map((s) => {
     if (s.key === 'wrong_note') return { mode: 'wrong_note' }
     if (s.key === 'booster') return { mode: 'booster' }
-    const entry = { mode: s.key, cycle: parseWholeSetCycleValue(s.cycle) }
+    const entry = { mode: s.key }
     if (s.key === 'test' && s.wrongOnly) entry.wrongOnly = true
     return entry
   })
@@ -584,12 +570,13 @@ export default function RoutineSettingsSection({
     setSaving(true)
     let result
     if (isWholeSet) {
+      const reviewOffsets = parseReviewOffsets(reviewCycleInput)
       result = editingRoutineId
         ? await updateRoutineWithDaysAndTasks(editingRoutineId, teacherId, {
             title,
             setName,
             totalDays: 1,
-            reviewOffsets: [],
+            reviewOffsets,
             restDayNumbers: [],
             learningModeTasks: [],
             reviewModes: review_modes,
@@ -602,7 +589,7 @@ export default function RoutineSettingsSection({
             title,
             setName,
             totalDays: 1,
-            reviewOffsets: [],
+            reviewOffsets,
             restDayNumbers: [],
             learningModeTasks: [],
             reviewModes: review_modes,
@@ -1139,11 +1126,7 @@ export default function RoutineSettingsSection({
                   checked={routineType === 'whole_set'}
                   onChange={() => {
                     setRoutineType('whole_set')
-                    setReviewSteps((prev) =>
-                      prev
-                        .filter((s) => WHOLE_SET_OPTIONAL_KEYS.has(s.key))
-                        .map((s) => ({ ...s, cycle: s.cycle ?? 'daily' })),
-                    )
+                    setReviewSteps((prev) => prev.filter((s) => WHOLE_SET_OPTIONAL_KEYS.has(s.key)))
                   }}
                   disabled={Boolean(editingRoutineId)}
                 />
@@ -1385,7 +1368,8 @@ export default function RoutineSettingsSection({
                       key={row.id}
                       style={{
                         display: 'flex',
-                        flexDirection: 'column',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
                         gap: 8,
                         padding: '10px 12px',
                         borderRadius: RADIUS.sm,
@@ -1393,126 +1377,84 @@ export default function RoutineSettingsSection({
                         background: '#fff',
                       }}
                     >
-                      <div
-                        style={{
-                          display: 'flex',
-                          flexWrap: 'wrap',
-                          alignItems: 'center',
-                          gap: 8,
+                      <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.textHint, minWidth: 24 }}>{idx + 1}.</span>
+                      <select
+                        value={row.key}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setReviewSteps((prev) =>
+                            prev.map((r) =>
+                              r.id === row.id
+                                ? { ...r, key: v, wrongOnly: v === 'test' ? r.wrongOnly : false }
+                                : r,
+                            ),
+                          )
                         }}
+                        style={{ flex: 1, minWidth: 160, padding: '8px 10px', fontSize: 14, fontWeight: 600 }}
                       >
-                        <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.textHint, minWidth: 24 }}>{idx + 1}.</span>
-                        <select
-                          value={row.key}
-                          onChange={(e) => {
-                            const v = e.target.value
-                            setReviewSteps((prev) =>
-                              prev.map((r) =>
-                                r.id === row.id
-                                  ? {
-                                      ...r,
-                                      key: v,
-                                      wrongOnly: v === 'test' ? r.wrongOnly : false,
-                                      cycle: r.cycle ?? 'daily',
-                                    }
-                                  : r,
-                              ),
-                            )
+                        {WHOLE_SET_OPTIONAL_STEP_OPTIONS.map((o) => (
+                          <option key={o.key} value={o.key}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                      {row.key === 'test' ? (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
+                          <input
+                            type="checkbox"
+                            checked={!!row.wrongOnly}
+                            onChange={() =>
+                              setReviewSteps((prev) =>
+                                prev.map((r) => (r.id === row.id ? { ...r, wrongOnly: !r.wrongOnly } : r)),
+                              )
+                            }
+                          />
+                          틀린 단어만
+                        </label>
+                      ) : null}
+                      <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                        <button
+                          type="button"
+                          disabled={idx === 0}
+                          onClick={() => {
+                            if (idx === 0) return
+                            setReviewSteps((prev) => {
+                              const next = [...prev]
+                              const t = next[idx - 1]
+                              next[idx - 1] = next[idx]
+                              next[idx] = t
+                              return next
+                            })
                           }}
-                          style={{ flex: 1, minWidth: 160, padding: '8px 10px', fontSize: 14, fontWeight: 600 }}
+                          style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700 }}
                         >
-                          {WHOLE_SET_OPTIONAL_STEP_OPTIONS.map((o) => (
-                            <option key={o.key} value={o.key}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                        {row.key === 'test' ? (
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
-                            <input
-                              type="checkbox"
-                              checked={!!row.wrongOnly}
-                              onChange={() =>
-                                setReviewSteps((prev) =>
-                                  prev.map((r) => (r.id === row.id ? { ...r, wrongOnly: !r.wrongOnly } : r)),
-                                )
-                              }
-                            />
-                            틀린 단어만
-                          </label>
-                        ) : null}
-                        <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
-                          <button
-                            type="button"
-                            disabled={idx === 0}
-                            onClick={() => {
-                              if (idx === 0) return
-                              setReviewSteps((prev) => {
-                                const next = [...prev]
-                                const t = next[idx - 1]
-                                next[idx - 1] = next[idx]
-                                next[idx] = t
-                                return next
-                              })
-                            }}
-                            style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700 }}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            disabled={idx >= reviewSteps.length - 1}
-                            onClick={() => {
-                              if (idx >= reviewSteps.length - 1) return
-                              setReviewSteps((prev) => {
-                                const next = [...prev]
-                                const t = next[idx + 1]
-                                next[idx + 1] = next[idx]
-                                next[idx] = t
-                                return next
-                              })
-                            }}
-                            style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700 }}
-                          >
-                            ↓
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setReviewSteps((prev) => prev.filter((r) => r.id !== row.id))}
-                            style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700, color: '#b91c1c' }}
-                          >
-                            삭제
-                          </button>
-                        </div>
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          disabled={idx >= reviewSteps.length - 1}
+                          onClick={() => {
+                            if (idx >= reviewSteps.length - 1) return
+                            setReviewSteps((prev) => {
+                              const next = [...prev]
+                              const t = next[idx + 1]
+                              next[idx + 1] = next[idx]
+                              next[idx] = t
+                              return next
+                            })
+                          }}
+                          style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700 }}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReviewSteps((prev) => prev.filter((r) => r.id !== row.id))}
+                          style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700, color: '#b91c1c' }}
+                        >
+                          삭제
+                        </button>
                       </div>
-                      <label
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          fontSize: 13,
-                          fontWeight: 600,
-                          paddingLeft: 32,
-                        }}
-                      >
-                        <span style={{ color: COLORS.textSecondary, minWidth: 36 }}>주기</span>
-                        <select
-                          value={row.cycle ?? 'daily'}
-                          onChange={(e) =>
-                            setReviewSteps((prev) =>
-                              prev.map((r) => (r.id === row.id ? { ...r, cycle: e.target.value } : r)),
-                            )
-                          }
-                          style={{ minWidth: 140, padding: '6px 10px', fontSize: 13, fontWeight: 600 }}
-                          aria-label="활동 주기"
-                        >
-                          {WHOLE_SET_CYCLE_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
                     </div>
                   ))
                 : reviewSteps.map((row, idx) => (
@@ -1614,7 +1556,7 @@ export default function RoutineSettingsSection({
                 setReviewSteps((prev) => [
                   ...prev,
                   isWholeSet
-                    ? { id: `a-${Date.now()}`, key: 'test', wrongOnly: false, cycle: 'daily' }
+                    ? { id: `a-${Date.now()}`, key: 'test', wrongOnly: false }
                     : { id: `a-${Date.now()}`, key: 'test', wrongOnly: false },
                 ])
               }
@@ -1633,6 +1575,27 @@ export default function RoutineSettingsSection({
               {isWholeSet ? '+ 추가 활동' : '+ 단계 추가'}
             </button>
           </div>
+
+          {isWholeSet ? (
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: COLORS.textSecondary }}>
+                복습 주기 (일 간격, 예: +1일·+3일·+7일 후 복습)
+              </span>
+              <input
+                value={reviewCycleInput}
+                onChange={(e) => setReviewCycleInput(e.target.value)}
+                placeholder="+1+3+7"
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.border}`,
+                  fontSize: 15,
+                  maxWidth: 320,
+                }}
+              />
+              <span style={{ ...ROUTINE_FORM_HINT }}>숫자만 추출합니다. 예: +1+3+7</span>
+            </label>
+          ) : null}
 
           {!isWholeSet ? (
           <>
