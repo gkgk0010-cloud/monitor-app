@@ -1743,6 +1743,72 @@ export default function RoutineSettingsSection({
           </>
           ) : null}
 
+          {editingRoutineId && isWholeSet ? (
+            <div
+              style={{
+                padding: '14px 14px',
+                borderRadius: RADIUS.md,
+                border: `1px dashed ${COLORS.border}`,
+                background: 'rgba(255,255,255,0.95)',
+              }}
+            >
+              <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 800, color: COLORS.textPrimary }}>
+                적용된 세트
+              </p>
+              {editApplications.length > 0 ? (
+                <ul
+                  style={{
+                    margin: '0 0 12px',
+                    paddingLeft: 18,
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                    color: COLORS.textSecondary,
+                  }}
+                >
+                  {editApplications.map((a) => {
+                    const sn = String(a.set_name || '').trim() || '—'
+                    return (
+                      <li key={sn}>
+                        <strong style={{ color: COLORS.textPrimary }}>{sn}</strong>
+                        <span style={{ color: COLORS.textHint }}> — 자율 전용</span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <p style={{ margin: '0 0 12px', fontSize: 13, lineHeight: 1.55, color: COLORS.textSecondary }}>
+                  아직 이 루틴이 적용된 세트가 없습니다. 아래에서 세트를 선택해 적용하세요.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  const row = routines.find((r) => String(r.id) === String(editingRoutineId))
+                  if (row) {
+                    setAppsModalRoutine({
+                      id: row.id,
+                      title: row.title || '',
+                      total_days: row.total_days,
+                      routine_type: row.routine_type,
+                    })
+                  }
+                }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: RADIUS.sm,
+                  border: `1px solid ${COLORS.primary}`,
+                  background: COLORS.bg,
+                  color: COLORS.primary,
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                {editApplications.length > 0 ? '다른 세트에 적용 →' : '세트에 적용하기'}
+              </button>
+            </div>
+          ) : null}
+
           {editingRoutineId && editApplications.length > 0 && !isWholeSet ? (
             <div
               style={{
