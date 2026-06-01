@@ -55,14 +55,98 @@ const REVIEW_MODE_OPTIONS = [
   { key: 'wrong_note', label: '오답노트' },
 ]
 
-/** whole_set MVP — 오답노트 / AI부스터 / 테스트만 */
+/** whole_set 전용 활동 — day_split review_modes 와 별도 */
 const WHOLE_SET_REVIEW_STEP_OPTIONS = [
   { key: 'wrong_note', label: '오답노트' },
   { key: 'booster', label: '🤖 AI 부스터 (별표 단어 복습)' },
+  { key: 'recall', label: '리콜' },
+  { key: 'mypick', label: '⭐ 마이픽' },
   { key: 'test', label: '테스트로 복습' },
 ]
 
-const WHOLE_SET_MVP_KEYS = new Set(['wrong_note', 'booster', 'test'])
+const WHOLE_SET_KNOWN_KEYS = new Set(['wrong_note', 'booster', 'recall', 'mypick', 'test'])
+
+const WHOLE_SET_CYCLE_OPTIONS = [
+  { value: 'daily', label: '매일' },
+  { value: 'cycle_1_3_7', label: '+1/+3/+7' },
+  { value: 'weekly', label: '+7일' },
+]
+
+function isWholeSetRequiredActivity(key) {
+  return key === 'wrong_note' || key === 'booster'
+}
+
+/** @param {unknown} v */
+function parseWholeSetCycleValue(v) {
+  const s = String(v ?? '').trim()
+  if (s === 'daily' || s === 'cycle_1_3_7' || s === 'weekly') return s
+  return 'daily'
+}
+
+/**
+ * whole_set 편집 로드 전용 — day_split `normalizeReviewModesToSteps` 와 분리
+ * @param {unknown} rm
+ * @returns {{ id: string, key: string, wrongOnly: boolean, cycle?: string }[]}
+ */
+function normalizeWholeSetReviewModesToSteps(rm) {
+  if (!Array.isArray(rm) || rm.length === 0) {
+    return [
+      { id: `ws-b-${Date.now()}`, key: 'booster', wrongOnly: false },
+      { id: `ws-wn-${Date.now()}`, key: 'wrong_note', wrongOnly: false },
+    ]
+  }
+  const out = []
+  for (let i = 0; i < rm.length; i++) {
+    const x = rm[i]
+    if (typeof x === 'string') {
+      const k = x.trim().toLowerCase()
+      if (!WHOLE_SET_KNOWN_KEYS.has(k)) continue
+      if (isWholeSetRequiredActivity(k)) {
+        out.push({ id: `ws-${i}-${k}`, key: k, wrongOnly: false })
+      } else {
+        out.push({ id: `ws-${i}-${k}`, key: k, wrongOnly: false, cycle: 'daily' })
+      }
+      continue
+    }
+    if (x && typeof x === 'object' && 'mode' in x) {
+      const o = /** @type {{ mode?: unknown, wrongOnly?: unknown, cycle?: unknown }} */ (x)
+      let k = String(o.mode ?? '')
+        .trim()
+        .toLowerCase()
+      if (k === 'ai_booster') k = 'booster'
+      if (!WHOLE_SET_KNOWN_KEYS.has(k)) continue
+      if (isWholeSetRequiredActivity(k)) {
+        out.push({ id: `ws-${i}-${k}`, key: k, wrongOnly: false })
+      } else {
+        out.push({
+          id: `ws-${i}-${k}`,
+          key: k,
+          wrongOnly: Boolean(o.wrongOnly),
+          cycle: parseWholeSetCycleValue(o.cycle),
+        })
+      }
+    }
+  }
+  if (out.length > 0) return out
+  return [
+    { id: `ws-b-${Date.now()}`, key: 'booster', wrongOnly: false },
+    { id: `ws-wn-${Date.now()}`, key: 'wrong_note', wrongOnly: false },
+  ]
+}
+
+/**
+ * @param {{ key: string, wrongOnly?: boolean, cycle?: string }[]} steps
+ * @returns {object[]}
+ */
+function buildWholeSetReviewModesForSave(steps) {
+  return steps.map((s) => {
+    if (s.key === 'wrong_note') return { mode: 'wrong_note' }
+    if (s.key === 'booster') return { mode: 'booster' }
+    const entry = { mode: s.key, cycle: parseWholeSetCycleValue(s.cycle) }
+    if (s.key === 'test' && s.wrongOnly) entry.wrongOnly = true
+    return entry
+  })
+}
 
 /** 루틴 복습 단계 편집(순서 유지) — 드롭다운에 나올 옵션 */
 const REVIEW_STEP_ADD_OPTIONS = [...REVIEW_MODE_OPTIONS]
@@ -358,7 +442,11 @@ export default function RoutineSettingsSection({
       setTotalDaysInput(String(d.totalDays ?? 28))
       setReviewCycleInput(d.reviewOffsets?.length ? `+${d.reviewOffsets.join('+')}` : '+1+3+7')
       setRestDaysInput(d.restDayNumbers?.length ? d.restDayNumbers.map((n) => `DAY${n}`).join(', ') : '')
-      setReviewSteps(normalizeReviewModesToSteps(d.reviewModes))
+      setReviewSteps(
+        d.routineType === 'whole_set'
+          ? normalizeWholeSetReviewModesToSteps(d.reviewModes)
+          : normalizeReviewModesToSteps(d.reviewModes),
+      )
       setResetPolicy(d.resetPolicy === 'monthly_kst' ? 'monthly_kst' : 'none')
       setDayDirection(d.dayDirection === 'reverse' ? 'reverse' : 'forward')
       setEditApplications(Array.isArray(d.applications) ? d.applications : [])
@@ -485,20 +573,22 @@ export default function RoutineSettingsSection({
     }
 
     if (isWholeSet) {
-      const invalid = reviewSteps.some((s) => !WHOLE_SET_MVP_KEYS.has(s.key))
+      const invalid = reviewSteps.some((s) => !WHOLE_SET_KNOWN_KEYS.has(s.key))
       if (invalid) {
-        setSaveError('전체 루틴은 오답노트·AI부스터·테스트만 선택할 수 있습니다.')
+        setSaveError('전체 루틴은 오답노트·AI부스터·리콜·마이픽·테스트만 선택할 수 있습니다.')
         return
       }
     }
 
-    const review_modes = reviewSteps.map((s) =>
-      s.key === 'wrong_note'
-        ? { mode: 'wrong_note' }
-        : s.key === 'booster'
-          ? { mode: 'booster' }
-          : { mode: s.key, wrongOnly: Boolean(s.wrongOnly) },
-    )
+    const review_modes = isWholeSet
+      ? buildWholeSetReviewModesForSave(reviewSteps)
+      : reviewSteps.map((s) =>
+          s.key === 'wrong_note'
+            ? { mode: 'wrong_note' }
+            : s.key === 'booster'
+              ? { mode: 'booster' }
+              : { mode: s.key, wrongOnly: Boolean(s.wrongOnly) },
+        )
 
     setSaving(true)
     let result
@@ -1059,9 +1149,19 @@ export default function RoutineSettingsSection({
                   onChange={() => {
                     setRoutineType('whole_set')
                     setReviewSteps((prev) => {
-                      const filtered = prev.filter((s) => WHOLE_SET_MVP_KEYS.has(s.key))
+                      const filtered = prev
+                        .filter((s) => WHOLE_SET_KNOWN_KEYS.has(s.key))
+                        .map((s) =>
+                          isWholeSetRequiredActivity(s.key)
+                            ? { ...s, wrongOnly: false, cycle: undefined }
+                            : { ...s, cycle: s.cycle ?? 'daily' },
+                        )
                       if (filtered.length > 0) return filtered
-                      return [{ id: `ws-${Date.now()}`, key: 'test', wrongOnly: false }]
+                      const ts = Date.now()
+                      return [
+                        { id: `ws-${ts}-b`, key: 'booster', wrongOnly: false },
+                        { id: `ws-${ts}-wn`, key: 'wrong_note', wrongOnly: false },
+                      ]
                     })
                   }}
                   disabled={Boolean(editingRoutineId)}
@@ -1069,7 +1169,7 @@ export default function RoutineSettingsSection({
                 <span>
                   <strong>전체 (유지·복습)</strong>
                   <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
-                    DAY 없이 세트 전체에서 매일 같은 활동(오답노트·AI부스터·테스트)을 반복합니다. 자율 모드 전용.
+                    DAY 없이 세트 전체에서 활동을 반복합니다. 오답노트·AI부스터는 매일, 나머지는 주기를 설정할 수 있습니다. 자율 모드 전용.
                   </span>
                 </span>
               </label>
@@ -1253,7 +1353,7 @@ export default function RoutineSettingsSection({
             <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary }}>(1단계 이상 · 위에서 아래 순서)</p>
             {isWholeSet ? (
               <p style={{ margin: 0, fontSize: 12, color: '#0f766e', lineHeight: 1.45 }}>
-                전체 루틴 MVP: 오답노트 · AI부스터 · 테스트만 선택 가능합니다.
+                오답노트·AI부스터는 매일 실행(주기 설정 없음). 리콜·마이픽·테스트는 주기를 선택하세요.
               </p>
             ) : (
             <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
@@ -1282,11 +1382,18 @@ export default function RoutineSettingsSection({
                     onChange={(e) => {
                       const v = e.target.value
                       setReviewSteps((prev) =>
-                        prev.map((r) =>
-                          r.id === row.id
-                            ? { ...r, key: v, wrongOnly: v === 'wrong_note' || v === 'booster' ? false : r.wrongOnly }
-                            : r,
-                        ),
+                        prev.map((r) => {
+                          if (r.id !== row.id) return r
+                          if (isWholeSetRequiredActivity(v)) {
+                            return { ...r, key: v, wrongOnly: false, cycle: undefined }
+                          }
+                          return {
+                            ...r,
+                            key: v,
+                            wrongOnly: isWholeSet && v !== 'test' ? false : r.wrongOnly,
+                            cycle: isWholeSet ? (r.cycle ?? 'daily') : r.cycle,
+                          }
+                        }),
                       )
                     }}
                     style={{ flex: 1, minWidth: 160, padding: '8px 10px', fontSize: 14, fontWeight: 600 }}
@@ -1297,7 +1404,25 @@ export default function RoutineSettingsSection({
                       </option>
                     ))}
                   </select>
-                  {row.key !== 'wrong_note' && row.key !== 'booster' ? (
+                  {isWholeSet && !isWholeSetRequiredActivity(row.key) ? (
+                    <select
+                      value={row.cycle ?? 'daily'}
+                      onChange={(e) =>
+                        setReviewSteps((prev) =>
+                          prev.map((r) => (r.id === row.id ? { ...r, cycle: e.target.value } : r)),
+                        )
+                      }
+                      style={{ minWidth: 120, padding: '8px 10px', fontSize: 13, fontWeight: 600 }}
+                      aria-label="활동 주기"
+                    >
+                      {WHOLE_SET_CYCLE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                  {(isWholeSet ? row.key === 'test' : row.key !== 'wrong_note' && row.key !== 'booster') ? (
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
                       <input
                         type="checkbox"
@@ -1360,7 +1485,9 @@ export default function RoutineSettingsSection({
               onClick={() =>
                 setReviewSteps((prev) => [
                   ...prev,
-                  { id: `a-${Date.now()}`, key: 'test', wrongOnly: false },
+                  isWholeSet
+                    ? { id: `a-${Date.now()}`, key: 'test', wrongOnly: false, cycle: 'daily' }
+                    : { id: `a-${Date.now()}`, key: 'test', wrongOnly: false },
                 ])
               }
               style={{
