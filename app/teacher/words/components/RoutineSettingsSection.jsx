@@ -55,26 +55,31 @@ const REVIEW_MODE_OPTIONS = [
   { key: 'wrong_note', label: '오답노트' },
 ]
 
-/** whole_set 전용 활동 — day_split review_modes 와 별도 */
-const WHOLE_SET_REVIEW_STEP_OPTIONS = [
+/** whole_set 필수 활동 — UI 고정 표시·저장 시 항상 포함 (순서: booster → wrong_note) */
+const WHOLE_SET_REQUIRED_DISPLAY = [
   { key: 'wrong_note', label: '오답노트' },
-  { key: 'booster', label: '🤖 AI 부스터 (별표 단어 복습)' },
+  { key: 'booster', label: 'AI 부스터 (별표 단어 복습)' },
+]
+
+const WHOLE_SET_REQUIRED_SAVE_STEPS = [
+  { key: 'booster', wrongOnly: false },
+  { key: 'wrong_note', wrongOnly: false },
+]
+
+/** whole_set 추가 활동 — 드롭다운·편집 목록 전용 */
+const WHOLE_SET_OPTIONAL_STEP_OPTIONS = [
   { key: 'recall', label: '리콜' },
   { key: 'mypick', label: '⭐ 마이픽' },
   { key: 'test', label: '테스트로 복습' },
 ]
 
-const WHOLE_SET_KNOWN_KEYS = new Set(['wrong_note', 'booster', 'recall', 'mypick', 'test'])
+const WHOLE_SET_OPTIONAL_KEYS = new Set(['recall', 'mypick', 'test'])
 
 const WHOLE_SET_CYCLE_OPTIONS = [
   { value: 'daily', label: '매일' },
   { value: 'cycle_1_3_7', label: '+1/+3/+7' },
   { value: 'weekly', label: '+7일' },
 ]
-
-function isWholeSetRequiredActivity(key) {
-  return key === 'wrong_note' || key === 'booster'
-}
 
 /** @param {unknown} v */
 function parseWholeSetCycleValue(v) {
@@ -84,62 +89,44 @@ function parseWholeSetCycleValue(v) {
 }
 
 /**
- * whole_set 편집 로드 전용 — day_split `normalizeReviewModesToSteps` 와 분리
+ * whole_set 편집 로드 — review_modes 에서 추가 활동만 추출 (필수는 UI 고정)
  * @param {unknown} rm
  * @returns {{ id: string, key: string, wrongOnly: boolean, cycle?: string }[]}
  */
-function normalizeWholeSetReviewModesToSteps(rm) {
-  if (!Array.isArray(rm) || rm.length === 0) {
-    return [
-      { id: `ws-b-${Date.now()}`, key: 'booster', wrongOnly: false },
-      { id: `ws-wn-${Date.now()}`, key: 'wrong_note', wrongOnly: false },
-    ]
-  }
+function extractWholeSetOptionalStepsFromReviewModes(rm) {
+  if (!Array.isArray(rm) || rm.length === 0) return []
   const out = []
   for (let i = 0; i < rm.length; i++) {
     const x = rm[i]
     if (typeof x === 'string') {
       const k = x.trim().toLowerCase()
-      if (!WHOLE_SET_KNOWN_KEYS.has(k)) continue
-      if (isWholeSetRequiredActivity(k)) {
-        out.push({ id: `ws-${i}-${k}`, key: k, wrongOnly: false })
-      } else {
-        out.push({ id: `ws-${i}-${k}`, key: k, wrongOnly: false, cycle: 'daily' })
-      }
+      if (!WHOLE_SET_OPTIONAL_KEYS.has(k)) continue
+      out.push({ id: `ws-${i}-${k}`, key: k, wrongOnly: false, cycle: 'daily' })
       continue
     }
     if (x && typeof x === 'object' && 'mode' in x) {
       const o = /** @type {{ mode?: unknown, wrongOnly?: unknown, cycle?: unknown }} */ (x)
-      let k = String(o.mode ?? '')
+      const k = String(o.mode ?? '')
         .trim()
         .toLowerCase()
-      if (k === 'ai_booster') k = 'booster'
-      if (!WHOLE_SET_KNOWN_KEYS.has(k)) continue
-      if (isWholeSetRequiredActivity(k)) {
-        out.push({ id: `ws-${i}-${k}`, key: k, wrongOnly: false })
-      } else {
-        out.push({
-          id: `ws-${i}-${k}`,
-          key: k,
-          wrongOnly: Boolean(o.wrongOnly),
-          cycle: parseWholeSetCycleValue(o.cycle),
-        })
-      }
+      if (!WHOLE_SET_OPTIONAL_KEYS.has(k)) continue
+      out.push({
+        id: `ws-${i}-${k}`,
+        key: k,
+        wrongOnly: Boolean(o.wrongOnly),
+        cycle: parseWholeSetCycleValue(o.cycle),
+      })
     }
   }
-  if (out.length > 0) return out
-  return [
-    { id: `ws-b-${Date.now()}`, key: 'booster', wrongOnly: false },
-    { id: `ws-wn-${Date.now()}`, key: 'wrong_note', wrongOnly: false },
-  ]
+  return out
 }
 
 /**
- * @param {{ key: string, wrongOnly?: boolean, cycle?: string }[]} steps
+ * @param {{ key: string, wrongOnly?: boolean, cycle?: string }[]} optionalSteps UI 추가 활동만
  * @returns {object[]}
  */
-function buildWholeSetReviewModesForSave(steps) {
-  return steps.map((s) => {
+function buildWholeSetReviewModesForSave(optionalSteps) {
+  return [...WHOLE_SET_REQUIRED_SAVE_STEPS, ...optionalSteps].map((s) => {
     if (s.key === 'wrong_note') return { mode: 'wrong_note' }
     if (s.key === 'booster') return { mode: 'booster' }
     const entry = { mode: s.key, cycle: parseWholeSetCycleValue(s.cycle) }
@@ -287,7 +274,7 @@ export default function RoutineSettingsSection({
   )
 
   const isWholeSet = routineType === 'whole_set'
-  const reviewStepOptions = isWholeSet ? WHOLE_SET_REVIEW_STEP_OPTIONS : REVIEW_STEP_ADD_OPTIONS
+  const reviewStepOptions = REVIEW_STEP_ADD_OPTIONS
 
   const load = useCallback(async () => {
     if (!teacherId) {
@@ -444,7 +431,7 @@ export default function RoutineSettingsSection({
       setRestDaysInput(d.restDayNumbers?.length ? d.restDayNumbers.map((n) => `DAY${n}`).join(', ') : '')
       setReviewSteps(
         d.routineType === 'whole_set'
-          ? normalizeWholeSetReviewModesToSteps(d.reviewModes)
+          ? extractWholeSetOptionalStepsFromReviewModes(d.reviewModes)
           : normalizeReviewModesToSteps(d.reviewModes),
       )
       setResetPolicy(d.resetPolicy === 'monthly_kst' ? 'monthly_kst' : 'none')
@@ -567,15 +554,15 @@ export default function RoutineSettingsSection({
       return
     }
 
-    if (!reviewSteps.length) {
+    if (!isWholeSet && !reviewSteps.length) {
       setSaveError('복습 방식(단계)을 1개 이상 추가하세요.')
       return
     }
 
     if (isWholeSet) {
-      const invalid = reviewSteps.some((s) => !WHOLE_SET_KNOWN_KEYS.has(s.key))
+      const invalid = reviewSteps.some((s) => !WHOLE_SET_OPTIONAL_KEYS.has(s.key))
       if (invalid) {
-        setSaveError('전체 루틴은 오답노트·AI부스터·리콜·마이픽·테스트만 선택할 수 있습니다.')
+        setSaveError('추가 활동은 리콜·마이픽·테스트만 선택할 수 있습니다.')
         return
       }
     }
@@ -1148,21 +1135,11 @@ export default function RoutineSettingsSection({
                   checked={routineType === 'whole_set'}
                   onChange={() => {
                     setRoutineType('whole_set')
-                    setReviewSteps((prev) => {
-                      const filtered = prev
-                        .filter((s) => WHOLE_SET_KNOWN_KEYS.has(s.key))
-                        .map((s) =>
-                          isWholeSetRequiredActivity(s.key)
-                            ? { ...s, wrongOnly: false, cycle: undefined }
-                            : { ...s, cycle: s.cycle ?? 'daily' },
-                        )
-                      if (filtered.length > 0) return filtered
-                      const ts = Date.now()
-                      return [
-                        { id: `ws-${ts}-b`, key: 'booster', wrongOnly: false },
-                        { id: `ws-${ts}-wn`, key: 'wrong_note', wrongOnly: false },
-                      ]
-                    })
+                    setReviewSteps((prev) =>
+                      prev
+                        .filter((s) => WHOLE_SET_OPTIONAL_KEYS.has(s.key))
+                        .map((s) => ({ ...s, cycle: s.cycle ?? 'daily' })),
+                    )
                   }}
                   disabled={Boolean(editingRoutineId)}
                 />
@@ -1348,21 +1325,193 @@ export default function RoutineSettingsSection({
             }}
           >
             <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.accentText }}>
-              {isWholeSet ? '활동 구성 (순서대로 실행)' : '복습 단계 구성 (순서대로 실행)'}
+              {isWholeSet ? '활동 구성' : '복습 단계 구성 (순서대로 실행)'}
             </div>
-            <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary }}>(1단계 이상 · 위에서 아래 순서)</p>
             {isWholeSet ? (
-              <p style={{ margin: 0, fontSize: 12, color: '#0f766e', lineHeight: 1.45 }}>
-                오답노트·AI부스터는 매일 실행(주기 설정 없음). 리콜·마이픽·테스트는 주기를 선택하세요.
-              </p>
+              <>
+                <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary }}>
+                  필수 활동은 매일 자동 포함됩니다. 아래에서 추가 활동·주기·순서를 설정하세요.
+                </p>
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: RADIUS.sm,
+                    border: `1px solid ${COLORS.border}`,
+                    background: 'rgba(240, 253, 250, 0.85)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8,
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0f766e' }}>필수 활동 — 매일</div>
+                  <ul
+                    style={{
+                      margin: 0,
+                      padding: 0,
+                      listStyle: 'none',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                    }}
+                  >
+                    {WHOLE_SET_REQUIRED_DISPLAY.map((item) => (
+                      <li key={item.key} style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary }}>
+                        ✓ {item.label}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: COLORS.textSecondary }}>
+                  추가 활동 (선택 · 순서대로 실행)
+                </p>
+              </>
             ) : (
-            <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
-              값은 <span style={{ fontWeight: 600 }}>routines.review_modes</span>(JSON 배열)에 저장됩니다. 모드·오답노트·&quot;틀린
-              단어만&quot; 옵션을 사용할 수 있어요.
-            </p>
+              <>
+                <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary }}>(1단계 이상 · 위에서 아래 순서)</p>
+                <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
+                  값은 <span style={{ fontWeight: 600 }}>routines.review_modes</span>(JSON 배열)에 저장됩니다. 모드·오답노트·&quot;틀린
+                  단어만&quot; 옵션을 사용할 수 있어요.
+                </p>
+              </>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {reviewSteps.map((row, idx) => (
+              {isWholeSet
+                ? reviewSteps.map((row, idx) => (
+                    <div
+                      key={row.id}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                        padding: '10px 12px',
+                        borderRadius: RADIUS.sm,
+                        border: `1px solid ${COLORS.border}`,
+                        background: '#fff',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          alignItems: 'center',
+                          gap: 8,
+                        }}
+                      >
+                        <span style={{ fontSize: 12, fontWeight: 700, color: COLORS.textHint, minWidth: 24 }}>{idx + 1}.</span>
+                        <select
+                          value={row.key}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setReviewSteps((prev) =>
+                              prev.map((r) =>
+                                r.id === row.id
+                                  ? {
+                                      ...r,
+                                      key: v,
+                                      wrongOnly: v === 'test' ? r.wrongOnly : false,
+                                      cycle: r.cycle ?? 'daily',
+                                    }
+                                  : r,
+                              ),
+                            )
+                          }}
+                          style={{ flex: 1, minWidth: 160, padding: '8px 10px', fontSize: 14, fontWeight: 600 }}
+                        >
+                          {WHOLE_SET_OPTIONAL_STEP_OPTIONS.map((o) => (
+                            <option key={o.key} value={o.key}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                        {row.key === 'test' ? (
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
+                            <input
+                              type="checkbox"
+                              checked={!!row.wrongOnly}
+                              onChange={() =>
+                                setReviewSteps((prev) =>
+                                  prev.map((r) => (r.id === row.id ? { ...r, wrongOnly: !r.wrongOnly } : r)),
+                                )
+                              }
+                            />
+                            틀린 단어만
+                          </label>
+                        ) : null}
+                        <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                          <button
+                            type="button"
+                            disabled={idx === 0}
+                            onClick={() => {
+                              if (idx === 0) return
+                              setReviewSteps((prev) => {
+                                const next = [...prev]
+                                const t = next[idx - 1]
+                                next[idx - 1] = next[idx]
+                                next[idx] = t
+                                return next
+                              })
+                            }}
+                            style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700 }}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            disabled={idx >= reviewSteps.length - 1}
+                            onClick={() => {
+                              if (idx >= reviewSteps.length - 1) return
+                              setReviewSteps((prev) => {
+                                const next = [...prev]
+                                const t = next[idx + 1]
+                                next[idx + 1] = next[idx]
+                                next[idx] = t
+                                return next
+                              })
+                            }}
+                            style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700 }}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReviewSteps((prev) => prev.filter((r) => r.id !== row.id))}
+                            style={{ padding: '6px 10px', fontSize: 12, fontWeight: 700, color: '#b91c1c' }}
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      </div>
+                      <label
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontSize: 13,
+                          fontWeight: 600,
+                          paddingLeft: 32,
+                        }}
+                      >
+                        <span style={{ color: COLORS.textSecondary, minWidth: 36 }}>주기</span>
+                        <select
+                          value={row.cycle ?? 'daily'}
+                          onChange={(e) =>
+                            setReviewSteps((prev) =>
+                              prev.map((r) => (r.id === row.id ? { ...r, cycle: e.target.value } : r)),
+                            )
+                          }
+                          style={{ minWidth: 140, padding: '6px 10px', fontSize: 13, fontWeight: 600 }}
+                          aria-label="활동 주기"
+                        >
+                          {WHOLE_SET_CYCLE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  ))
+                : reviewSteps.map((row, idx) => (
                 <div
                   key={row.id}
                   style={{
@@ -1382,18 +1531,11 @@ export default function RoutineSettingsSection({
                     onChange={(e) => {
                       const v = e.target.value
                       setReviewSteps((prev) =>
-                        prev.map((r) => {
-                          if (r.id !== row.id) return r
-                          if (isWholeSetRequiredActivity(v)) {
-                            return { ...r, key: v, wrongOnly: false, cycle: undefined }
-                          }
-                          return {
-                            ...r,
-                            key: v,
-                            wrongOnly: isWholeSet && v !== 'test' ? false : r.wrongOnly,
-                            cycle: isWholeSet ? (r.cycle ?? 'daily') : r.cycle,
-                          }
-                        }),
+                        prev.map((r) =>
+                          r.id === row.id
+                            ? { ...r, key: v, wrongOnly: v === 'wrong_note' || v === 'booster' ? false : r.wrongOnly }
+                            : r,
+                        ),
                       )
                     }}
                     style={{ flex: 1, minWidth: 160, padding: '8px 10px', fontSize: 14, fontWeight: 600 }}
@@ -1404,25 +1546,7 @@ export default function RoutineSettingsSection({
                       </option>
                     ))}
                   </select>
-                  {isWholeSet && !isWholeSetRequiredActivity(row.key) ? (
-                    <select
-                      value={row.cycle ?? 'daily'}
-                      onChange={(e) =>
-                        setReviewSteps((prev) =>
-                          prev.map((r) => (r.id === row.id ? { ...r, cycle: e.target.value } : r)),
-                        )
-                      }
-                      style={{ minWidth: 120, padding: '8px 10px', fontSize: 13, fontWeight: 600 }}
-                      aria-label="활동 주기"
-                    >
-                      {WHOLE_SET_CYCLE_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : null}
-                  {(isWholeSet ? row.key === 'test' : row.key !== 'wrong_note' && row.key !== 'booster') ? (
+                  {row.key !== 'wrong_note' && row.key !== 'booster' ? (
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600 }}>
                       <input
                         type="checkbox"
@@ -1502,7 +1626,7 @@ export default function RoutineSettingsSection({
                 cursor: 'pointer',
               }}
             >
-              + 단계 추가
+              {isWholeSet ? '+ 추가 활동' : '+ 단계 추가'}
             </button>
           </div>
 
