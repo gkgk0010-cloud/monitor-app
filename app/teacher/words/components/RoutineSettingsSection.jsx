@@ -23,6 +23,10 @@ import {
   normalizeSetType,
 } from '../utils/learningModes'
 
+/** 루틴 설정 폼 — 안내 문구 크기 통일 (12px 회색 → 본문급·보조 설명) */
+const ROUTINE_FORM_HELPER = { fontSize: 14, color: COLORS.textSecondary, lineHeight: 1.5 }
+const ROUTINE_FORM_HINT = { fontSize: 13, color: COLORS.textHint, lineHeight: 1.45 }
+
 /** @param {{ set_name?: string, routine_type?: string, routine_applications?: { set_name?: string, start_date?: string | null }[] }} r */
 function formatRoutineApplicationsSummary(r) {
   const isWhole = r?.routine_type === 'whole_set'
@@ -1108,7 +1112,7 @@ export default function RoutineSettingsSection({
               루틴 타입
             </legend>
             {editingRoutineId ? (
-              <p style={{ margin: '0 0 8px', fontSize: 12, color: COLORS.textHint }}>
+              <p style={{ margin: '0 0 8px', ...ROUTINE_FORM_HELPER, color: COLORS.textHint }}>
                 저장된 루틴은 타입을 변경할 수 없습니다.
               </p>
             ) : null}
@@ -1123,7 +1127,7 @@ export default function RoutineSettingsSection({
                 />
                 <span>
                   <strong>DAY 분할 (기본)</strong>
-                  <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
+                  <span style={{ display: 'block', ...ROUTINE_FORM_HINT, marginTop: 2 }}>
                     신규 학습 DAY + 복습 주기. 기존 루틴과 동일합니다.
                   </span>
                 </span>
@@ -1145,7 +1149,7 @@ export default function RoutineSettingsSection({
                 />
                 <span>
                   <strong>전체 (유지·복습)</strong>
-                  <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
+                  <span style={{ display: 'block', ...ROUTINE_FORM_HINT, marginTop: 2 }}>
                     DAY 없이 세트 전체에서 활동을 반복합니다. 오답노트·AI부스터는 매일, 나머지는 주기를 설정할 수 있습니다. 자율 모드 전용.
                   </span>
                 </span>
@@ -1166,7 +1170,7 @@ export default function RoutineSettingsSection({
             }}
           >
             <div style={{ fontSize: 14, fontWeight: 800, color: COLORS.accentText }}>신규 학습 모드</div>
-            <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
+            <p style={{ margin: 0, ...ROUTINE_FORM_HELPER }}>
               필수 모드는 세트의 <span style={{ fontWeight: 600 }}>word_sets.available_modes</span>에서 <span style={{ fontWeight: 600 }}>required: true</span>인
               항목이 자동 반영됩니다. 선택 모드는 체크 시 루틴 DAY에 추가됩니다.
             </p>
@@ -1251,7 +1255,7 @@ export default function RoutineSettingsSection({
               <span style={{ fontSize: 13, color: COLORS.textSecondary }}>세트 모드 불러오는 중…</span>
             ) : (
               <>
-                <div style={{ fontSize: 12, fontWeight: 700, color: COLORS.textSecondary, letterSpacing: 0.02 }}>필수 (자동 설정됨)</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: COLORS.textSecondary, letterSpacing: 0.02 }}>필수 (자동 설정됨)</div>
                 {requiredModeKeys.length === 0 && optionalModeKeys.length === 0 ? (
                   <span style={{ fontSize: 13, color: COLORS.textSecondary }}>표시할 학습 모드가 없습니다.</span>
                 ) : null}
@@ -1278,7 +1282,7 @@ export default function RoutineSettingsSection({
                     marginTop: 4,
                     paddingTop: 10,
                     borderTop: `1px solid ${COLORS.border}`,
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: 700,
                     color: COLORS.textSecondary,
                     letterSpacing: 0.02,
@@ -1329,7 +1333,7 @@ export default function RoutineSettingsSection({
             </div>
             {isWholeSet ? (
               <>
-                <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary }}>
+                <p style={{ margin: 0, ...ROUTINE_FORM_HELPER }}>
                   필수 활동은 매일 자동 포함됩니다. 아래에서 추가 활동·주기·순서를 설정하세요.
                 </p>
                 <div
@@ -1343,7 +1347,7 @@ export default function RoutineSettingsSection({
                     gap: 8,
                   }}
                 >
-                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0f766e' }}>필수 활동 — 매일</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#0f766e' }}>필수 활동 — 매일</div>
                   <ul
                     style={{
                       margin: 0,
@@ -1355,20 +1359,20 @@ export default function RoutineSettingsSection({
                     }}
                   >
                     {WHOLE_SET_REQUIRED_DISPLAY.map((item) => (
-                      <li key={item.key} style={{ fontSize: 13, fontWeight: 600, color: COLORS.textPrimary }}>
+                      <li key={item.key} style={{ fontSize: 14, fontWeight: 600, color: COLORS.textPrimary }}>
                         ✓ {item.label}
                       </li>
                     ))}
                   </ul>
                 </div>
-                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: COLORS.textSecondary }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: COLORS.textSecondary, lineHeight: 1.5 }}>
                   추가 활동 (선택 · 순서대로 실행)
                 </p>
               </>
             ) : (
               <>
-                <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary }}>(1단계 이상 · 위에서 아래 순서)</p>
-                <p style={{ margin: 0, fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
+                <p style={{ margin: 0, ...ROUTINE_FORM_HELPER }}>(1단계 이상 · 위에서 아래 순서)</p>
+                <p style={{ margin: 0, ...ROUTINE_FORM_HELPER }}>
                   값은 <span style={{ fontWeight: 600 }}>routines.review_modes</span>(JSON 배열)에 저장됩니다. 모드·오답노트·&quot;틀린
                   단어만&quot; 옵션을 사용할 수 있어요.
                 </p>
@@ -1664,7 +1668,7 @@ export default function RoutineSettingsSection({
                 maxWidth: 320,
               }}
             />
-            <span style={{ fontSize: 12, color: COLORS.textHint }}>숫자만 추출합니다. 예: +1+3+7</span>
+            <span style={{ ...ROUTINE_FORM_HINT }}>숫자만 추출합니다. 예: +1+3+7</span>
           </label>
 
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1681,7 +1685,7 @@ export default function RoutineSettingsSection({
                 maxWidth: 400,
               }}
             />
-            <span style={{ fontSize: 12, color: COLORS.textHint }}>
+            <span style={{ ...ROUTINE_FORM_HINT }}>
               비워 두면 휴식일 없음으로 저장됩니다. 총 DAY 수를 넘는 번호는 무시됩니다.
             </span>
           </label>
@@ -1714,7 +1718,7 @@ export default function RoutineSettingsSection({
                   />
                   <span>
                     <strong>누적 (기본)</strong>
-                    <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
+                    <span style={{ display: 'block', ...ROUTINE_FORM_HINT, marginTop: 2 }}>
                       DAY 진행이 계속 이어집니다.
                     </span>
                   </span>
@@ -1728,7 +1732,7 @@ export default function RoutineSettingsSection({
                   />
                   <span>
                     <strong>매월 1일 초기화 (KST)</strong>
-                    <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
+                    <span style={{ display: 'block', ...ROUTINE_FORM_HINT, marginTop: 2 }}>
                       학생별 가입일(자율) 루틴에 적용됩니다. 매월 1일 DAY가 처음으로 돌아가며 완료 기록은 보존됩니다. 고정
                       시작일(단체) 세트는 날짜 달력이 우선합니다.
                     </span>
@@ -1751,7 +1755,7 @@ export default function RoutineSettingsSection({
                   />
                   <span>
                     <strong>정방향 (기본)</strong>
-                    <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
+                    <span style={{ display: 'block', ...ROUTINE_FORM_HINT, marginTop: 2 }}>
                       DAY 1 → 총 DAY 수까지 진행
                     </span>
                   </span>
@@ -1765,7 +1769,7 @@ export default function RoutineSettingsSection({
                   />
                   <span>
                     <strong>역방향</strong>
-                    <span style={{ display: 'block', fontSize: 12, color: COLORS.textHint, marginTop: 2 }}>
+                    <span style={{ display: 'block', ...ROUTINE_FORM_HINT, marginTop: 2 }}>
                       DAY N(총 DAY) → 1까지 내려갑니다. 복습 주기(+1·+3·+7)는 며칠 뒤 다시 보기로 동일합니다.
                     </span>
                   </span>
