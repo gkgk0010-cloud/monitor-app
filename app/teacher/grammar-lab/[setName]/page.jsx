@@ -34,7 +34,7 @@ function GrammarSetDetailContent() {
   const [boxCounts, setBoxCounts] = useState({})
 
   const loadItems = useCallback(async () => {
-    if (!teacherId || !setName) return
+    if (!teacherId || !setName) return { navItems: [], incompleteItems: [] }
     setLoading(true)
     try {
       const { data, error } = await supabase
@@ -48,7 +48,8 @@ function GrammarSetDetailContent() {
       if (error) {
         console.warn('[grammar-lab detail]', error.message)
         setRows([])
-        return
+        setBoxCounts({})
+        return { navItems: [], incompleteItems: [] }
       }
       const ids = (data || []).map((d) => d.id)
       const counts = {}
@@ -59,7 +60,13 @@ function GrammarSetDetailContent() {
         }
       }
       setBoxCounts(counts)
-      setRows((data || []).map((item) => stiToTableRow(item, counts[item.id] || 0)))
+      const tableRows = (data || []).map((item) => stiToTableRow(item, counts[item.id] || 0))
+      setRows(tableRows)
+      const navItems = tableRows
+        .filter((r) => !String(r.id).startsWith('temp-'))
+        .map((r) => ({ id: r.id, sentence_text: String(r.example_sentence || '').split('\n')[0] }))
+      const incompleteItems = navItems.filter((item) => !(counts[item.id] > 0))
+      return { navItems, incompleteItems }
     } finally {
       setLoading(false)
     }
@@ -78,6 +85,26 @@ function GrammarSetDetailContent() {
     }
     return { total, complete: total - incomplete, incomplete }
   }, [rows, boxCounts, trainingKind])
+
+  const navItems = useMemo(
+    () =>
+      rows
+        .filter((r) => !String(r.id).startsWith('temp-'))
+        .map((r) => ({ id: r.id, sentence_text: String(r.example_sentence || '').split('\n')[0] })),
+    [rows],
+  )
+
+  const boxQueueMeta = useMemo(() => {
+    if (!boxItem) {
+      return { incompleteRemaining: stats.incomplete, totalSentences: navItems.length, navIndex: 0 }
+    }
+    const navIndex = navItems.findIndex((n) => n.id === boxItem.id)
+    return {
+      incompleteRemaining: stats.incomplete,
+      totalSentences: navItems.length,
+      navIndex: navIndex >= 0 ? navIndex + 1 : 0,
+    }
+  }, [boxItem, navItems, stats.incomplete])
 
   const handleRowCommit = async (row) => {
     if (!teacherId || !isGrammarRowValid(row)) {
@@ -122,7 +149,11 @@ function GrammarSetDetailContent() {
   }
 
   const openBoxEditor = (row) => {
-    setBoxItem({ id: row.id, sentence_text: row.example_sentence })
+    setBoxItem({ id: row.id, sentence_text: String(row.example_sentence || '').split('\n')[0] })
+  }
+
+  const handleNavigateBoxItem = (target) => {
+    setBoxItem({ id: target.id, sentence_text: target.sentence_text })
   }
 
   if (teacherLoading || loading) {
@@ -256,8 +287,11 @@ function GrammarSetDetailContent() {
       <BoxAnswerModal
         open={Boolean(boxItem)}
         item={boxItem}
+        navItems={navItems}
+        queueMeta={boxQueueMeta}
         onClose={() => setBoxItem(null)}
-        onSaved={() => void loadItems()}
+        onSaved={() => loadItems()}
+        onNavigateToItem={handleNavigateBoxItem}
       />
     </div>
   )
