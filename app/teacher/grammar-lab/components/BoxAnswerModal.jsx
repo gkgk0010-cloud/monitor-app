@@ -30,7 +30,6 @@ const btnStyle = {
 
 const TOKEN_STYLE = {
   default: { border: '1px solid #e2e8f0', background: '#f8fafc' },
-  selected: { border: '2px solid #8b5cf6', background: '#ddd6fe' },
   dragging: { border: '2px solid #6366f1', background: '#c7d2fe' },
   overlap: { border: '2px solid #ef4444', background: '#fecaca' },
   inBox: { border: '1px solid #86efac', background: '#bbf7d0' },
@@ -57,8 +56,6 @@ export default function BoxAnswerModal({
   onNavigateToItem,
 }) {
   const [boxes, setBoxes] = useState([])
-  const [selStart, setSelStart] = useState(null)
-  const [selEnd, setSelEnd] = useState(null)
   const [dragStart, setDragStart] = useState(null)
   const [dragEnd, setDragEnd] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -67,7 +64,6 @@ export default function BoxAnswerModal({
   const [saving, setSaving] = useState(false)
   const [statusMsg, setStatusMsg] = useState(null)
   const [hoveredTokenIdx, setHoveredTokenIdx] = useState(null)
-  const didDragRef = useRef(false)
   const tokenContainerRef = useRef(null)
 
   const sentence = item?.sentence_text || ''
@@ -97,15 +93,12 @@ export default function BoxAnswerModal({
 
   useEffect(() => {
     if (!open || !item?.id) return
-    setSelStart(null)
-    setSelEnd(null)
     setDragStart(null)
     setDragEnd(null)
     setIsDragging(false)
     setOverlapWarn(false)
     setStatusMsg(null)
     setHoveredTokenIdx(null)
-    didDragRef.current = false
     void loadBoxes()
   }, [open, item?.id, loadBoxes])
 
@@ -130,34 +123,20 @@ export default function BoxAnswerModal({
 
   const isInPreviewRange = useCallback(
     (idx) => {
-      if (isDragging && dragStart != null && dragEnd != null) {
-        const lo = Math.min(dragStart, dragEnd)
-        const hi = Math.max(dragStart, dragEnd)
-        return idx >= lo && idx <= hi
-      }
-      if (selStart != null && selEnd != null) {
-        const lo = Math.min(selStart, selEnd)
-        const hi = Math.max(selStart, selEnd)
-        return idx >= lo && idx <= hi
-      }
-      return false
+      if (!isDragging || dragStart == null || dragEnd == null) return false
+      const lo = Math.min(dragStart, dragEnd)
+      const hi = Math.max(dragStart, dragEnd)
+      return idx >= lo && idx <= hi
     },
-    [isDragging, dragStart, dragEnd, selStart, selEnd],
+    [isDragging, dragStart, dragEnd],
   )
 
   const previewRangeOverlap = useCallback(() => {
-    let lo = null
-    let hi = null
-    if (isDragging && dragStart != null && dragEnd != null) {
-      lo = Math.min(dragStart, dragEnd)
-      hi = Math.max(dragStart, dragEnd)
-    } else if (selStart != null && selEnd != null) {
-      lo = Math.min(selStart, selEnd)
-      hi = Math.max(selStart, selEnd)
-    }
-    if (lo == null || hi == null) return false
+    if (!isDragging || dragStart == null || dragEnd == null) return false
+    const lo = Math.min(dragStart, dragEnd)
+    const hi = Math.max(dragStart, dragEnd)
     return rangeHasOverlap(lo, hi)
-  }, [isDragging, dragStart, dragEnd, selStart, selEnd, rangeHasOverlap])
+  }, [isDragging, dragStart, dragEnd, rangeHasOverlap])
 
   const commitRange = useCallback(
     (lo, hi) => {
@@ -174,8 +153,6 @@ export default function BoxAnswerModal({
       setBoxes((prev) =>
         [...prev, { start, end, chunk_label: null }].sort((a, b) => a.start - b.start),
       )
-      setSelStart(null)
-      setSelEnd(null)
       setDragStart(null)
       setDragEnd(null)
       setIsDragging(false)
@@ -184,11 +161,6 @@ export default function BoxAnswerModal({
     },
     [tokens, rangeHasOverlap],
   )
-
-  const addBoxFromSelection = useCallback(() => {
-    if (selStart == null || selEnd == null) return
-    commitRange(selStart, selEnd)
-  }, [selStart, selEnd, commitRange])
 
   const persistBoxes = useCallback(async () => {
     if (!item?.id) return { ok: false, reason: 'no-item' }
@@ -285,7 +257,6 @@ export default function BoxAnswerModal({
     const onMove = (e) => {
       const idx = getTokenIndexFromEvent(e.clientX, e.clientY)
       if (idx == null || inBox(idx)) return
-      didDragRef.current = true
       setDragEnd(idx)
     }
 
@@ -338,13 +309,6 @@ export default function BoxAnswerModal({
         return
       }
 
-      if (e.key === 'Enter' && !inField) {
-        e.preventDefault()
-        e.stopPropagation()
-        addBoxFromSelection()
-        return
-      }
-
       if (e.key === 'Backspace' && !inField) {
         e.preventDefault()
         e.stopPropagation()
@@ -354,41 +318,21 @@ export default function BoxAnswerModal({
 
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [open, onClose, navigateByOffset, addBoxFromSelection])
-
-  const handleTokenClick = (i) => {
-    if (inBox(i) || didDragRef.current) {
-      didDragRef.current = false
-      return
-    }
-    if (selStart == null) {
-      setSelStart(i)
-      setSelEnd(i)
-    } else if (selEnd === i && selStart === i) {
-      setSelStart(null)
-      setSelEnd(null)
-    } else {
-      setSelEnd(i)
-    }
-  }
+  }, [open, onClose, navigateByOffset])
 
   const handleTokenPointerDown = (e, i) => {
     if (inBox(i)) return
     e.preventDefault()
-    didDragRef.current = false
     setIsDragging(true)
     setDragStart(i)
     setDragEnd(i)
-    setSelStart(null)
-    setSelEnd(null)
   }
 
   const getTokenStyle = (i) => {
     if (inBox(i)) return TOKEN_STYLE.inBox
     const preview = isInPreviewRange(i)
     if (preview && previewRangeOverlap()) return TOKEN_STYLE.overlap
-    if (preview && isDragging) return TOKEN_STYLE.dragging
-    if (preview) return TOKEN_STYLE.selected
+    if (preview) return TOKEN_STYLE.dragging
     if (hoveredTokenIdx === i) return { border: '1px solid #cbd5e1', background: '#e2e8f0' }
     return TOKEN_STYLE.default
   }
@@ -459,7 +403,7 @@ export default function BoxAnswerModal({
               lineHeight: 1.45,
             }}
           >
-            💡 단어를 드래그하면 박스가 만들어져요
+            💡 단어를 드래그하면 박스가 만들어져요. 한 단어만 클릭해도 박스가 돼요.
           </div>
         ) : null}
 
@@ -480,7 +424,6 @@ export default function BoxAnswerModal({
                   type="button"
                   data-token-idx={i}
                   disabled={inBox(i)}
-                  onClick={() => handleTokenClick(i)}
                   onPointerDown={(e) => handleTokenPointerDown(e, i)}
                   onMouseEnter={() => {
                     if (!inBox(i)) setHoveredTokenIdx(i)
@@ -513,13 +456,10 @@ export default function BoxAnswerModal({
         ) : null}
 
         <p style={{ fontSize: 12, color: COLORS.textSecondary, margin: '0 0 12px' }}>
-          드래그 또는 클릭 2회로 범위 선택 · Enter = 박스 추가 · Backspace = 삭제 · ←/→ = 이전/다음(자동 저장) · Esc = 닫기
+          단어 드래그로 박스 만들기 · Backspace = 마지막 삭제 · ←/→ = 이전/다음(자동 저장) · Esc = 닫기
         </p>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-          <button type="button" onClick={addBoxFromSelection} style={btnStyle}>
-            박스 추가
-          </button>
           <button type="button" onClick={() => setBoxes((p) => p.slice(0, -1))} style={{ ...btnStyle, background: '#64748b' }}>
             마지막 삭제
           </button>
