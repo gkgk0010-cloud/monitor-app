@@ -66,6 +66,7 @@ export default function BoxAnswerModal({
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [statusMsg, setStatusMsg] = useState(null)
+  const [hoveredTokenIdx, setHoveredTokenIdx] = useState(null)
   const didDragRef = useRef(false)
   const tokenContainerRef = useRef(null)
 
@@ -103,6 +104,7 @@ export default function BoxAnswerModal({
     setIsDragging(false)
     setOverlapWarn(false)
     setStatusMsg(null)
+    setHoveredTokenIdx(null)
     didDragRef.current = false
     void loadBoxes()
   }, [open, item?.id, loadBoxes])
@@ -387,7 +389,14 @@ export default function BoxAnswerModal({
     if (preview && previewRangeOverlap()) return TOKEN_STYLE.overlap
     if (preview && isDragging) return TOKEN_STYLE.dragging
     if (preview) return TOKEN_STYLE.selected
+    if (hoveredTokenIdx === i) return { border: '1px solid #cbd5e1', background: '#e2e8f0' }
     return TOKEN_STYLE.default
+  }
+
+  const getTokenCursor = (i) => {
+    if (inBox(i)) return 'default'
+    if (isDragging) return 'grabbing'
+    return 'grab'
   }
 
   if (!open || !item) return null
@@ -436,12 +445,33 @@ export default function BoxAnswerModal({
           </button>
         </div>
 
+        {!loading && boxes.length === 0 && tokens.length > 0 ? (
+          <div
+            style={{
+              marginTop: 14,
+              padding: '12px 14px',
+              borderRadius: RADIUS.md,
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              fontSize: 14,
+              fontWeight: 700,
+              color: '#1d4ed8',
+              lineHeight: 1.45,
+            }}
+          >
+            💡 단어를 드래그하면 박스가 만들어져요
+          </div>
+        ) : null}
+
         <p style={{ fontSize: 14, color: COLORS.textSecondary, margin: '12px 0 0', lineHeight: 1.5 }}>{sentence}</p>
 
         {loading ? (
           <p style={{ marginTop: 16, color: COLORS.textSecondary }}>불러오는 중…</p>
         ) : tokens.length > 0 ? (
-          <div ref={tokenContainerRef} style={{ margin: '16px 0', lineHeight: 2.4, userSelect: 'none' }}>
+          <div
+            ref={tokenContainerRef}
+            style={{ margin: '16px 0', lineHeight: 2.4, userSelect: 'none', cursor: isDragging ? 'grabbing' : undefined }}
+          >
             {tokens.map((t, i) => {
               const ts = getTokenStyle(i)
               return (
@@ -452,13 +482,19 @@ export default function BoxAnswerModal({
                   disabled={inBox(i)}
                   onClick={() => handleTokenClick(i)}
                   onPointerDown={(e) => handleTokenPointerDown(e, i)}
+                  onMouseEnter={() => {
+                    if (!inBox(i)) setHoveredTokenIdx(i)
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredTokenIdx((prev) => (prev === i ? null : prev))
+                  }}
                   style={{
                     margin: 2,
                     padding: '4px 8px',
                     borderRadius: 8,
                     border: ts.border,
                     background: ts.background,
-                    cursor: inBox(i) ? 'default' : 'pointer',
+                    cursor: getTokenCursor(i),
                     fontWeight: 600,
                     touchAction: 'none',
                   }}
