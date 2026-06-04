@@ -412,6 +412,8 @@ const WordTableImageBlock = memo(function WordTableImageBlock({
  *   stickyHeaderOffsetPx?: number
  *   embeddedMaxHeight?: string
  *   defaultLang?: string - word_sets.default_lang (예: AI 예문 생성 언어)
+ *   onBoxAnswerClick?: (row: Record<string, unknown>) => void
+ *   getBoxCount?: (row: Record<string, unknown>) => number
  * }} props
  */
 function WordTable({
@@ -426,6 +428,8 @@ function WordTable({
   showImageColumn = true,
   showDeleteColumn = false,
   onRowDelete,
+  onBoxAnswerClick,
+  getBoxCount,
   showRowNumbers = true,
   rowGroupMode = 'none',
   chunkSize = 10,
@@ -447,6 +451,7 @@ function WordTable({
     if (showRowNumbers) parts.push('50px')
     if (isSentence) {
       parts.push('minmax(200px, 1.25fr)', 'minmax(160px, 0.95fr)', 'minmax(220px, 1.85fr)')
+      if (onBoxAnswerClick) parts.push('92px')
       if (showDayColumn) parts.push('60px')
       if (onRowCommit) parts.push('76px')
       if (showDeleteColumn && onRowDelete) parts.push('70px')
@@ -482,6 +487,7 @@ function WordTable({
     showDeleteColumn,
     onRowDelete,
     onRowCommit,
+    onBoxAnswerClick,
     isSentence,
     isImage,
     isTypedWord,
@@ -952,6 +958,11 @@ function WordTable({
                 <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
                   image
                 </div>
+                {onBoxAnswerClick ? (
+                  <div role="columnheader" style={{ padding: '10px 8px', color: COLORS.accentText, fontWeight: 700 }}>
+                    박스
+                  </div>
+                ) : null}
               </>
             ) : isImage ? (
               <>
@@ -1230,6 +1241,45 @@ function WordTable({
                         />
                       </div>
                       {imageCell(id, row)}
+                      {onBoxAnswerClick ? (
+                        <div
+                          role="gridcell"
+                          style={{
+                            padding: 8,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            minWidth: 0,
+                          }}
+                        >
+                          {(() => {
+                            const n =
+                              getBoxCount?.(row) ??
+                              (row._boxCount != null ? Number(row._boxCount) : 0)
+                            const done = n > 0
+                            return (
+                              <button
+                                type="button"
+                                title="박스 정답 등록"
+                                onClick={() => onBoxAnswerClick(row)}
+                                style={{
+                                  padding: '6px 10px',
+                                  borderRadius: 999,
+                                  border: `1px solid ${done ? '#86efac' : '#fca5a5'}`,
+                                  background: done ? '#ecfdf5' : '#fff',
+                                  color: done ? '#166534' : '#b91c1c',
+                                  fontWeight: 700,
+                                  fontSize: 12,
+                                  cursor: 'pointer',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                박스{n > 0 ? ` ${n}` : ''}
+                              </button>
+                            )
+                          })()}
+                        </div>
+                      ) : null}
                     </>
                   ) : isImage ? (
                     <>

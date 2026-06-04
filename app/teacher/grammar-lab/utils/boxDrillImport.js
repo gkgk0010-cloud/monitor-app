@@ -53,6 +53,79 @@ export async function applyBoxAnswersForImportedRows(supabase, insertedItems, so
   return { success, fail, skipped }
 }
 
+const BOX_APPLY_CHUNK_SIZE = 50
+
+/**
+ * 엑셀 C 컬럼 박스 정답 — item별 DELETE 대신 청크 단위 bulk insert
+ * @param {(p: { done: number, total: number, phase: 'boxes' }) => void} [onProgress]
+ */
+export async function applyBoxAnswersForImportedRowsBatched(
+  supabase,
+  insertedItems,
+  sourceRows,
+  onProgress,
+) {
+  const n = Math.min(insertedItems.length, sourceRows.length)
+  const work = []
+  let skipped = 0
+  let fail = 0
+
+  for (let i = 0; i < n; i++) {
+    const src = sourceRows[i]
+    const item = insertedItems[i]
+    const ans = String(src?._boxAnswer ?? '').trim()
+    if (!ans) {
+      skipped += 1
+      continue
+    }
+    const sentence =
+      String(item.sentence_text ?? '').trim() || sentenceTextForBoxMatch(src.example_sentence)
+    const boxes = parseBoxDrillFromSentence(sentence, ans)
+    if (!boxes) {
+      fail += 1
+      continue
+    }
+    work.push({ itemId: item.id, boxes })
+  }
+
+  const total = work.length
+  let success = 0
+
+  for (let i = 0; i < total; i += BOX_APPLY_CHUNK_SIZE) {
+    const slice = work.slice(i, i + BOX_APPLY_CHUNK_SIZE)
+    const ids = slice.map((w) => w.itemId)
+    await supabase.from('box_drill_answers').delete().in('item_id', ids)
+
+    const rows = []
+    for (const w of slice) {
+      for (const b of w.boxes) {
+        rows.push({
+          item_id: w.itemId,
+          box_index: b.box_index,
+          start_char: b.start_char,
+          end_char: b.end_char,
+          chunk_label: null,
+        })
+      }
+    }
+    if (rows.length) {
+      const { error } = await supabase.from('box_drill_answers').insert(rows)
+      if (error) {
+        fail += slice.length
+      } else {
+        success += slice.length
+      }
+    }
+    onProgress?.({
+      done: Math.min(i + slice.length, total),
+      total,
+      phase: 'boxes',
+    })
+  }
+
+  return { success, fail, skipped }
+}
+
 export function formatBoxImportResultMessage({ success, fail }) {
   if (fail > 0) return `박스 정답 등록 실패: ${fail}개${success > 0 ? ` (성공 ${success}개)` : ''}`
   if (success > 0) return `박스 정답 자동 등록: ${success}개`

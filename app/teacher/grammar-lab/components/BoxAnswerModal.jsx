@@ -35,15 +35,26 @@ const TOKEN_STYLE = {
   inBox: { border: '1px solid #86efac', background: '#bbf7d0' },
 }
 
+const STICKY_HEADER_STYLE = {
+  position: 'sticky',
+  top: 0,
+  zIndex: 10,
+  background: '#ffffff',
+  borderBottom: `1px solid ${COLORS.border}`,
+  paddingBottom: 12,
+  marginBottom: 0,
+  flexShrink: 0,
+}
+
 /**
  * @param {{
  *   open: boolean
- *   item: { id: string, sentence_text: string } | null
- *   navItems: { id: string, sentence_text: string }[]
+ *   item: { id: string, sentence_text: string, hint_ko?: string } | null
+ *   navItems: { id: string, sentence_text: string, hint_ko?: string }[]
  *   queueMeta: { incompleteRemaining: number, totalSentences: number, navIndex: number }
  *   onClose: () => void
  *   onSaved: () => Promise<{ navItems: { id: string, sentence_text: string }[], incompleteItems: { id: string, sentence_text: string }[] } | void>
- *   onNavigateToItem: (item: { id: string, sentence_text: string }) => void
+ *   onNavigateToItem: (item: { id: string, sentence_text: string, hint_ko?: string }) => void
  * }} props
  */
 export default function BoxAnswerModal({
@@ -67,6 +78,7 @@ export default function BoxAnswerModal({
   const tokenContainerRef = useRef(null)
 
   const sentence = item?.sentence_text || ''
+  const meaning = String(item?.hint_ko ?? '').trim()
   const tokens = tokenizeWordsWithSpans(sentence)
 
   const loadBoxes = useCallback(async () => {
@@ -121,42 +133,33 @@ export default function BoxAnswerModal({
     [inBox],
   )
 
-  const isInPreviewRange = useCallback(
-    (idx) => {
-      if (!isDragging || dragStart == null || dragEnd == null) return false
-      const lo = Math.min(dragStart, dragEnd)
-      const hi = Math.max(dragStart, dragEnd)
-      return idx >= lo && idx <= hi
-    },
-    [isDragging, dragStart, dragEnd],
-  )
+  const isInPreviewRange = (idx) => {
+    if (dragStart == null || dragEnd == null) return false
+    const lo = Math.min(dragStart, dragEnd)
+    const hi = Math.max(dragStart, dragEnd)
+    return idx >= lo && idx <= hi
+  }
 
-  const previewRangeOverlap = useCallback(() => {
-    if (!isDragging || dragStart == null || dragEnd == null) return false
+  const previewRangeOverlap = () => {
+    if (dragStart == null || dragEnd == null) return false
     const lo = Math.min(dragStart, dragEnd)
     const hi = Math.max(dragStart, dragEnd)
     return rangeHasOverlap(lo, hi)
-  }, [isDragging, dragStart, dragEnd, rangeHasOverlap])
+  }
 
   const commitRange = useCallback(
-    (lo, hi) => {
-      if (lo == null || hi == null) return false
-      const startIdx = Math.min(lo, hi)
-      const endIdx = Math.max(lo, hi)
-      if (rangeHasOverlap(startIdx, endIdx)) {
+    (startIdx, endIdx) => {
+      const lo = Math.min(startIdx, endIdx)
+      const hi = Math.max(startIdx, endIdx)
+      if (rangeHasOverlap(lo, hi)) {
         setOverlapWarn(true)
-        window.setTimeout(() => setOverlapWarn(false), 1600)
+        setTimeout(() => setOverlapWarn(false), 2000)
         return false
       }
-      const start = tokens[startIdx].start
-      const end = tokens[endIdx].end
-      setBoxes((prev) =>
-        [...prev, { start, end, chunk_label: null }].sort((a, b) => a.start - b.start),
-      )
-      setDragStart(null)
-      setDragEnd(null)
-      setIsDragging(false)
-      setStatusMsg(null)
+      const t0 = tokens[lo]
+      const t1 = tokens[hi]
+      if (!t0 || !t1) return false
+      setBoxes((p) => [...p, { start: t0.start, end: t1.end, chunk_label: null }])
       return true
     },
     [tokens, rangeHasOverlap],
@@ -239,17 +242,14 @@ export default function BoxAnswerModal({
     setStatusMsg('미완료 문장이 없습니다. 저장 완료!')
   }
 
-  const getTokenIndexFromEvent = useCallback(
-    (clientX, clientY) => {
-      const el = document.elementFromPoint(clientX, clientY)
-      if (!el) return null
-      const btn = el.closest('[data-token-idx]')
-      if (!btn || !tokenContainerRef.current?.contains(btn)) return null
-      const idx = parseInt(btn.getAttribute('data-token-idx'), 10)
-      return Number.isFinite(idx) ? idx : null
-    },
-    [],
-  )
+  const getTokenIndexFromEvent = useCallback((clientX, clientY) => {
+    const el = document.elementFromPoint(clientX, clientY)
+    if (!el) return null
+    const btn = el.closest('[data-token-idx]')
+    if (!btn || !tokenContainerRef.current?.contains(btn)) return null
+    const idx = parseInt(btn.getAttribute('data-token-idx'), 10)
+    return Number.isFinite(idx) ? idx : null
+  }, [])
 
   useEffect(() => {
     if (!open || !isDragging) return
@@ -366,118 +366,194 @@ export default function BoxAnswerModal({
       <div
         style={{
           width: '100%',
-          maxWidth: 680,
+          maxWidth: 720,
           maxHeight: '90vh',
-          overflow: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
           background: COLORS.surface,
           borderRadius: RADIUS.lg,
-          padding: 20,
           boxShadow: '0 20px 50px rgba(0,0,0,0.2)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>박스 정답 입력</h2>
-            <p style={{ margin: '6px 0 0', fontSize: 13, color: COLORS.textSecondary }}>
-              {queueMeta.navIndex > 0 ? `${queueMeta.navIndex}번째 문장 · ` : ''}
-              미완료 {queueMeta.incompleteRemaining} / 전체 {queueMeta.totalSentences}문장
-            </p>
+        <div style={{ ...STICKY_HEADER_STYLE, padding: '16px 20px 12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>박스 정답 입력</h2>
+              <p style={{ margin: '4px 0 0', fontSize: 12, color: COLORS.textSecondary }}>
+                {queueMeta.navIndex > 0 ? `${queueMeta.navIndex}번째 · ` : ''}
+                미완료 {queueMeta.incompleteRemaining} / {queueMeta.totalSentences}문장
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{ border: 'none', background: 'transparent', fontSize: 22, cursor: 'pointer', flexShrink: 0 }}
+            >
+              ✕
+            </button>
           </div>
-          <button type="button" onClick={onClose} style={{ border: 'none', background: 'transparent', fontSize: 22, cursor: 'pointer' }}>
-            ✕
-          </button>
-        </div>
 
-        {!loading && boxes.length === 0 && tokens.length > 0 ? (
-          <div
+          <p
             style={{
-              marginTop: 14,
-              padding: '12px 14px',
-              borderRadius: RADIUS.md,
-              background: '#eff6ff',
-              border: '1px solid #bfdbfe',
-              fontSize: 14,
+              margin: '10px 0 0',
+              fontSize: 16,
               fontWeight: 700,
-              color: '#1d4ed8',
               lineHeight: 1.45,
+              color: COLORS.textPrimary,
             }}
           >
-            💡 단어를 드래그하면 박스가 만들어져요. 한 단어만 클릭해도 박스가 돼요.
-          </div>
-        ) : null}
-
-        <p style={{ fontSize: 14, color: COLORS.textSecondary, margin: '12px 0 0', lineHeight: 1.5 }}>{sentence}</p>
-
-        {loading ? (
-          <p style={{ marginTop: 16, color: COLORS.textSecondary }}>불러오는 중…</p>
-        ) : tokens.length > 0 ? (
-          <div
-            ref={tokenContainerRef}
-            style={{ margin: '16px 0', lineHeight: 2.4, userSelect: 'none', cursor: isDragging ? 'grabbing' : undefined }}
-          >
-            {tokens.map((t, i) => {
-              const ts = getTokenStyle(i)
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  data-token-idx={i}
-                  disabled={inBox(i)}
-                  onPointerDown={(e) => handleTokenPointerDown(e, i)}
-                  onMouseEnter={() => {
-                    if (!inBox(i)) setHoveredTokenIdx(i)
-                  }}
-                  onMouseLeave={() => {
-                    setHoveredTokenIdx((prev) => (prev === i ? null : prev))
-                  }}
-                  style={{
-                    margin: 2,
-                    padding: '4px 8px',
-                    borderRadius: 8,
-                    border: ts.border,
-                    background: ts.background,
-                    cursor: getTokenCursor(i),
-                    fontWeight: 600,
-                    touchAction: 'none',
-                  }}
-                >
-                  {t.text}
-                </button>
-              )
-            })}
-          </div>
-        ) : null}
-
-        {overlapWarn || hasOverlapPreview ? (
-          <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: '#dc2626' }}>
-            {overlapWarn ? '겹치는 구간은 박스로 만들 수 없습니다.' : '선택 구간이 기존 박스와 겹칩니다.'}
+            {sentence}
           </p>
-        ) : null}
-
-        <p style={{ fontSize: 12, color: COLORS.textSecondary, margin: '0 0 12px' }}>
-          단어 드래그로 박스 만들기 · Backspace = 마지막 삭제 · ←/→ = 이전/다음(자동 저장) · Esc = 닫기
-        </p>
-
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-          <button type="button" onClick={() => setBoxes((p) => p.slice(0, -1))} style={{ ...btnStyle, background: '#64748b' }}>
-            마지막 삭제
-          </button>
+          {meaning ? (
+            <p
+              style={{
+                margin: '8px 0 0',
+                fontSize: 15,
+                fontWeight: 600,
+                lineHeight: 1.5,
+                color: '#854d0e',
+                background: '#fef9c3',
+                border: '1px solid #fde047',
+                borderRadius: RADIUS.md,
+                padding: '8px 12px',
+              }}
+            >
+              {meaning}
+            </p>
+          ) : null}
         </div>
 
-        {boxes.length > 0 ? (
-          <ul style={{ fontSize: 14, marginBottom: 16, paddingLeft: 18 }}>
-            {boxes.map((b, i) => (
-              <li key={i}>
-                <span style={{ color: '#059669', fontWeight: 700 }}>박스 {i + 1}</span> — {sentence.slice(b.start, b.end)}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p style={{ fontSize: 13, color: COLORS.textSecondary, marginBottom: 16 }}>만든 박스가 없습니다.</p>
-        )}
+        <div style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: '12px 20px' }}>
+          {!loading && boxes.length === 0 && tokens.length > 0 ? (
+            <div
+              style={{
+                marginBottom: 10,
+                padding: '8px 10px',
+                borderRadius: RADIUS.md,
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                fontSize: 13,
+                fontWeight: 700,
+                color: '#1d4ed8',
+              }}
+            >
+              💡 단어를 드래그하면 박스가 만들어져요.
+            </div>
+          ) : null}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {loading ? (
+            <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
+          ) : tokens.length > 0 ? (
+            <div
+              ref={tokenContainerRef}
+              style={{ margin: '0 0 12px', lineHeight: 2.2, userSelect: 'none', cursor: isDragging ? 'grabbing' : undefined }}
+            >
+              {tokens.map((t, i) => {
+                const ts = getTokenStyle(i)
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    data-token-idx={i}
+                    disabled={inBox(i)}
+                    onPointerDown={(e) => handleTokenPointerDown(e, i)}
+                    onMouseEnter={() => {
+                      if (!inBox(i)) setHoveredTokenIdx(i)
+                    }}
+                    onMouseLeave={() => {
+                      setHoveredTokenIdx((prev) => (prev === i ? null : prev))
+                    }}
+                    style={{
+                      margin: 2,
+                      padding: '3px 7px',
+                      borderRadius: 6,
+                      border: ts.border,
+                      background: ts.background,
+                      cursor: getTokenCursor(i),
+                      fontWeight: 600,
+                      fontSize: 14,
+                      touchAction: 'none',
+                    }}
+                  >
+                    {t.text}
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
+
+          {overlapWarn || hasOverlapPreview ? (
+            <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 700, color: '#dc2626' }}>
+              {overlapWarn ? '겹치는 구간은 박스로 만들 수 없습니다.' : '선택 구간이 기존 박스와 겹칩니다.'}
+            </p>
+          ) : null}
+
+          <p style={{ fontSize: 11, color: COLORS.textSecondary, margin: '0 0 8px' }}>
+            드래그 · Backspace 삭제 · ←/→ 이동(자동 저장) · Esc 닫기
+          </p>
+
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <button
+              type="button"
+              onClick={() => setBoxes((p) => p.slice(0, -1))}
+              style={{ ...btnStyle, padding: '6px 12px', fontSize: 12, background: '#64748b' }}
+            >
+              마지막 삭제
+            </button>
+          </div>
+
+          {boxes.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {boxes.map((b, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    minHeight: 34,
+                    maxHeight: 40,
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    background: '#ecfdf5',
+                    border: '1px solid #86efac',
+                    fontSize: 13,
+                  }}
+                >
+                  <span style={{ fontWeight: 800, color: '#059669', flexShrink: 0, width: 48, fontSize: 12 }}>
+                    박스 {i + 1}
+                  </span>
+                  <span
+                    style={{
+                      flex: 1,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      color: COLORS.textPrimary,
+                    }}
+                  >
+                    {sentence.slice(b.start, b.end)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ fontSize: 12, color: COLORS.textSecondary, margin: 0 }}>만든 박스가 없습니다.</p>
+          )}
+        </div>
+
+        <div
+          style={{
+            flexShrink: 0,
+            padding: '12px 20px 16px',
+            borderTop: `1px solid ${COLORS.border}`,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+          }}
+        >
           <button type="button" onClick={() => void handleSaveAndClose()} disabled={saving} style={{ ...btnStyle, width: '100%' }}>
             {saving ? '저장 중…' : '박스 정답 저장'}
           </button>
@@ -494,9 +570,8 @@ export default function BoxAnswerModal({
           >
             {saving ? '저장 중…' : '다음 미완료 문장 →'}
           </button>
+          {statusMsg ? <p style={{ margin: 0, fontSize: 13, color: '#b91c1c' }}>{statusMsg}</p> : null}
         </div>
-
-        {statusMsg ? <p style={{ marginTop: 12, fontSize: 14, color: '#b91c1c' }}>{statusMsg}</p> : null}
       </div>
     </div>
   )

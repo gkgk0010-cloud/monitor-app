@@ -18,10 +18,12 @@ import {
   TRAINING_KIND_LABELS,
 } from '../utils/grammarLabRows'
 import {
-  applyBoxAnswersForImportedRows,
+  applyBoxAnswersForImportedRowsBatched,
   formatBoxImportResultMessage,
 } from '../utils/boxDrillImport'
 import { deleteGrammarLabItem } from '../utils/grammarLabDelete'
+import { batchInsertSentenceTrainingItems } from '../utils/grammarLabBatchSave'
+import SaveProgressOverlay from '../components/SaveProgressOverlay'
 
 function trainingKindFromQuery(searchParams) {
   const k = searchParams.get('kind')
@@ -44,6 +46,8 @@ function GrammarSetDetailContent() {
   const [bulkOpen, setBulkOpen] = useState(false)
   const [boxItem, setBoxItem] = useState(null)
   const [boxCounts, setBoxCounts] = useState({})
+  const [importSaving, setImportSaving] = useState(false)
+  const [saveProgress, setSaveProgress] = useState(null)
 
   /** URL에 ?kind= 가 없어도 DB training_kind 기준으로 박스/어순 분기 */
   useEffect(() => {
@@ -100,7 +104,11 @@ function GrammarSetDetailContent() {
       setRows(tableRows)
       const navItems = tableRows
         .filter((r) => !String(r.id).startsWith('temp-'))
-        .map((r) => ({ id: r.id, sentence_text: String(r.example_sentence || '').split('\n')[0] }))
+        .map((r) => ({
+          id: r.id,
+          sentence_text: String(r.example_sentence || '').split('\n')[0],
+          hint_ko: String(r.meaning || '').trim(),
+        }))
       const incompleteItems = navItems.filter((item) => !(counts[item.id] > 0))
       return { navItems, incompleteItems }
     } finally {
@@ -126,7 +134,11 @@ function GrammarSetDetailContent() {
     () =>
       rows
         .filter((r) => !String(r.id).startsWith('temp-'))
-        .map((r) => ({ id: r.id, sentence_text: String(r.example_sentence || '').split('\n')[0] })),
+        .map((r) => ({
+          id: r.id,
+          sentence_text: String(r.example_sentence || '').split('\n')[0],
+          hint_ko: String(r.meaning || '').trim(),
+        })),
     [rows],
   )
 
@@ -185,11 +197,19 @@ function GrammarSetDetailContent() {
   }
 
   const openBoxEditor = (row) => {
-    setBoxItem({ id: row.id, sentence_text: String(row.example_sentence || '').split('\n')[0] })
+    setBoxItem({
+      id: row.id,
+      sentence_text: String(row.example_sentence || '').split('\n')[0],
+      hint_ko: String(row.meaning || '').trim(),
+    })
   }
 
   const handleNavigateBoxItem = (target) => {
-    setBoxItem({ id: target.id, sentence_text: target.sentence_text })
+    setBoxItem({
+      id: target.id,
+      sentence_text: target.sentence_text,
+      hint_ko: target.hint_ko,
+    })
   }
 
   if (teacherLoading || loading) {
@@ -237,40 +257,6 @@ function GrammarSetDetailContent() {
         </button>
       </div>
 
-      {trainingKind === 'box_drill' ? (
-        <div style={{ marginBottom: 12 }}>
-          {rows.map((row) => (
-            <div
-              key={row.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '8px 0',
-                borderBottom: `1px solid ${COLORS.border}`,
-                fontSize: 14,
-              }}
-            >
-              <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  background: row._boxCount > 0 ? '#22c55e' : '#ef4444',
-                  flexShrink: 0,
-                }}
-              />
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {String(row.example_sentence || '').slice(0, 60)}
-              </span>
-              <button type="button" onClick={() => openBoxEditor(row)} style={secondaryBtn}>
-                박스 정답 {row._boxCount > 0 ? `(${row._boxCount})` : ''}
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
       <WordTable
         rows={rows}
         onRowsChange={setRows}
@@ -280,15 +266,20 @@ function GrammarSetDetailContent() {
         columnPreset="sentence"
         showSetNameColumn={false}
         showDayColumn={false}
+        showImageColumn
         showDeleteColumn
         onRowDelete={(row) => void handleRowDelete(row)}
+        onBoxAnswerClick={trainingKind === 'box_drill' ? (row) => openBoxEditor(row) : undefined}
+        getBoxCount={trainingKind === 'box_drill' ? (row) => Number(row._boxCount) || 0 : undefined}
         rowGroupMode="chunk10"
         scrollContainer="window"
         stickyHeaderOffsetPx={120}
         getRowBackground={(row) =>
-          trainingKind === 'box_drill' && !row._boxCount ? 'rgba(254,226,226,0.35)' : undefined
+          trainingKind === 'box_drill' && !row._boxCount ? 'rgba(254,226,226,0.2)' : undefined
         }
       />
+
+      <SaveProgressOverlay progress={saveProgress} />
 
       <BulkImport
         open={bulkOpen}
@@ -302,7 +293,9 @@ function GrammarSetDetailContent() {
         forceDayOne
         onLocalImported={async (imported) => {
           if (!teacherId) return
-          const validImported = imported.filter(isGrammarRowValid)
+          const validImported = imported
+            .filter(isGrammarRowValid)
+            .map((r) => ({ ...r, day: 1 }))
           const payload = validImported
             .map((r, i) =>
               rowToStiInsert({ ...r, set_name: setName }, teacherId, trainingKind, rows.length + i),
@@ -312,26 +305,35 @@ function GrammarSetDetailContent() {
             alert('저장할 유효 구문이 없습니다.')
             return
           }
-          const { data: inserted, error } = await supabase
-            .from('sentence_training_items')
-            .insert(payload)
-            .select('id, sentence_text')
-          if (error) {
-            alert('저장 실패: ' + error.message)
-            return
-          }
-          let boxMsg = null
-          if (trainingKind === 'box_drill' && inserted?.length) {
-            const boxStats = await applyBoxAnswersForImportedRows(
-              supabase,
-              inserted,
-              validImported,
+          setImportSaving(true)
+          setSaveProgress({ done: 0, total: payload.length, phase: 'items' })
+          try {
+            const inserted = await batchInsertSentenceTrainingItems(supabase, payload, (p) =>
+              setSaveProgress(p),
             )
-            boxMsg = formatBoxImportResultMessage(boxStats)
+            let boxMsg = null
+            if (trainingKind === 'box_drill' && inserted.length) {
+              const withBox = validImported.filter((r) => String(r._boxAnswer ?? '').trim())
+              if (withBox.length) {
+                setSaveProgress({ done: 0, total: withBox.length, phase: 'boxes' })
+                const boxStats = await applyBoxAnswersForImportedRowsBatched(
+                  supabase,
+                  inserted,
+                  validImported,
+                  (p) => setSaveProgress(p),
+                )
+                boxMsg = formatBoxImportResultMessage(boxStats)
+              }
+            }
+            setBulkOpen(false)
+            await loadItems()
+            if (boxMsg) alert(boxMsg)
+          } catch (e) {
+            alert('저장 실패: ' + (e?.message || e))
+          } finally {
+            setImportSaving(false)
+            setSaveProgress(null)
           }
-          setBulkOpen(false)
-          void loadItems()
-          if (boxMsg) alert(boxMsg)
         }}
       />
 

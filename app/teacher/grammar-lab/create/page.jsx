@@ -21,9 +21,11 @@ import {
   GRAMMAR_LAB_FIXED_DAY,
 } from '../utils/grammarLabRows'
 import {
-  applyBoxAnswersForImportedRows,
+  applyBoxAnswersForImportedRowsBatched,
   formatBoxImportResultMessage,
 } from '../utils/boxDrillImport'
+import { batchInsertSentenceTrainingItems } from '../utils/grammarLabBatchSave'
+import SaveProgressOverlay from '../components/SaveProgressOverlay'
 
 function CreateGrammarSetContent() {
   const router = useRouter()
@@ -38,6 +40,7 @@ function CreateGrammarSetContent() {
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkOpen, setBulkOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveProgress, setSaveProgress] = useState(null)
   const [meaningHighlightRowIds, setMeaningHighlightRowIds] = useState(() => new Set())
 
   const validCount = useMemo(() => rows.filter(isGrammarRowValid).length, [rows])
@@ -75,25 +78,34 @@ function CreateGrammarSetContent() {
     }
 
     setSaving(true)
+    setSaveProgress({ done: 0, total: candidates.length, phase: 'items' })
     try {
       const payload = candidates
         .map((r, i) => rowToStiInsert({ ...r, set_name: sn }, teacherId, trainingKind, i))
         .filter(Boolean)
-      const { data: inserted, error } = await supabase
-        .from('sentence_training_items')
-        .insert(payload)
-        .select('id, sentence_text')
-      if (error) throw error
-      if (trainingKind === 'box_drill' && inserted?.length) {
-        const boxStats = await applyBoxAnswersForImportedRows(supabase, inserted, candidates)
-        const boxMsg = formatBoxImportResultMessage(boxStats)
-        if (boxMsg) alert(boxMsg)
+      const inserted = await batchInsertSentenceTrainingItems(supabase, payload, (p) =>
+        setSaveProgress(p),
+      )
+      if (trainingKind === 'box_drill' && inserted.length) {
+        const withBox = candidates.filter((r) => String(r._boxAnswer ?? '').trim())
+        if (withBox.length) {
+          setSaveProgress({ done: 0, total: withBox.length, phase: 'boxes' })
+          const boxStats = await applyBoxAnswersForImportedRowsBatched(
+            supabase,
+            inserted,
+            candidates,
+            (p) => setSaveProgress(p),
+          )
+          const boxMsg = formatBoxImportResultMessage(boxStats)
+          if (boxMsg) alert(boxMsg)
+        }
       }
       router.push(`/teacher/grammar-lab/${encodeURIComponent(sn)}?kind=${trainingKind}`)
     } catch (e) {
       alert('저장 실패: ' + (e?.message || e))
     } finally {
       setSaving(false)
+      setSaveProgress(null)
     }
   }
 
@@ -187,6 +199,8 @@ function CreateGrammarSetContent() {
         scrollContainer="window"
         stickyHeaderOffsetPx={120}
       />
+
+      <SaveProgressOverlay progress={saveProgress} />
 
       <BulkImport
         open={bulkOpen}
