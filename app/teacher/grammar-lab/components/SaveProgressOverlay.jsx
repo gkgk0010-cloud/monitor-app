@@ -4,11 +4,11 @@ import { COLORS, RADIUS } from '@/utils/tokens'
 import { formatSaveProgressLabel, progressPercent } from '../utils/grammarLabBatchSave'
 
 /**
- * @param {{ progress: { done: number, total: number, phase: 'items' | 'boxes' } | null }} props
+ * @param {{ progress: { stage: string, current: number, total: number } | null }} props
  */
 export default function SaveProgressOverlay({ progress }) {
   if (!progress?.total) return null
-  const pct = progressPercent(progress.done, progress.total)
+  const pct = progressPercent(progress.current, progress.total)
   return (
     <div
       role="status"
@@ -26,8 +26,8 @@ export default function SaveProgressOverlay({ progress }) {
     >
       <div
         style={{
-          minWidth: 280,
-          maxWidth: 400,
+          minWidth: 300,
+          maxWidth: 420,
           padding: '20px 24px',
           borderRadius: RADIUS.lg,
           background: COLORS.surface,
@@ -37,24 +37,14 @@ export default function SaveProgressOverlay({ progress }) {
         <p style={{ margin: 0, fontSize: 16, fontWeight: 800, color: COLORS.textPrimary }}>
           {formatSaveProgressLabel(progress)}
         </p>
-        <div
-          style={{
-            marginTop: 12,
-            height: 8,
-            borderRadius: 4,
-            background: '#e2e8f0',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              width: `${pct}%`,
-              height: '100%',
-              background: COLORS.primary,
-              transition: 'width 0.2s ease',
-            }}
-          />
-        </div>
+        <progress
+          value={progress.current}
+          max={progress.total}
+          style={{ display: 'block', width: '100%', marginTop: 12, height: 10 }}
+        />
+        <p style={{ margin: '8px 0 0', fontSize: 13, color: COLORS.textSecondary, textAlign: 'right' }}>
+          {pct}%
+        </p>
       </div>
     </div>
   )

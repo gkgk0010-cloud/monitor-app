@@ -22,7 +22,10 @@ import {
   formatBoxImportResultMessage,
 } from '../utils/boxDrillImport'
 import { deleteGrammarLabItem } from '../utils/grammarLabDelete'
-import { batchInsertSentenceTrainingItems } from '../utils/grammarLabBatchSave'
+import {
+  batchInsertSentenceTrainingItems,
+  scheduleClearSaveProgress,
+} from '../utils/grammarLabBatchSave'
 import SaveProgressOverlay from '../components/SaveProgressOverlay'
 
 function trainingKindFromQuery(searchParams) {
@@ -306,16 +309,26 @@ function GrammarSetDetailContent() {
             return
           }
           setImportSaving(true)
-          setSaveProgress({ done: 0, total: payload.length, phase: 'items' })
           try {
-            const inserted = await batchInsertSentenceTrainingItems(supabase, payload, (p) =>
-              setSaveProgress(p),
-            )
             let boxMsg = null
-            if (trainingKind === 'box_drill' && inserted.length) {
+            if (trainingKind === 'box_drill') {
+              setSaveProgress({ stage: '문장 등록', current: 0, total: payload.length })
+              const inserted = await batchInsertSentenceTrainingItems(supabase, payload, (p) =>
+                setSaveProgress(p),
+              )
               const withBox = validImported.filter((r) => String(r._boxAnswer ?? '').trim())
-              if (withBox.length) {
-                setSaveProgress({ done: 0, total: withBox.length, phase: 'boxes' })
+              if (withBox.length && inserted.length) {
+                let estBoxRows = 0
+                for (const r of validImported) {
+                  const ans = String(r._boxAnswer ?? '').trim()
+                  if (!ans) continue
+                  estBoxRows += ans.split(' / ').filter((s) => s.trim()).length
+                }
+                setSaveProgress({
+                  stage: '박스 정답 등록',
+                  current: 0,
+                  total: Math.max(estBoxRows, 1),
+                })
                 const boxStats = await applyBoxAnswersForImportedRowsBatched(
                   supabase,
                   inserted,
@@ -324,15 +337,19 @@ function GrammarSetDetailContent() {
                 )
                 boxMsg = formatBoxImportResultMessage(boxStats)
               }
+              scheduleClearSaveProgress(setSaveProgress, payload.length)
+            } else {
+              const { error } = await supabase.from('sentence_training_items').insert(payload)
+              if (error) throw error
             }
             setBulkOpen(false)
             await loadItems()
             if (boxMsg) alert(boxMsg)
           } catch (e) {
             alert('저장 실패: ' + (e?.message || e))
+            setSaveProgress(null)
           } finally {
             setImportSaving(false)
-            setSaveProgress(null)
           }
         }}
       />

@@ -1,17 +1,19 @@
-/** sentence_training_items 대량 저장 — 청크 INSERT (Network 3~7회 수준) */
+/** 박스 만들기 세트 대량 저장 — 청크 INSERT (300문장 ≈ 3~4회) */
 
-export const STI_INSERT_CHUNK_SIZE = 50
+export const GRAMMAR_LAB_CHUNK_SIZE = 100
+
+/** @typedef {{ stage: string, current: number, total: number }} GrammarLabSaveProgress */
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {object[]} payload
- * @param {(p: { done: number, total: number, phase: 'items' }) => void} [onProgress]
+ * @param {(p: GrammarLabSaveProgress) => void} [onProgress]
  */
 export async function batchInsertSentenceTrainingItems(supabase, payload, onProgress) {
   const total = payload.length
   const inserted = []
-  for (let i = 0; i < total; i += STI_INSERT_CHUNK_SIZE) {
-    const chunk = payload.slice(i, i + STI_INSERT_CHUNK_SIZE)
+  for (let i = 0; i < total; i += GRAMMAR_LAB_CHUNK_SIZE) {
+    const chunk = payload.slice(i, i + GRAMMAR_LAB_CHUNK_SIZE)
     const { data, error } = await supabase
       .from('sentence_training_items')
       .insert(chunk)
@@ -19,24 +21,30 @@ export async function batchInsertSentenceTrainingItems(supabase, payload, onProg
     if (error) throw error
     if (data?.length) inserted.push(...data)
     onProgress?.({
-      done: Math.min(i + chunk.length, total),
+      stage: '문장 등록',
+      current: Math.min(i + chunk.length, total),
       total,
-      phase: 'items',
     })
   }
   return inserted
 }
 
-export function progressPercent(done, total) {
+export function progressPercent(current, total) {
   if (!total) return 0
-  return Math.min(100, Math.round((done / total) * 100))
+  return Math.min(100, Math.round((current / total) * 100))
 }
 
 export function formatSaveProgressLabel(progress) {
   if (!progress) return ''
-  const pct = progressPercent(progress.done, progress.total)
-  if (progress.phase === 'boxes') {
-    return `박스 정답 등록 중… ${progress.done}/${progress.total} (${pct}%)`
+  const pct = progressPercent(progress.current, progress.total)
+  if (progress.stage === '완료') {
+    return `완료 ${progress.current}/${progress.total} (100%)`
   }
-  return `문장 등록 중… ${progress.done}/${progress.total} (${pct}%)`
+  return `${progress.stage} 중… ${progress.current}/${progress.total} (${pct}%)`
+}
+
+/** 저장 완료 메시지 1.5초 후 오버레이 닫기 */
+export function scheduleClearSaveProgress(setSaveProgress, total) {
+  setSaveProgress({ stage: '완료', current: total, total })
+  setTimeout(() => setSaveProgress(null), 1500)
 }

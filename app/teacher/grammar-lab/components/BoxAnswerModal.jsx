@@ -74,6 +74,7 @@ export default function BoxAnswerModal({
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [statusMsg, setStatusMsg] = useState(null)
+  const [replaceHint, setReplaceHint] = useState(null)
   const [hoveredTokenIdx, setHoveredTokenIdx] = useState(null)
   const tokenContainerRef = useRef(null)
 
@@ -110,6 +111,7 @@ export default function BoxAnswerModal({
     setIsDragging(false)
     setOverlapWarn(false)
     setStatusMsg(null)
+    setReplaceHint(null)
     setHoveredTokenIdx(null)
     void loadBoxes()
   }, [open, item?.id, loadBoxes])
@@ -186,6 +188,44 @@ export default function BoxAnswerModal({
     }
     return { ok: true }
   }, [item?.id, boxes])
+
+  const removeBoxAt = useCallback(
+    async (index) => {
+      const next = boxes.filter((_, i) => i !== index)
+      setBoxes(next)
+      setReplaceHint(null)
+      if (!item?.id) return
+      if (next.length === 0) {
+        await supabase.from('box_drill_answers').delete().eq('item_id', item.id)
+        if (onSaved) await onSaved()
+        return
+      }
+      setSaving(true)
+      await supabase.from('box_drill_answers').delete().eq('item_id', item.id)
+      const rows = next.map((b, i) => ({
+        item_id: item.id,
+        box_index: i,
+        start_char: b.start,
+        end_char: b.end,
+        chunk_label: null,
+      }))
+      const { error } = await supabase.from('box_drill_answers').insert(rows)
+      setSaving(false)
+      if (error) {
+        setStatusMsg('삭제 저장 실패: ' + error.message)
+        void loadBoxes()
+        return
+      }
+      if (onSaved) await onSaved()
+    },
+    [boxes, item?.id, loadBoxes, onSaved],
+  )
+
+  const editBoxAt = useCallback((index) => {
+    setBoxes((p) => p.filter((_, i) => i !== index))
+    setReplaceHint(`박스 ${index + 1}을 비웠습니다. 아래 영문 문장에서 드래그해 다시 만드세요.`)
+    setStatusMsg(null)
+  }, [])
 
   const navigateByOffset = useCallback(
     async (offset) => {
@@ -491,56 +531,103 @@ export default function BoxAnswerModal({
           ) : null}
 
           <p style={{ fontSize: 11, color: COLORS.textSecondary, margin: '0 0 8px' }}>
-            드래그 · Backspace 삭제 · ←/→ 이동(자동 저장) · Esc 닫기
+            + 박스 추가: 위 문장에서 드래그 · ←/→ 이동(자동 저장) · Esc 닫기
           </p>
 
-          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-            <button
-              type="button"
-              onClick={() => setBoxes((p) => p.slice(0, -1))}
-              style={{ ...btnStyle, padding: '6px 12px', fontSize: 12, background: '#64748b' }}
+          {replaceHint ? (
+            <p
+              style={{
+                margin: '0 0 8px',
+                padding: '8px 10px',
+                borderRadius: RADIUS.md,
+                background: '#fffbeb',
+                border: '1px solid #fde047',
+                fontSize: 13,
+                fontWeight: 600,
+                color: '#854d0e',
+              }}
             >
-              마지막 삭제
-            </button>
-          </div>
+              {replaceHint}
+            </p>
+          ) : null}
 
           {boxes.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: COLORS.accentText }}>
+                만든 박스 ({boxes.length})
+              </p>
               {boxes.map((b, i) => (
                 <div
-                  key={i}
+                  key={`${b.start}-${b.end}-${i}`}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 8,
-                    minHeight: 34,
-                    maxHeight: 40,
-                    padding: '4px 10px',
+                    gap: 6,
+                    minHeight: 36,
+                    padding: '4px 8px',
                     borderRadius: 6,
                     background: '#ecfdf5',
                     border: '1px solid #86efac',
                     fontSize: 13,
                   }}
                 >
-                  <span style={{ fontWeight: 800, color: '#059669', flexShrink: 0, width: 48, fontSize: 12 }}>
-                    박스 {i + 1}
-                  </span>
                   <span
                     style={{
                       flex: 1,
+                      minWidth: 0,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
+                      fontWeight: 600,
                       color: COLORS.textPrimary,
                     }}
+                    title={sentence.slice(b.start, b.end)}
                   >
-                    {sentence.slice(b.start, b.end)}
+                    [{sentence.slice(b.start, b.end)}]
                   </span>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => editBoxAt(i)}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      borderRadius: RADIUS.sm,
+                      border: `1px solid ${COLORS.primary}`,
+                      background: '#fff',
+                      color: COLORS.primaryDark,
+                      cursor: saving ? 'wait' : 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    수정
+                  </button>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => void removeBoxAt(i)}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: 14,
+                      fontWeight: 700,
+                      borderRadius: RADIUS.sm,
+                      border: '1px solid #fca5a5',
+                      background: '#fff',
+                      color: '#dc2626',
+                      cursor: saving ? 'wait' : 'pointer',
+                      flexShrink: 0,
+                      lineHeight: 1,
+                    }}
+                    title="박스 삭제"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
             </div>
           ) : (
-            <p style={{ fontSize: 12, color: COLORS.textSecondary, margin: 0 }}>만든 박스가 없습니다.</p>
+            <p style={{ fontSize: 12, color: COLORS.textSecondary, margin: '0 0 8px' }}>만든 박스가 없습니다. 드래그로 추가하세요.</p>
           )}
         </div>
 

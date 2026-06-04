@@ -1,4 +1,5 @@
 import { parseBoxDrillFromSentence, sentenceTextForBoxMatch } from './boxDrillExcel'
+import { GRAMMAR_LAB_CHUNK_SIZE } from './grammarLabBatchSave'
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
@@ -8,12 +9,12 @@ import { parseBoxDrillFromSentence, sentenceTextForBoxMatch } from './boxDrillEx
 export async function upsertBoxDrillAnswers(supabase, itemId, boxes) {
   await supabase.from('box_drill_answers').delete().eq('item_id', itemId)
   if (!boxes?.length) return { ok: true, inserted: 0 }
-  const rows = boxes.map((b) => ({
+  const rows = boxes.map((b, i) => ({
     item_id: itemId,
-    box_index: b.box_index,
+    box_index: i,
     start_char: b.start_char,
     end_char: b.end_char,
-    chunk_label: null,
+    chunk_label: b.chunk_label ?? null,
   }))
   const { error } = await supabase.from('box_drill_answers').insert(rows)
   if (error) return { ok: false, error }
@@ -21,43 +22,11 @@ export async function upsertBoxDrillAnswers(supabase, itemId, boxes) {
 }
 
 /**
- * sentence_training_items INSERT 직후, 소스 행의 _boxAnswer 로 box_drill_answers 등록
+ * 신규 가져오기: 모든 box_drill_answers 행을 모아 청크 INSERT (문항별 DELETE 없음)
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
- * @param {Array<{ id: string, sentence_text?: string }>} insertedItems payload 순서와 동일
+ * @param {Array<{ id: string, sentence_text?: string }>} insertedItems
  * @param {Array<{ example_sentence?: string, _boxAnswer?: string | null }>} sourceRows
- */
-export async function applyBoxAnswersForImportedRows(supabase, insertedItems, sourceRows) {
-  let success = 0
-  let fail = 0
-  let skipped = 0
-  const n = Math.min(insertedItems.length, sourceRows.length)
-  for (let i = 0; i < n; i++) {
-    const src = sourceRows[i]
-    const item = insertedItems[i]
-    const ans = String(src?._boxAnswer ?? '').trim()
-    if (!ans) {
-      skipped += 1
-      continue
-    }
-    const sentence =
-      String(item.sentence_text ?? '').trim() || sentenceTextForBoxMatch(src.example_sentence)
-    const boxes = parseBoxDrillFromSentence(sentence, ans)
-    if (!boxes) {
-      fail += 1
-      continue
-    }
-    const res = await upsertBoxDrillAnswers(supabase, item.id, boxes)
-    if (!res.ok) fail += 1
-    else success += 1
-  }
-  return { success, fail, skipped }
-}
-
-const BOX_APPLY_CHUNK_SIZE = 50
-
-/**
- * 엑셀 C 컬럼 박스 정답 — item별 DELETE 대신 청크 단위 bulk insert
- * @param {(p: { done: number, total: number, phase: 'boxes' }) => void} [onProgress]
+ * @param {(p: import('./grammarLabBatchSave').GrammarLabSaveProgress) => void} [onProgress]
  */
 export async function applyBoxAnswersForImportedRowsBatched(
   supabase,
@@ -66,9 +35,10 @@ export async function applyBoxAnswersForImportedRowsBatched(
   onProgress,
 ) {
   const n = Math.min(insertedItems.length, sourceRows.length)
-  const work = []
-  let skipped = 0
+  const allBoxes = []
   let fail = 0
+  let skipped = 0
+  let successItems = 0
 
   for (let i = 0; i < n; i++) {
     const src = sourceRows[i]
@@ -85,45 +55,33 @@ export async function applyBoxAnswersForImportedRowsBatched(
       fail += 1
       continue
     }
-    work.push({ itemId: item.id, boxes })
+    successItems += 1
+    for (const b of boxes) {
+      allBoxes.push({
+        item_id: item.id,
+        box_index: b.box_index,
+        start_char: b.start_char,
+        end_char: b.end_char,
+        chunk_label: null,
+      })
+    }
   }
 
-  const total = work.length
-  let success = 0
-
-  for (let i = 0; i < total; i += BOX_APPLY_CHUNK_SIZE) {
-    const slice = work.slice(i, i + BOX_APPLY_CHUNK_SIZE)
-    const ids = slice.map((w) => w.itemId)
-    await supabase.from('box_drill_answers').delete().in('item_id', ids)
-
-    const rows = []
-    for (const w of slice) {
-      for (const b of w.boxes) {
-        rows.push({
-          item_id: w.itemId,
-          box_index: b.box_index,
-          start_char: b.start_char,
-          end_char: b.end_char,
-          chunk_label: null,
-        })
-      }
-    }
-    if (rows.length) {
-      const { error } = await supabase.from('box_drill_answers').insert(rows)
-      if (error) {
-        fail += slice.length
-      } else {
-        success += slice.length
-      }
+  const total = allBoxes.length
+  for (let i = 0; i < total; i += GRAMMAR_LAB_CHUNK_SIZE) {
+    const chunk = allBoxes.slice(i, i + GRAMMAR_LAB_CHUNK_SIZE)
+    if (chunk.length) {
+      const { error } = await supabase.from('box_drill_answers').insert(chunk)
+      if (error) throw error
     }
     onProgress?.({
-      done: Math.min(i + slice.length, total),
+      stage: '박스 정답 등록',
+      current: Math.min(i + chunk.length, total),
       total,
-      phase: 'boxes',
     })
   }
 
-  return { success, fail, skipped }
+  return { success: successItems, fail, skipped, boxRows: total }
 }
 
 export function formatBoxImportResultMessage({ success, fail }) {
