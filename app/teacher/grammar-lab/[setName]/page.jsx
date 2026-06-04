@@ -22,11 +22,18 @@ import {
   formatBoxImportResultMessage,
 } from '../utils/boxDrillImport'
 
+function trainingKindFromQuery(searchParams) {
+  const k = searchParams.get('kind')
+  if (k === 'box_drill' || k === 'word_order') return k
+  return null
+}
+
 function GrammarSetDetailContent() {
   const params = useParams()
   const searchParams = useSearchParams()
   const setName = decodeURIComponent(String(params.setName || ''))
-  const trainingKind = searchParams.get('kind') === 'box_drill' ? 'box_drill' : 'word_order'
+  const kindFromUrl = trainingKindFromQuery(searchParams)
+  const [trainingKind, setTrainingKind] = useState(kindFromUrl || 'word_order')
   const { teacher, loading: teacherLoading } = useTeacher()
   const teacherId = teacher?.id
 
@@ -36,6 +43,30 @@ function GrammarSetDetailContent() {
   const [bulkOpen, setBulkOpen] = useState(false)
   const [boxItem, setBoxItem] = useState(null)
   const [boxCounts, setBoxCounts] = useState({})
+
+  /** URL에 ?kind= 가 없어도 DB training_kind 기준으로 박스/어순 분기 */
+  useEffect(() => {
+    if (!teacherId || !setName) return
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('sentence_training_items')
+        .select('training_kind')
+        .eq('teacher_id', teacherId)
+        .eq('set_name', setName)
+        .limit(1)
+      if (cancelled || error) return
+      const dbKind = data?.[0]?.training_kind
+      if (dbKind === 'box_drill' || dbKind === 'word_order') {
+        setTrainingKind(dbKind)
+        return
+      }
+      if (kindFromUrl) setTrainingKind(kindFromUrl)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [teacherId, setName, kindFromUrl])
 
   const loadItems = useCallback(async () => {
     if (!teacherId || !setName) return { navItems: [], incompleteItems: [] }

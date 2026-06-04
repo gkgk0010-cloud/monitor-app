@@ -622,6 +622,14 @@ export default function BulkImport({
           <div style={{ fontSize: 15, fontWeight: 800, color: COLORS.accentText, marginBottom: 6 }}>📥 엑셀 양식 다운로드</div>
           <p style={{ fontSize: 13, color: COLORS.textSecondary, margin: '0 0 12px', lineHeight: 1.5 }}>
             양식을 다운받아 채운 후 파일 업로드로 가져오세요
+            {isBoxDrillImport ? (
+              <>
+                <br />
+                <strong style={{ color: COLORS.primaryDark }}>
+                  박스 만들기 전용: {EXCEL_FILE_NAMES.box_drill} (예문·의미·정답 3열)
+                </strong>
+              </>
+            ) : null}
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
             <button
@@ -638,7 +646,7 @@ export default function BulkImport({
                 fontSize: 14,
               }}
             >
-              양식 받기 (.xlsx)
+              {isBoxDrillImport ? '박스 만들기 양식 (.xlsx)' : '양식 받기 (.xlsx)'}
             </button>
             <input ref={xlsxInputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={(ev) => void handleXlsxFile(ev)} />
             <button

@@ -134,7 +134,7 @@ export default function GrammarLabDashboardPage() {
           <p style={{ margin: '6px 0 0', fontSize: 14, opacity: 0.92 }}>어순 배열 · 박스 만들기 콘텐츠</p>
         </div>
         <Link
-          href="/teacher/grammar-lab/create"
+          href={`/teacher/grammar-lab/create?kind=${tab}`}
           style={{
             padding: '10px 18px',
             borderRadius: RADIUS.md,
@@ -183,7 +183,7 @@ export default function GrammarLabDashboardPage() {
           }}
         >
           <p style={{ margin: 0 }}>등록된 세트가 없습니다.</p>
-          <Link href="/teacher/grammar-lab/create" style={{ color: COLORS.primary, fontWeight: 700 }}>
+          <Link href={`/teacher/grammar-lab/create?kind=${tab}`} style={{ color: COLORS.primary, fontWeight: 700 }}>
             + 새 세트 만들기
           </Link>
         </div>
