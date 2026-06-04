@@ -85,7 +85,8 @@ function isPlaceholderImageCell(s) {
 }
 
 /** importSetType: word | sentence* | box_drill → 엑셀 양식 분기 */
-function downloadTokpassExcelTemplate(importSetType = 'word') {
+function downloadTokpassExcelTemplate(importSetType = 'word', options = {}) {
+  const omitDay = options.omitDay === true
   let aoa
   let cols
   const isBoxDrill = importSetType === 'box_drill'
@@ -101,18 +102,17 @@ function downloadTokpassExcelTemplate(importSetType = 'word') {
   const fileName = EXCEL_FILE_NAMES[t] || EXCEL_FILE_NAMES.word
   if (t === 'box_drill') {
     aoa = [
-      ['예문', '의미', '정답', 'day', 'image_url', 'youtube_url'],
+      ['예문', '의미', '정답', 'image_url', 'youtube_url'],
       [
         'The new policy will take effect from next month.',
         '(결론) 그 새 정책은 시행된다 / (세부) 시점: 다음 달부터.',
         'The new policy / will take effect / from next month.',
-        '1',
         '(선택)',
         '(선택)',
       ],
-      ['She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '', '1', '(선택)', '(선택)'],
+      ['She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '', '(선택)', '(선택)'],
     ]
-    cols = [{ wch: 42 }, { wch: 28 }, { wch: 48 }, { wch: 6 }, { wch: 24 }, { wch: 28 }]
+    cols = [{ wch: 42 }, { wch: 28 }, { wch: 48 }, { wch: 24 }, { wch: 28 }]
     const ws = XLSX.utils.aoa_to_sheet(aoa)
     ws['!cols'] = cols
     if (!ws['!comments']) ws['!comments'] = []
@@ -129,12 +129,21 @@ function downloadTokpassExcelTemplate(importSetType = 'word') {
     XLSX.writeFile(wb, fileName)
     return
   } else if (t === 'sentence') {
-    aoa = [
-      ['example_sentence', 'meaning', 'day', 'image_url', 'youtube_url'],
-      ['I ate an apple.', '나는 사과를 먹었다.', '1', '(선택)', '(선택)'],
-      ['She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '1', '(선택)', '(선택)'],
-    ]
-    cols = [{ wch: 36 }, { wch: 22 }, { wch: 6 }, { wch: 24 }, { wch: 28 }]
+    if (omitDay) {
+      aoa = [
+        ['example_sentence', 'meaning', 'image_url', 'youtube_url'],
+        ['I ate an apple.', '나는 사과를 먹었다.', '(선택)', '(선택)'],
+        ['She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '(선택)', '(선택)'],
+      ]
+      cols = [{ wch: 36 }, { wch: 22 }, { wch: 24 }, { wch: 28 }]
+    } else {
+      aoa = [
+        ['example_sentence', 'meaning', 'day', 'image_url', 'youtube_url'],
+        ['I ate an apple.', '나는 사과를 먹었다.', '1', '(선택)', '(선택)'],
+        ['She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '1', '(선택)', '(선택)'],
+      ]
+      cols = [{ wch: 36 }, { wch: 22 }, { wch: 6 }, { wch: 24 }, { wch: 28 }]
+    }
   } else {
     aoa = [
       ['word', 'meaning', 'example_sentence', 'day', 'image_url', 'youtube_url'],
@@ -162,6 +171,7 @@ function downloadTokpassExcelTemplate(importSetType = 'word') {
  *   teacherId?: string
  *   academyId?: string
  *   importSetType?: 'word' | 'sentence' | 'sentence_writing' | 'sentence_speaking' | 'box_drill'
+ *   forceDayOne?: boolean
  * }} props
  */
 export default function BulkImport({
@@ -175,6 +185,7 @@ export default function BulkImport({
   teacherId,
   academyId,
   importSetType = 'word',
+  forceDayOne = false,
 }) {
   const isBoxDrillImport = importSetType === 'box_drill'
   const setType =
@@ -228,13 +239,14 @@ export default function BulkImport({
   }
 
   const applyParsed = (parsed) => {
+    const fixedDay = forceDayOne ? 1 : day
     const rows = parsed.map((p, i) => ({
       id: `import-${Date.now()}-${i}`,
       word: p.word,
       meaning: p.meaning || '',
       example_sentence: p.example_sentence || '',
       set_name: setName,
-      day,
+      day: fixedDay,
       dayExplicit: false,
       image_url: null,
       image_source: 'none',
@@ -287,6 +299,7 @@ export default function BulkImport({
 
   const handleSave = async () => {
     const dayForPayload = (r) => {
+      if (forceDayOne) return 1
       const pd = parseInt(String(r.day ?? ''), 10)
       if (setType === 'sentence') {
         if (Number.isFinite(pd) && pd >= 1) return pd
@@ -429,11 +442,13 @@ export default function BulkImport({
   const buildPreviewFromExcelJson = (jsonRows, headerHasDayColumn) => {
     const stamp = Date.now()
     const sn = String(setName || '').trim()
-    const d = Math.max(1, parseInt(String(day), 10) || 1)
+    const d = forceDayOne ? 1 : Math.max(1, parseInt(String(day), 10) || 1)
+    const ignoreExcelDay = forceDayOne
     const rows = []
     let idx = 0
     /** day 컬럼이 있는데 셀 비어 있으면 0(미리보기에서 수정·또는 저장 차단) */
     const rowDayForSentence = (raw) => {
+      if (ignoreExcelDay) return 1
       const cell = getExcelCell(raw, 'day')
       if (cell === '') {
         if (headerHasDayColumn) return 0
@@ -444,6 +459,7 @@ export default function BulkImport({
       return n
     }
     const rowDayForWord = (raw) => {
+      if (ignoreExcelDay) return 1
       const cell = getExcelCell(raw, 'day')
       if (cell === '') return d
       const n = parseInt(cell, 10)
@@ -465,8 +481,7 @@ export default function BulkImport({
           ytRaw && String(ytRaw).trim() && !isPlaceholderImageCell(ytRaw)
             ? String(ytRaw).trim()
             : null
-        const dayCell = getExcelCell(raw, 'day')
-        const dayExplicit = headerHasDayColumn && String(dayCell).trim() !== ''
+        const dayExplicit = !ignoreExcelDay && headerHasDayColumn && String(getExcelCell(raw, 'day')).trim() !== ''
         const rowDay = rowDayForSentence(raw)
         const boxAnswer = isBoxDrillImport
           ? getExcelCell(raw, 'box_answer', '정답', 'answer', 'boxes')
@@ -541,7 +556,9 @@ export default function BulkImport({
         return
       }
       const headerHasDay =
-        !!jsonRows[0] && Object.keys(jsonRows[0]).some((k) => normalizeExcelHeaderKey(k) === 'day')
+        !forceDayOne &&
+        !!jsonRows[0] &&
+        Object.keys(jsonRows[0]).some((k) => normalizeExcelHeaderKey(k) === 'day')
       setExcelDayColumnInSheet(headerHasDay)
       const rows = buildPreviewFromExcelJson(jsonRows, headerHasDay)
       if (rows.length === 0) {
@@ -634,7 +651,7 @@ export default function BulkImport({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
             <button
               type="button"
-              onClick={() => downloadTokpassExcelTemplate(importSetType)}
+              onClick={() => downloadTokpassExcelTemplate(importSetType, { omitDay: forceDayOne })}
               style={{
                 padding: '10px 18px',
                 borderRadius: RADIUS.md,
@@ -670,8 +687,10 @@ export default function BulkImport({
           </div>
           <p style={{ fontSize: 12, color: COLORS.textHint, margin: '10px 0 0' }}>
             {isBoxDrillImport
-              ? '컬럼: example_sentence(예문) · meaning(의미) · box_answer(정답, 예문을 / 로 구분) · day(선택) — 정답이 비어 있으면 박스는 나중에 수동 등록'
-              : setType === 'sentence'
+              ? '컬럼: 예문 · 의미 · 정답( / 로 구분) — 정답이 비어 있으면 박스는 나중에 수동 등록'
+              : forceDayOne && setType === 'sentence'
+                ? '컬럼: example_sentence · meaning · image_url(선택) · youtube_url(선택) — Day 없음(자동 1)'
+                : setType === 'sentence'
                 ? '컬럼: example_sentence · meaning · image_url(선택) · youtube_url(선택)'
                 : '컬럼: word · meaning · example_sentence · image_url(선택) · youtube_url(선택)'}
             — 업로드 후 아래에서 미리보기·저장할 수 있어요.
@@ -837,21 +856,23 @@ export default function BulkImport({
                 ))}
               </datalist>
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ color: COLORS.textSecondary }}>day</span>
-              <input
-                type="number"
-                min={1}
-                value={day}
-                onChange={(e) => setDay(parseInt(e.target.value, 10) || 1)}
-                style={{
-                  width: 72,
-                  padding: '8px 10px',
-                  borderRadius: RADIUS.sm,
-                  border: `1px solid ${COLORS.border}`,
-                }}
-              />
-            </label>
+            {!forceDayOne ? (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: COLORS.textSecondary }}>day</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={day}
+                  onChange={(e) => setDay(parseInt(e.target.value, 10) || 1)}
+                  style={{
+                    width: 72,
+                    padding: '8px 10px',
+                    borderRadius: RADIUS.sm,
+                    border: `1px solid ${COLORS.border}`,
+                  }}
+                />
+              </label>
+            ) : null}
           </div>
 
           {previewRows.length > 0 ? (
@@ -865,6 +886,7 @@ export default function BulkImport({
                 showDeleteColumn
                 onRowDelete={handlePreviewRowDelete}
                 columnPreset={setType}
+                showDayColumn={!forceDayOne}
                 showImageColumn
                 defaultLang="en-US"
               />

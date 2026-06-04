@@ -278,9 +278,10 @@ function GrammarSetDetailContent() {
         onRowCommit={handleRowCommit}
         columnPreset="sentence"
         showSetNameColumn={false}
+        showDayColumn={false}
         showDeleteColumn
         onRowDelete={(row) => void handleRowDelete(row)}
-        rowGroupMode="day"
+        rowGroupMode="chunk10"
         scrollContainer="window"
         stickyHeaderOffsetPx={120}
         getRowBackground={(row) =>
@@ -297,6 +298,7 @@ function GrammarSetDetailContent() {
         initialSetName={setName}
         teacherId={teacherId}
         importSetType={trainingKind === 'box_drill' ? 'box_drill' : 'sentence'}
+        forceDayOne
         onLocalImported={async (imported) => {
           if (!teacherId) return
           const validImported = imported.filter(isGrammarRowValid)

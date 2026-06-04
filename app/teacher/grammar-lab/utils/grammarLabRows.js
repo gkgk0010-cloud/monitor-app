@@ -2,6 +2,9 @@ import { normalizeWordDifficulty } from '../../words/utils/parsers'
 
 /** WordTable/BulkImport 행 ↔ sentence_training_items 변환 */
 
+/** 문법 해부실(박스 만들기·어순 배열): 학습 흐름상 Day 미사용, DB에는 항상 1 */
+export const GRAMMAR_LAB_FIXED_DAY = 1
+
 export function emptyGrammarRow(setName) {
   return {
     id: `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -9,7 +12,7 @@ export function emptyGrammarRow(setName) {
     meaning: '',
     example_sentence: '',
     set_name: setName,
-    day: 1,
+    day: GRAMMAR_LAB_FIXED_DAY,
     difficulty: 3,
     image_url: null,
     image_source: 'none',
@@ -47,7 +50,7 @@ export function rowToStiInsert(row, teacherId, trainingKind, sortOrder) {
   return {
     teacher_id: teacherId,
     set_name: String(row.set_name || '').trim(),
-    day: Math.max(1, parseInt(String(row.day ?? 1), 10) || 1),
+    day: GRAMMAR_LAB_FIXED_DAY,
     sentence_text: text,
     hint_ko: buildHintKo(row.meaning, example_ko, ex),
     youtube_url: row.youtube_url ? String(row.youtube_url).trim() : null,
@@ -66,7 +69,7 @@ export function rowToStiUpdate(row, trainingKind) {
   return {
     sentence_text: text,
     hint_ko: buildHintKo(row.meaning, example_ko, ex),
-    day: Math.max(1, parseInt(String(row.day ?? 1), 10) || 1),
+    day: GRAMMAR_LAB_FIXED_DAY,
     youtube_url: row.youtube_url ? String(row.youtube_url).trim() : null,
     image_url: row.image_url ? String(row.image_url).trim() : null,
     difficulty: normalizeWordDifficulty(row.difficulty) || 3,
