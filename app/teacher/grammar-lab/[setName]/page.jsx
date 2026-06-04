@@ -21,6 +21,7 @@ import {
   applyBoxAnswersForImportedRows,
   formatBoxImportResultMessage,
 } from '../utils/boxDrillImport'
+import { deleteGrammarLabItem } from '../utils/grammarLabDelete'
 
 function trainingKindFromQuery(searchParams) {
   const k = searchParams.get('kind')
@@ -175,9 +176,9 @@ function GrammarSetDetailContent() {
       setRows((p) => p.filter((r) => r.id !== row.id))
       return
     }
-    const { error } = await supabase.from('sentence_training_items').delete().eq('id', row.id).eq('teacher_id', teacherId)
-    if (error) {
-      alert('삭제 실패: ' + error.message)
+    const result = await deleteGrammarLabItem(supabase, { teacherId, itemId: row.id })
+    if (!result.ok) {
+      alert('삭제 실패: ' + (result.error || '알 수 없음'))
       return
     }
     void loadItems()

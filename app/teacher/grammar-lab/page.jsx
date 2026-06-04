@@ -7,6 +7,7 @@ import { supabase } from '@/utils/supabaseClient'
 import { useTeacher } from '@/utils/useTeacher'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import { TRAINING_KIND_LABELS } from './utils/grammarLabRows'
+import { deleteGrammarLabSet } from './utils/grammarLabDelete'
 
 function setDetailHref(setName, kind) {
   return `/teacher/grammar-lab/${encodeURIComponent(setName)}?kind=${kind}`
@@ -85,15 +86,19 @@ export default function GrammarLabDashboardPage() {
     if (!confirm(`「${setName}」 세트(${TRAINING_KIND_LABELS[kind]})의 구문 ${sets.find((s) => s.set_name === setName && s.training_kind === kind)?.total ?? ''}건을 모두 삭제할까요?`)) {
       return
     }
-    const { error } = await supabase
-      .from('sentence_training_items')
-      .delete()
-      .eq('teacher_id', teacherId)
-      .eq('set_name', setName)
-      .eq('training_kind', kind)
-    if (error) {
-      alert('삭제 실패: ' + error.message)
+    const result = await deleteGrammarLabSet(supabase, {
+      teacherId,
+      setName,
+      trainingKind: kind,
+    })
+    if (!result.ok) {
+      alert('삭제 실패: ' + (result.error || '알 수 없음'))
       return
+    }
+    if (result.deletedItems > 0) {
+      console.info(
+        `[grammar-lab] 세트 삭제 완료: ${setName} (${TRAINING_KIND_LABELS[kind]}) 구문 ${result.deletedItems}건 — box_drill_answers는 CASCADE`,
+      )
     }
     void loadSets()
   }
