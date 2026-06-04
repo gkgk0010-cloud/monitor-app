@@ -17,6 +17,10 @@ import {
   stiToTableRow,
   TRAINING_KIND_LABELS,
 } from '../utils/grammarLabRows'
+import {
+  applyBoxAnswersForImportedRows,
+  formatBoxImportResultMessage,
+} from '../utils/boxDrillImport'
 
 function GrammarSetDetailContent() {
   const params = useParams()
@@ -261,11 +265,11 @@ function GrammarSetDetailContent() {
         localOnly
         initialSetName={setName}
         teacherId={teacherId}
-        importSetType="sentence"
+        importSetType={trainingKind === 'box_drill' ? 'box_drill' : 'sentence'}
         onLocalImported={async (imported) => {
           if (!teacherId) return
-          const payload = imported
-            .filter(isGrammarRowValid)
+          const validImported = imported.filter(isGrammarRowValid)
+          const payload = validImported
             .map((r, i) =>
               rowToStiInsert({ ...r, set_name: setName }, teacherId, trainingKind, rows.length + i),
             )
@@ -274,13 +278,26 @@ function GrammarSetDetailContent() {
             alert('저장할 유효 구문이 없습니다.')
             return
           }
-          const { error } = await supabase.from('sentence_training_items').insert(payload)
+          const { data: inserted, error } = await supabase
+            .from('sentence_training_items')
+            .insert(payload)
+            .select('id, sentence_text')
           if (error) {
             alert('저장 실패: ' + error.message)
             return
           }
+          let boxMsg = null
+          if (trainingKind === 'box_drill' && inserted?.length) {
+            const boxStats = await applyBoxAnswersForImportedRows(
+              supabase,
+              inserted,
+              validImported,
+            )
+            boxMsg = formatBoxImportResultMessage(boxStats)
+          }
           setBulkOpen(false)
           void loadItems()
+          if (boxMsg) alert(boxMsg)
         }}
       />
 

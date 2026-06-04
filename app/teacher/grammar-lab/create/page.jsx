@@ -23,6 +23,10 @@ import {
   rowToStiInsert,
   TRAINING_KIND_LABELS,
 } from '../utils/grammarLabRows'
+import {
+  applyBoxAnswersForImportedRows,
+  formatBoxImportResultMessage,
+} from '../utils/boxDrillImport'
 
 function CreateGrammarSetContent() {
   const router = useRouter()
@@ -139,8 +143,16 @@ function CreateGrammarSetContent() {
           rowToStiInsert({ ...r, set_name: sn }, teacherId, trainingKind, i),
         )
         .filter(Boolean)
-      const { error } = await supabase.from('sentence_training_items').insert(payload)
+      const { data: inserted, error } = await supabase
+        .from('sentence_training_items')
+        .insert(payload)
+        .select('id, sentence_text')
       if (error) throw error
+      if (trainingKind === 'box_drill' && inserted?.length) {
+        const boxStats = await applyBoxAnswersForImportedRows(supabase, inserted, candidates)
+        const boxMsg = formatBoxImportResultMessage(boxStats)
+        if (boxMsg) alert(boxMsg)
+      }
       router.push(`/teacher/grammar-lab/${encodeURIComponent(sn)}?kind=${trainingKind}`)
     } catch (e) {
       alert('저장 실패: ' + (e?.message || e))
@@ -167,7 +179,10 @@ function CreateGrammarSetContent() {
       </Link>
       <h1 style={{ margin: '12px 0 4px', fontSize: 22, fontWeight: 800 }}>새 세트 만들기</h1>
       <p style={{ margin: '0 0 20px', color: COLORS.textSecondary, fontSize: 14 }}>
-        엑셀·AI·텍스트 일괄 등록 후 Day 배정 · {trainingKind === 'box_drill' ? '박스 정답은 저장 후 세트 상세에서 입력' : '어순 구문 저장'}
+        엑셀·AI·텍스트 일괄 등록 후 Day 배정 ·{' '}
+        {trainingKind === 'box_drill'
+          ? '엑셀 정답(C) 컬럼이 있으면 저장 시 박스 정답 자동 등록'
+          : '어순 구문 저장'}
       </p>
 
       <section style={{ marginBottom: 20, padding: 16, borderRadius: RADIUS.lg, border: `1px solid ${COLORS.border}`, background: COLORS.surface }}>
@@ -246,7 +261,7 @@ function CreateGrammarSetContent() {
         localOnly
         initialSetName={setName}
         teacherId={teacherId}
-        importSetType="sentence"
+        importSetType={trainingKind === 'box_drill' ? 'box_drill' : 'sentence'}
         onLocalImported={(imported, meta) => {
           skipGuideRef.current = true
           setHasDayPreview(false)

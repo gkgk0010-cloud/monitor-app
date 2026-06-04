@@ -26,6 +26,7 @@ const TABS = [
 const EXCEL_FILE_NAMES = {
   word: 'tokpass_단어양식.xlsx',
   sentence: 'tokpass_문장양식.xlsx',
+  box_drill: 'tokpass_박스만들기양식.xlsx',
 }
 
 /**
@@ -83,18 +84,51 @@ function isPlaceholderImageCell(s) {
   return false
 }
 
-/** importSetType: word | sentence* → 엑셀 양식 분기 */
+/** importSetType: word | sentence* | box_drill → 엑셀 양식 분기 */
 function downloadTokpassExcelTemplate(importSetType = 'word') {
   let aoa
   let cols
+  const isBoxDrill = importSetType === 'box_drill'
   const t =
+    isBoxDrill ||
     importSetType === 'sentence' ||
     importSetType === 'sentence_writing' ||
     importSetType === 'sentence_speaking'
-      ? 'sentence'
+      ? isBoxDrill
+        ? 'box_drill'
+        : 'sentence'
       : 'word'
   const fileName = EXCEL_FILE_NAMES[t] || EXCEL_FILE_NAMES.word
-  if (t === 'sentence') {
+  if (t === 'box_drill') {
+    aoa = [
+      ['예문', '의미', '정답', 'day', 'image_url', 'youtube_url'],
+      [
+        'The new policy will take effect from next month.',
+        '(결론) 그 새 정책은 시행된다 / (세부) 시점: 다음 달부터.',
+        'The new policy / will take effect / from next month.',
+        '1',
+        '(선택)',
+        '(선택)',
+      ],
+      ['She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '', '1', '(선택)', '(선택)'],
+    ]
+    cols = [{ wch: 42 }, { wch: 28 }, { wch: 48 }, { wch: 6 }, { wch: 24 }, { wch: 28 }]
+    const ws = XLSX.utils.aoa_to_sheet(aoa)
+    ws['!cols'] = cols
+    if (!ws['!comments']) ws['!comments'] = []
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '박스만들기')
+    const guide = XLSX.utils.aoa_to_sheet([
+      ['박스 만들기 엑셀 안내'],
+      ['정답 컬럼은 예문을 " / "(앞뒤 공백 1칸)로 구분합니다.'],
+      ["예: The new policy / will take effect / from next month."],
+      ['정답이 비어 있으면 예문·의미만 등록되고 박스는 수동 등록합니다.'],
+    ])
+    guide['!cols'] = [{ wch: 72 }]
+    XLSX.utils.book_append_sheet(wb, guide, '안내')
+    XLSX.writeFile(wb, fileName)
+    return
+  } else if (t === 'sentence') {
     aoa = [
       ['example_sentence', 'meaning', 'day', 'image_url', 'youtube_url'],
       ['I ate an apple.', '나는 사과를 먹었다.', '1', '(선택)', '(선택)'],
@@ -127,7 +161,7 @@ function downloadTokpassExcelTemplate(importSetType = 'word') {
  *   initialSetName?: string
  *   teacherId?: string
  *   academyId?: string
- *   importSetType?: 'word' | 'sentence' | 'sentence_writing' | 'sentence_speaking'
+ *   importSetType?: 'word' | 'sentence' | 'sentence_writing' | 'sentence_speaking' | 'box_drill'
  * }} props
  */
 export default function BulkImport({
@@ -142,10 +176,12 @@ export default function BulkImport({
   academyId,
   importSetType = 'word',
 }) {
+  const isBoxDrillImport = importSetType === 'box_drill'
   const setType =
     importSetType === 'sentence' ||
     importSetType === 'sentence_writing' ||
-    importSetType === 'sentence_speaking'
+    importSetType === 'sentence_speaking' ||
+    isBoxDrillImport
       ? 'sentence'
       : 'word'
   const [tab, setTab] = useState('ai')
@@ -331,6 +367,7 @@ export default function BulkImport({
           image_source: payload[i].image_source,
           youtube_url: payload[i].youtube_url,
           dayExplicit: r.dayExplicit === true,
+          _boxAnswer: r._boxAnswer || null,
         }))
         const canUseCsvDay =
           excelDayColumnInSheet && candidates.length > 0 && candidates.every((r) => r.dayExplicit === true)
@@ -414,9 +451,9 @@ export default function BulkImport({
     }
     if (setType === 'sentence') {
       for (const raw of jsonRows) {
-        const ex = getExcelCell(raw, 'example_sentence')
+        const ex = getExcelCell(raw, 'example_sentence', '예문')
         if (!ex) continue
-        const meaning = getExcelCell(raw, 'meaning')
+        const meaning = getExcelCell(raw, 'meaning', '의미')
         if (!meaning) continue
         let word = getExcelCell(raw, 'word')
         if (!word) word = ex.length > 300 ? ex.slice(0, 300) : ex
@@ -431,6 +468,9 @@ export default function BulkImport({
         const dayCell = getExcelCell(raw, 'day')
         const dayExplicit = headerHasDayColumn && String(dayCell).trim() !== ''
         const rowDay = rowDayForSentence(raw)
+        const boxAnswer = isBoxDrillImport
+          ? getExcelCell(raw, 'box_answer', '정답', 'answer', 'boxes')
+          : ''
         rows.push({
           id: `import-${stamp}-${idx}`,
           word,
@@ -442,6 +482,7 @@ export default function BulkImport({
           image_url,
           image_source: image_url ? 'upload' : 'none',
           youtube_url,
+          _boxAnswer: boxAnswer || null,
         })
         idx += 1
       }
@@ -585,7 +626,7 @@ export default function BulkImport({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
             <button
               type="button"
-              onClick={() => downloadTokpassExcelTemplate(setType)}
+              onClick={() => downloadTokpassExcelTemplate(importSetType)}
               style={{
                 padding: '10px 18px',
                 borderRadius: RADIUS.md,
@@ -620,9 +661,11 @@ export default function BulkImport({
             </button>
           </div>
           <p style={{ fontSize: 12, color: COLORS.textHint, margin: '10px 0 0' }}>
-            {setType === 'sentence'
-              ? '컬럼: example_sentence · meaning · image_url(선택) · youtube_url(선택)'
-              : '컬럼: word · meaning · example_sentence · image_url(선택) · youtube_url(선택)'}
+            {isBoxDrillImport
+              ? '컬럼: example_sentence(예문) · meaning(의미) · box_answer(정답, 예문을 / 로 구분) · day(선택) — 정답이 비어 있으면 박스는 나중에 수동 등록'
+              : setType === 'sentence'
+                ? '컬럼: example_sentence · meaning · image_url(선택) · youtube_url(선택)'
+                : '컬럼: word · meaning · example_sentence · image_url(선택) · youtube_url(선택)'}
             — 업로드 후 아래에서 미리보기·저장할 수 있어요.
           </p>
         </section>
