@@ -21,6 +21,7 @@ import {
   applyBoxAnswersForImportedRowsBatched,
   formatBoxImportResultMessage,
 } from '../utils/boxDrillImport'
+import { fetchBoxCountsByItemId } from '../utils/boxDrillQuery'
 import { deleteGrammarLabItem } from '../utils/grammarLabDelete'
 import { renameGrammarLabSet } from '../utils/grammarLabRename'
 import {
@@ -104,13 +105,10 @@ function GrammarSetDetailContent() {
         return { navItems: [], incompleteItems: [] }
       }
       const ids = (data || []).map((d) => d.id)
-      const counts = {}
-      if (trainingKind === 'box_drill' && ids.length) {
-        const { data: boxes } = await supabase.from('box_drill_answers').select('item_id').in('item_id', ids)
-        for (const b of boxes || []) {
-          counts[b.item_id] = (counts[b.item_id] || 0) + 1
-        }
-      }
+      const counts =
+        trainingKind === 'box_drill' && ids.length
+          ? await fetchBoxCountsByItemId(supabase, ids)
+          : {}
       setBoxCounts(counts)
       const tableRows = (data || []).map((item) => stiToTableRow(item, counts[item.id] || 0))
       setRows(tableRows)

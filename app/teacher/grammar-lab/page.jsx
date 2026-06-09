@@ -8,6 +8,7 @@ import { useTeacher } from '@/utils/useTeacher'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import { TRAINING_KIND_LABELS } from './utils/grammarLabRows'
 import { deleteGrammarLabSet } from './utils/grammarLabDelete'
+import { fetchItemIdsWithBoxAnswers } from './utils/boxDrillQuery'
 
 function setDetailHref(setName, kind) {
   return `/teacher/grammar-lab/${encodeURIComponent(setName)}?kind=${kind}`
@@ -50,11 +51,7 @@ export default function GrammarLabDashboardPage() {
       }
 
       const boxIds = (items || []).filter((r) => r.training_kind === 'box_drill').map((r) => r.id)
-      let boxedSet = new Set()
-      if (boxIds.length) {
-        const { data: boxes } = await supabase.from('box_drill_answers').select('item_id').in('item_id', boxIds)
-        boxedSet = new Set((boxes || []).map((b) => b.item_id))
-      }
+      const boxedSet = boxIds.length ? await fetchItemIdsWithBoxAnswers(supabase, boxIds) : new Set()
 
       const list = Object.values(byKey).map((s) => {
         let incomplete = 0
