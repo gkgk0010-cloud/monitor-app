@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, Suspense } from 'react'
 import Link from 'next/link'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/utils/supabaseClient'
 import { useTeacher } from '@/utils/useTeacher'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
@@ -22,6 +22,7 @@ import {
   formatBoxImportResultMessage,
 } from '../utils/boxDrillImport'
 import { deleteGrammarLabItem } from '../utils/grammarLabDelete'
+import { renameGrammarLabSet } from '../utils/grammarLabRename'
 import {
   batchInsertSentenceTrainingItems,
   scheduleClearSaveProgress,
@@ -36,12 +37,16 @@ function trainingKindFromQuery(searchParams) {
 
 function GrammarSetDetailContent() {
   const params = useParams()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const setName = decodeURIComponent(String(params.setName || ''))
   const kindFromUrl = trainingKindFromQuery(searchParams)
   const [trainingKind, setTrainingKind] = useState(kindFromUrl || 'word_order')
   const { teacher, loading: teacherLoading } = useTeacher()
   const teacherId = teacher?.id
+
+  const [editSetName, setEditSetName] = useState(setName)
+  const [renaming, setRenaming] = useState(false)
 
   const [rows, setRows] = useState([])
   const [selectedIds, setSelectedIds] = useState(() => new Set())
@@ -51,6 +56,10 @@ function GrammarSetDetailContent() {
   const [boxCounts, setBoxCounts] = useState({})
   const [importSaving, setImportSaving] = useState(false)
   const [saveProgress, setSaveProgress] = useState(null)
+
+  useEffect(() => {
+    setEditSetName(setName)
+  }, [setName])
 
   /** URL에 ?kind= 가 없어도 DB training_kind 기준으로 박스/어순 분기 */
   useEffect(() => {
@@ -215,6 +224,36 @@ function GrammarSetDetailContent() {
     })
   }
 
+  const handleRenameSet = async () => {
+    if (!teacherId) return
+    const newSn = String(editSetName).trim()
+    if (!newSn) {
+      alert('세트 이름을 입력하세요.')
+      return
+    }
+    if (newSn === setName) return
+    setRenaming(true)
+    try {
+      const result = await renameGrammarLabSet(supabase, {
+        teacherId,
+        oldName: setName,
+        newName: newSn,
+        trainingKind,
+      })
+      if (!result.ok) {
+        if (result.error === 'duplicate-name') {
+          alert('같은 훈련 종류에 이미 같은 이름의 세트가 있습니다.')
+        } else {
+          alert('이름 변경 실패: ' + (result.error || '알 수 없음'))
+        }
+        return
+      }
+      router.replace(`/teacher/grammar-lab/${encodeURIComponent(newSn)}?kind=${trainingKind}`)
+    } finally {
+      setRenaming(false)
+    }
+  }
+
   if (teacherLoading || loading) {
     return <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
   }
@@ -246,6 +285,44 @@ function GrammarSetDetailContent() {
             : ''}
         </p>
       </header>
+
+      <section
+        style={{
+          marginBottom: 16,
+          padding: 16,
+          borderRadius: RADIUS.lg,
+          border: `1px solid ${COLORS.border}`,
+          background: COLORS.surface,
+        }}
+      >
+        <label style={{ fontWeight: 700, fontSize: 14 }}>세트 이름</label>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+          <input
+            value={editSetName}
+            onChange={(e) => setEditSetName(e.target.value)}
+            placeholder="예: RC 구문"
+            style={{
+              flex: '1 1 200px',
+              minWidth: 0,
+              padding: '10px 12px',
+              borderRadius: RADIUS.md,
+              border: `1px solid ${COLORS.border}`,
+              fontSize: 15,
+            }}
+          />
+          <button
+            type="button"
+            disabled={renaming || !String(editSetName).trim() || String(editSetName).trim() === setName}
+            onClick={() => void handleRenameSet()}
+            style={{
+              ...secondaryBtn,
+              opacity: renaming || !String(editSetName).trim() || String(editSetName).trim() === setName ? 0.5 : 1,
+            }}
+          >
+            {renaming ? '저장 중…' : '이름 저장'}
+          </button>
+        </div>
+      </section>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <button type="button" onClick={() => setBulkOpen(true)} style={primaryBtn}>

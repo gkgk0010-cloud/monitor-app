@@ -17,6 +17,7 @@ import { buildKakaoTeacherInviteShareMessage } from '@/utils/kakaoTeacherInviteS
 import { showToast } from '@/utils/toastBus'
 import { WORD_SET_DEFAULT_LANG_OPTIONS } from '@/utils/wordSetLangUi'
 import { normalizeStudyTtsLang } from '@/utils/studyTtsLang'
+import { renameWordSet } from '../utils/wordSetRename'
 
 const SET_TYPE_LABELS = {
   word: '단어 세트',
@@ -259,25 +260,22 @@ export default function SetSettingsModal({
     setSavingSetName(true)
     setHint(null)
     try {
-      const { data: clash } = await supabase
-        .from('word_sets')
-        .select('id')
-        .eq('teacher_id', teacherId)
-        .eq('name', newSn)
-        .neq('id', wid)
-        .maybeSingle()
-      if (clash?.id) {
-        alert('이미 같은 이름의 세트가 있습니다.')
+      const result = await renameWordSet(supabase, {
+        teacherId,
+        wordSetId: wid,
+        oldName: oldSn,
+        newName: newSn,
+      })
+      if (!result.ok) {
+        if (result.error === 'duplicate-name') {
+          alert('이미 같은 이름의 세트가 있습니다.')
+        } else {
+          alert('이름 변경 실패: ' + (result.error || '알 수 없음'))
+        }
         return
       }
-      const { error: e1 } = await supabase.from('word_sets').update({ name: newSn }).eq('id', wid).eq('teacher_id', teacherId)
-      if (e1) throw new Error(e1.message)
-      const { error: e2 } = await supabase.from('words').update({ set_name: newSn }).eq('teacher_id', teacherId).eq('set_name', oldSn)
-      if (e2) throw new Error(e2.message)
-      const { error: e3 } = await supabase.from('routines').update({ set_name: newSn }).eq('teacher_id', teacherId).eq('set_name', oldSn)
-      if (e3) console.warn('[SetSettingsModal] routines rename', e3.message)
       onRenamed?.(oldSn, newSn)
-      setHint('세트 이름이 저장되었습니다.')
+      setHint('세트 이름이 저장되었습니다. 학생 학습·점수 기록도 새 이름으로 이전됩니다.')
       onSaved?.()
     } catch (e) {
       alert(e instanceof Error ? e.message : String(e))
