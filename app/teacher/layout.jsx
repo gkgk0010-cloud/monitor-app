@@ -36,6 +36,7 @@ export default function TeacherLayout({ children }) {
   const isMonitor = pathname === '/teacher/monitor';
   const isTest = pathname === '/teacher/test';
   const isGrammarLab = pathname?.startsWith('/teacher/grammar-lab');
+  const isQuiz = pathname?.startsWith('/teacher/quiz');
   const isWordsAppSettings = pathname === '/teacher/words/app-settings';
   const isLiveBattle = pathname === '/teacher/live-battle';
   const isProfileSettings = pathname === '/teacher/settings';
@@ -116,6 +117,9 @@ export default function TeacherLayout({ children }) {
           <Link href="/teacher/grammar-lab" style={navItemStyle(isGrammarLab)}>
             문법 해부실
           </Link>
+          <Link href="/teacher/quiz" style={navItemStyle(isQuiz)}>
+            독해문제풀이
+          </Link>
           <Link href="/teacher/words/app-settings" style={navItemStyle(isWordsAppSettings)}>
             앱 기능 설정
           </Link>
@@ -192,7 +196,7 @@ export default function TeacherLayout({ children }) {
       </header>
 
       <main
-        className={`teacher-main-shell${isGrammarLab ? ' teacher-grammar-lab-shell' : ''}`}
+        className={`teacher-main-shell${isGrammarLab || isQuiz ? ' teacher-grammar-lab-shell' : ''}`}
         style={{ flex: 1, minHeight: 'auto', width: '100%', maxWidth: '100%', overflow: 'visible' }}
       >
         {children}
