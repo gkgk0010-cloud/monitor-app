@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 import { COLORS, RADIUS } from '@/utils/tokens'
 import {
   emptyKeyWordRow,
@@ -10,6 +10,7 @@ import {
   rowPreviewTranslation,
   trimKeyWords,
 } from '../utils/readingInterpretRows'
+import { applyAIResultToRow, invokeInterpretMetaGenerator } from '../utils/readingInterpretAi'
 
 /**
  * @param {{
@@ -18,6 +19,8 @@ import {
  *   onRowCommit: (row: object) => Promise<void> | void,
  *   onRowDelete: (row: object) => Promise<void> | void,
  *   savingRowId?: string | null,
+ *   supabase?: import('@supabase/supabase-js').SupabaseClient | null,
+ *   setContext?: { hint_tone?: string | null, awkward_guide?: string | null },
  * }} props
  */
 export default function ReadingInterpretItemTable({
@@ -26,7 +29,11 @@ export default function ReadingInterpretItemTable({
   onRowCommit,
   onRowDelete,
   savingRowId = null,
+  supabase = null,
+  setContext = {},
 }) {
+  const [aiRowId, setAiRowId] = useState(null)
+
   const updateRow = (id, patch) => {
     onRowsChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
   }
@@ -55,6 +62,44 @@ export default function ReadingInterpretItemTable({
     }
     await onRowCommit(row)
     updateRow(row.id, { _expanded: false })
+  }
+
+  const handleRowAi = async (row) => {
+    if (!supabase) {
+      alert('AI 도우미를 사용할 수 없습니다.')
+      return
+    }
+    if (!String(row.sentence_en || '').trim() || !String(row.correct_translation || '').trim()) {
+      alert('영어 문장과 정답 의역을 먼저 입력하세요.')
+      return
+    }
+    if (String(row.id).startsWith('temp-')) {
+      alert('먼저 행을 저장한 뒤 AI 자동 생성을 사용하세요.')
+      return
+    }
+    setAiRowId(row.id)
+    try {
+      const results = await invokeInterpretMetaGenerator(supabase, {
+        items: [
+          {
+            id: row.id,
+            sentence_en: row.sentence_en,
+            correct_translation: row.correct_translation,
+          },
+        ],
+        set_context: setContext,
+      })
+      const ai = results.find((r) => String(r?.id) === String(row.id)) || results[0]
+      if (!ai) {
+        alert('AI 결과가 없습니다.')
+        return
+      }
+      updateRow(row.id, applyAIResultToRow(row, ai))
+    } catch (e) {
+      alert('AI 생성 실패: ' + (e?.message || e))
+    } finally {
+      setAiRowId(null)
+    }
   }
 
   return (
@@ -193,7 +238,37 @@ export default function ReadingInterpretItemTable({
                         />
                       </label>
 
-                      <div style={{ display: 'flex', gap: 8 }}>
+                      <label style={fieldLabel}>
+                        어색 패턴 (쉼표 구분)
+                        <textarea
+                          value={row.awkward_patterns}
+                          onChange={(e) => updateRow(row.id, { awkward_patterns: e.target.value })}
+                          rows={2}
+                          style={textareaStyle}
+                          placeholder="직역 어색 표현, 쉼표로 구분"
+                        />
+                      </label>
+
+                      <label style={fieldLabel}>
+                        핵심 표현 (쉼표 구분)
+                        <textarea
+                          value={row.critical_phrases}
+                          onChange={(e) => updateRow(row.id, { critical_phrases: e.target.value })}
+                          rows={2}
+                          style={textareaStyle}
+                          placeholder="정답 핵심 표현, 쉼표로 구분"
+                        />
+                      </label>
+
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          disabled={aiRowId === row.id || !supabase}
+                          onClick={() => void handleRowAi(row)}
+                          style={smallAiBtn}
+                        >
+                          {aiRowId === row.id ? 'AI 생성 중…' : '✨ AI 자동 생성'}
+                        </button>
                         <button
                           type="button"
                           disabled={savingRowId === row.id}
@@ -269,6 +344,16 @@ const smallDangerBtn = {
   border: 'none',
   background: '#64748b',
   color: '#fff',
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontSize: 13,
+}
+const smallAiBtn = {
+  padding: '6px 12px',
+  borderRadius: RADIUS.sm,
+  border: '1px solid #c4b5fd',
+  background: '#f5f3ff',
+  color: '#5b21b6',
   fontWeight: 700,
   cursor: 'pointer',
   fontSize: 13,

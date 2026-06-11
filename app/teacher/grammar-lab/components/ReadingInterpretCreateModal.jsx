@@ -3,11 +3,28 @@
 import { useEffect, useState } from 'react'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 
+const INTERPRET_TYPE_PRESETS = {
+  custom: { hint_tone: '', awkward_guide: '' },
+  abstract_noun: {
+    hint_tone: '추상명사를 동사로 풀어보세요',
+    awkward_guide: '명사 직역, 영어 어순',
+  },
+  passive: {
+    hint_tone: '능동으로 자연스럽게',
+    awkward_guide: '~받고 있다, ~에 의해',
+  },
+}
+
 /**
  * @param {{
  *   open: boolean,
  *   onClose: () => void,
- *   onSubmit: (values: { set_name: string, description: string | null }) => Promise<void> | void,
+ *   onSubmit: (values: {
+ *     set_name: string,
+ *     description: string | null,
+ *     hint_tone: string | null,
+ *     awkward_guide: string | null,
+ *   }) => Promise<void> | void,
  *   initial?: object | null,
  *   saving?: boolean,
  * }} props
@@ -16,12 +33,27 @@ export default function ReadingInterpretCreateModal({ open, onClose, onSubmit, i
   const isEdit = Boolean(initial?.id)
   const [setName, setSetName] = useState('')
   const [description, setDescription] = useState('')
+  const [interpretType, setInterpretType] = useState('custom')
+  const [hintTone, setHintTone] = useState('')
+  const [awkwardGuide, setAwkwardGuide] = useState('')
 
   useEffect(() => {
     if (!open) return
     setSetName(String(initial?.set_name ?? ''))
     setDescription(String(initial?.description ?? ''))
+    setHintTone(String(initial?.hint_tone ?? ''))
+    setAwkwardGuide(String(initial?.awkward_guide ?? ''))
+    setInterpretType('custom')
   }, [open, initial])
+
+  const handleTypeChange = (type) => {
+    setInterpretType(type)
+    const preset = INTERPRET_TYPE_PRESETS[type]
+    if (preset && type !== 'custom') {
+      setHintTone(preset.hint_tone)
+      setAwkwardGuide(preset.awkward_guide)
+    }
+  }
 
   if (!open) return null
 
@@ -35,6 +67,8 @@ export default function ReadingInterpretCreateModal({ open, onClose, onSubmit, i
     await onSubmit({
       set_name: sn,
       description: String(description).trim() || null,
+      hint_tone: String(hintTone).trim() || null,
+      awkward_guide: String(awkwardGuide).trim() || null,
     })
   }
 
@@ -61,7 +95,7 @@ export default function ReadingInterpretCreateModal({ open, onClose, onSubmit, i
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: 480,
+          maxWidth: 520,
           padding: '22px 24px',
           borderRadius: RADIUS.lg,
           background: COLORS.surface,
@@ -85,6 +119,35 @@ export default function ReadingInterpretCreateModal({ open, onClose, onSubmit, i
             rows={2}
             style={{ ...inputStyle, resize: 'vertical' }}
             placeholder="선택 사항"
+          />
+        </label>
+
+        <label style={labelStyle}>
+          해석 유형 (프리셋)
+          <select value={interpretType} onChange={(e) => handleTypeChange(e.target.value)} style={inputStyle}>
+            <option value="custom">직접 입력</option>
+            <option value="abstract_noun">추상명사 (abstract_noun)</option>
+            <option value="passive">수동태 (passive)</option>
+          </select>
+        </label>
+
+        <label style={labelStyle}>
+          힌트 톤 (AI)
+          <input
+            value={hintTone}
+            onChange={(e) => setHintTone(e.target.value)}
+            style={inputStyle}
+            placeholder="예: 핵심 표현을 자연스럽게 풀어보세요"
+          />
+        </label>
+
+        <label style={labelStyle}>
+          어색 패턴 가이드 (AI)
+          <input
+            value={awkwardGuide}
+            onChange={(e) => setAwkwardGuide(e.target.value)}
+            style={inputStyle}
+            placeholder="예: 영어 어순 직역, 명사 직역"
           />
         </label>
 

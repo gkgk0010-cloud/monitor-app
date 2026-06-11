@@ -56,6 +56,8 @@ export function emptyInterpretRow(orderIndex = 0) {
     correct_translation: '',
     key_words: [emptyKeyWordRow()],
     hint: '',
+    awkward_patterns: '',
+    critical_phrases: '',
     _expanded: true,
   }
 }
@@ -71,6 +73,8 @@ export function itemToRow(item, index = 0) {
     correct_translation: String(item.correct_translation ?? ''),
     key_words: kws.length ? kws.map((k) => ({ word: String(k.word ?? ''), meaning: String(k.meaning ?? '') })) : [emptyKeyWordRow()],
     hint: String(item.hint ?? ''),
+    awkward_patterns: String(item.awkward_patterns ?? ''),
+    critical_phrases: String(item.critical_phrases ?? ''),
     _expanded: false,
   }
 }
@@ -116,6 +120,8 @@ export function rowToItemInsert(row, setId, orderIndex) {
     correct_translation: String(row.correct_translation).trim(),
     key_words: trimKeyWords(row.key_words),
     hint: String(row.hint ?? '').trim() || null,
+    awkward_patterns: String(row.awkward_patterns ?? '').trim() || null,
+    critical_phrases: String(row.critical_phrases ?? '').trim() || null,
   }
 }
 
@@ -128,6 +134,8 @@ export function rowToItemUpdate(row) {
     correct_translation: String(row.correct_translation).trim(),
     key_words: trimKeyWords(row.key_words),
     hint: String(row.hint ?? '').trim() || null,
+    awkward_patterns: String(row.awkward_patterns ?? '').trim() || null,
+    critical_phrases: String(row.critical_phrases ?? '').trim() || null,
   }
 }
 
@@ -141,7 +149,7 @@ export function sortInterpretRowsByDay(rows) {
   })
 }
 
-/** @param {string[][]} rows — 엑셀 A~E (헤더 제외) */
+/** @param {string[][]} rows — 엑셀 A~C (헤더 제외): A 영어, B 정답, C Day */
 export function parseInterpretExcelRows(rows) {
   const parsed = []
   for (const cells of rows) {
@@ -151,9 +159,11 @@ export function parseInterpretExcelRows(rows) {
     parsed.push({
       sentence_en: sentence,
       correct_translation: translation,
-      key_words: parseKeyWordsCell(cells[2]),
-      hint: String(cells[3] ?? '').trim(),
-      day: parseInterpretDayCell(cells[4]),
+      key_words: [],
+      hint: '',
+      awkward_patterns: '',
+      critical_phrases: '',
+      day: parseInterpretDayCell(cells[2]),
     })
   }
   return parsed

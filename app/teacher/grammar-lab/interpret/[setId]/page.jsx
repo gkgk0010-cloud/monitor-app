@@ -15,6 +15,7 @@ import {
 } from '../../utils/readingInterpretRows'
 import { batchInsertReadingInterpretItems, scheduleClearSaveProgress } from '../../utils/readingInterpretBatchSave'
 import { deleteReadingInterpretItem } from '../../utils/readingInterpretDelete'
+import { bulkGenerateInterpretMeta } from '../../utils/readingInterpretAi'
 import ReadingInterpretItemTable from '../../components/ReadingInterpretItemTable'
 import ReadingInterpretBulkImport from '../../components/ReadingInterpretBulkImport'
 import SaveProgressOverlay from '../../components/SaveProgressOverlay'
@@ -35,12 +36,14 @@ function ReadingInterpretSetDetailContent() {
   const [editSetName, setEditSetName] = useState('')
   const [editOpen, setEditOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
+  const [bulkAiRunning, setBulkAiRunning] = useState(false)
+  const [bulkAiProgress, setBulkAiProgress] = useState(null)
 
   const loadSet = useCallback(async () => {
     if (!teacherId || !setId) return null
     const { data, error } = await supabase
       .from('reading_interpret_sets')
-      .select('id, set_name, description')
+      .select('id, set_name, description, hint_tone, awkward_guide')
       .eq('id', setId)
       .eq('teacher_id', teacherId)
       .maybeSingle()
@@ -55,7 +58,7 @@ function ReadingInterpretSetDetailContent() {
     if (!setId) return
     const { data, error } = await supabase
       .from('reading_interpret_items')
-      .select('id, set_id, order_index, day, sentence_en, correct_translation, key_words, hint')
+      .select('id, set_id, order_index, day, sentence_en, correct_translation, key_words, hint, awkward_patterns, critical_phrases')
       .eq('set_id', setId)
       .order('day', { ascending: true, nullsFirst: false })
       .order('order_index', { ascending: true })
@@ -177,6 +180,35 @@ function ReadingInterpretSetDetailContent() {
     }
   }
 
+  const handleBulkAi = async () => {
+    if (!quizSet || bulkAiRunning) return
+    if (!rows.some((r) => !String(r.id).startsWith('temp-'))) {
+      alert('저장된 문항이 없습니다. 먼저 문항을 저장하세요.')
+      return
+    }
+    setBulkAiRunning(true)
+    setBulkAiProgress({ current: 0, total: 0 })
+    try {
+      const setContext = {
+        hint_tone: quizSet.hint_tone,
+        awkward_guide: quizSet.awkward_guide,
+      }
+      const { updatedRows, processed, skipped } = await bulkGenerateInterpretMeta(
+        supabase,
+        rows,
+        setContext,
+        (p) => setBulkAiProgress(p),
+      )
+      setRows(updatedRows)
+      alert(`${processed}개 처리, ${skipped}개 스킵`)
+    } catch (e) {
+      alert('일괄 AI 생성 실패: ' + (e?.message || e))
+    } finally {
+      setBulkAiRunning(false)
+      setBulkAiProgress(null)
+    }
+  }
+
   const handleRenameSet = async () => {
     if (!teacherId || !quizSet) return
     const newName = String(editSetName).trim()
@@ -265,6 +297,11 @@ function ReadingInterpretSetDetailContent() {
         {quizSet.description ? (
           <p style={{ margin: '6px 0 0', fontSize: 14, opacity: 0.88 }}>설명: {quizSet.description}</p>
         ) : null}
+        {quizSet.hint_tone || quizSet.awkward_guide ? (
+          <p style={{ margin: '6px 0 0', fontSize: 13, opacity: 0.85 }}>
+            AI 힌트 톤: {quizSet.hint_tone || '(기본)'} · 어색 가이드: {quizSet.awkward_guide || '(기본)'}
+          </p>
+        ) : null}
       </header>
 
       {editOpen ? (
@@ -306,7 +343,7 @@ function ReadingInterpretSetDetailContent() {
         </section>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
         <button type="button" onClick={() => setBulkOpen(true)} style={primaryBtn}>
           가져오기 추가
         </button>
@@ -317,6 +354,18 @@ function ReadingInterpretSetDetailContent() {
         >
           + 행 추가
         </button>
+        <button
+          type="button"
+          disabled={bulkAiRunning || !rows.length}
+          onClick={() => void handleBulkAi()}
+          style={{ ...secondaryBtn, borderColor: '#c4b5fd', background: '#f5f3ff', color: '#5b21b6' }}
+        >
+          {bulkAiRunning
+            ? bulkAiProgress
+              ? `${bulkAiProgress.current}/${bulkAiProgress.total || '…'} 처리 중`
+              : 'AI 생성 중…'
+            : '✨ 전체 AI 자동 생성'}
+        </button>
       </div>
 
       <ReadingInterpretItemTable
@@ -325,6 +374,11 @@ function ReadingInterpretSetDetailContent() {
         onRowCommit={handleRowCommit}
         onRowDelete={handleRowDelete}
         savingRowId={savingRowId}
+        supabase={supabase}
+        setContext={{
+          hint_tone: quizSet.hint_tone,
+          awkward_guide: quizSet.awkward_guide,
+        }}
       />
 
       <SaveProgressOverlay progress={saveProgress} />

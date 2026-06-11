@@ -94,7 +94,7 @@ function GrammarLabDashboardContent() {
     if (!teacherId) return []
     const { data: setRows, error } = await supabase
       .from('reading_interpret_sets')
-      .select('id, set_name, description')
+      .select('id, set_name, description, hint_tone, awkward_guide')
       .eq('teacher_id', teacherId)
       .order('set_name')
     if (error) {
@@ -188,7 +188,12 @@ function GrammarLabDashboardContent() {
     try {
       const { error } = await supabase
         .from('reading_interpret_sets')
-        .update({ set_name: values.set_name, description: values.description })
+        .update({
+          set_name: values.set_name,
+          description: values.description,
+          hint_tone: values.hint_tone,
+          awkward_guide: values.awkward_guide,
+        })
         .eq('id', editSet.id)
         .eq('teacher_id', teacherId)
       if (error) {
