@@ -115,7 +115,7 @@ export default function TeacherLayout({ children }) {
             라이브 중계
           </Link>
           <Link href="/teacher/grammar-lab" style={navItemStyle(isGrammarLab)}>
-            문법 해부실
+            독해 훈련소
           </Link>
           <Link href="/teacher/quiz" style={navItemStyle(isQuiz)}>
             독해문제풀이

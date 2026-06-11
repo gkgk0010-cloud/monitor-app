@@ -12,7 +12,7 @@ const TOEIC_MENU_KEYS = [
   { key: 'homework', label: '숙제 인증' },
   { key: 'absence', label: '결석 영상' },
   { key: 'jokbo', label: '시험 만점 족보' },
-  { key: 'grammar_lab', label: '문법 해부실' },
+  { key: 'grammar_lab', label: '독해 훈련소' },
 ]
 
 const ALL_MENU_KEYS = [VOCAB_MENU, ...TOEIC_MENU_KEYS]

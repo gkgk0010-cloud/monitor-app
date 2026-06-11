@@ -262,7 +262,7 @@ function GrammarSetDetailContent() {
   return (
     <div className="teacher-grammar-lab-page" style={{ width: '100%', maxWidth: 'none', minHeight: '100%' }}>
       <Link href="/teacher/grammar-lab" style={{ fontSize: 14, color: COLORS.textSecondary }}>
-        ← 문법 해부실
+        ← 독해 훈련소
       </Link>
       <header
         className="teacher-page-header-bleed"

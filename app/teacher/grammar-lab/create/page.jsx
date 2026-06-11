@@ -143,7 +143,7 @@ function CreateGrammarSetContent() {
   return (
     <div className="teacher-grammar-lab-page" style={{ width: '100%', maxWidth: 'none', minHeight: '100%' }}>
       <Link href="/teacher/grammar-lab" style={{ fontSize: 14, color: COLORS.textSecondary }}>
-        ← 문법 해부실
+        ← 독해 훈련소
       </Link>
       <h1 style={{ margin: '12px 0 4px', fontSize: 22, fontWeight: 800 }}>새 세트 만들기</h1>
       <p style={{ margin: '0 0 20px', color: COLORS.textSecondary, fontSize: 14 }}>
