@@ -38,10 +38,20 @@ export function emptyKeyWordRow() {
   return { word: '', meaning: '' }
 }
 
+/** @param {unknown} raw — 1~30 또는 빈 값(NULL) */
+export function parseInterpretDayCell(raw) {
+  const s = String(raw ?? '').trim()
+  if (!s) return null
+  const n = parseInt(s, 10)
+  if (!Number.isFinite(n) || n < 1 || n > 30) return null
+  return n
+}
+
 export function emptyInterpretRow(orderIndex = 0) {
   return {
     id: nextTempId(),
     order_index: orderIndex,
+    day: null,
     sentence_en: '',
     correct_translation: '',
     key_words: [emptyKeyWordRow()],
@@ -56,6 +66,7 @@ export function itemToRow(item, index = 0) {
   return {
     id: item.id,
     order_index: item.order_index ?? index,
+    day: item.day != null && Number.isFinite(Number(item.day)) ? Math.floor(Number(item.day)) : null,
     sentence_en: String(item.sentence_en ?? ''),
     correct_translation: String(item.correct_translation ?? ''),
     key_words: kws.length ? kws.map((k) => ({ word: String(k.word ?? ''), meaning: String(k.meaning ?? '') })) : [emptyKeyWordRow()],
@@ -100,6 +111,7 @@ export function rowToItemInsert(row, setId, orderIndex) {
   return {
     set_id: setId,
     order_index: orderIndex,
+    day: parseInterpretDayCell(row.day),
     sentence_en: String(row.sentence_en).trim(),
     correct_translation: String(row.correct_translation).trim(),
     key_words: trimKeyWords(row.key_words),
@@ -111,6 +123,7 @@ export function rowToItemInsert(row, setId, orderIndex) {
 export function rowToItemUpdate(row) {
   return {
     order_index: row.order_index,
+    day: parseInterpretDayCell(row.day),
     sentence_en: String(row.sentence_en).trim(),
     correct_translation: String(row.correct_translation).trim(),
     key_words: trimKeyWords(row.key_words),
@@ -118,7 +131,17 @@ export function rowToItemUpdate(row) {
   }
 }
 
-/** @param {string[][]} rows — 엑셀 A~D (헤더 제외) */
+/** day 오름차순, day NULL은 마지막 */
+export function sortInterpretRowsByDay(rows) {
+  return [...rows].sort((a, b) => {
+    const ad = a.day == null || a.day === '' ? Number.POSITIVE_INFINITY : Number(a.day)
+    const bd = b.day == null || b.day === '' ? Number.POSITIVE_INFINITY : Number(b.day)
+    if (ad !== bd) return ad - bd
+    return (Number(a.order_index) || 0) - (Number(b.order_index) || 0)
+  })
+}
+
+/** @param {string[][]} rows — 엑셀 A~E (헤더 제외) */
 export function parseInterpretExcelRows(rows) {
   const parsed = []
   for (const cells of rows) {
@@ -130,6 +153,7 @@ export function parseInterpretExcelRows(rows) {
       correct_translation: translation,
       key_words: parseKeyWordsCell(cells[2]),
       hint: String(cells[3] ?? '').trim(),
+      day: parseInterpretDayCell(cells[4]),
     })
   }
   return parsed

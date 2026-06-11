@@ -63,6 +63,7 @@ export default function ReadingInterpretItemTable({
         <thead>
           <tr style={{ background: COLORS.primarySoft }}>
             <th style={thStyle}>#</th>
+            <th style={thStyle}>Day</th>
             <th style={thStyle}>영어 문장</th>
             <th style={thStyle}>정답 의역</th>
             <th style={thStyle}>핵심 단어</th>
@@ -79,6 +80,7 @@ export default function ReadingInterpretItemTable({
                 onClick={() => updateRow(row.id, { _expanded: !row._expanded })}
               >
                 <td style={tdStyle}>{idx + 1}</td>
+                <td style={tdStyle}>{row.day != null && row.day !== '' ? `Day ${row.day}` : '-'}</td>
                 <td style={tdStyle}>{rowPreviewSentence(row.sentence_en)}</td>
                 <td style={tdStyle}>{rowPreviewTranslation(row.correct_translation)}</td>
                 <td style={tdStyle}>{rowPreviewKeyWords(row.key_words)}</td>
@@ -105,8 +107,24 @@ export default function ReadingInterpretItemTable({
               </tr>
               {row._expanded ? (
                 <tr>
-                  <td colSpan={7} style={{ ...tdStyle, background: COLORS.successBg, padding: 16 }}>
+                  <td colSpan={8} style={{ ...tdStyle, background: COLORS.successBg, padding: 16 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }} onClick={(e) => e.stopPropagation()}>
+                      <label style={fieldLabel}>
+                        Day (1~30, 비우면 NULL)
+                        <input
+                          type="number"
+                          min={1}
+                          max={30}
+                          value={row.day ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            updateRow(row.id, { day: v === '' ? null : v })
+                          }}
+                          style={{ ...inputStyle, maxWidth: 120 }}
+                          placeholder="예: 1"
+                        />
+                      </label>
+
                       <label style={fieldLabel}>
                         영어 문장
                         <input

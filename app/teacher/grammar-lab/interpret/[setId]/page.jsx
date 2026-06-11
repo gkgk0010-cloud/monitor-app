@@ -11,6 +11,7 @@ import {
   itemToRow,
   rowToItemInsert,
   rowToItemUpdate,
+  sortInterpretRowsByDay,
 } from '../../utils/readingInterpretRows'
 import { batchInsertReadingInterpretItems, scheduleClearSaveProgress } from '../../utils/readingInterpretBatchSave'
 import { deleteReadingInterpretItem } from '../../utils/readingInterpretDelete'
@@ -54,15 +55,16 @@ function ReadingInterpretSetDetailContent() {
     if (!setId) return
     const { data, error } = await supabase
       .from('reading_interpret_items')
-      .select('id, set_id, order_index, sentence_en, correct_translation, key_words, hint')
+      .select('id, set_id, order_index, day, sentence_en, correct_translation, key_words, hint')
       .eq('set_id', setId)
-      .order('order_index')
+      .order('day', { ascending: true, nullsFirst: false })
+      .order('order_index', { ascending: true })
     if (error) {
       console.warn('[reading-interpret items]', error.message)
       setRows([])
       return
     }
-    setRows((data || []).map((item, i) => itemToRow(item, i)))
+    setRows(sortInterpretRowsByDay((data || []).map((item, i) => itemToRow(item, i))))
   }, [setId])
 
   const reload = useCallback(async () => {
@@ -156,6 +158,7 @@ function ReadingInterpretSetDetailContent() {
             correct_translation: row.correct_translation,
             key_words: row.key_words,
             hint: row.hint,
+            day: row.day,
           },
           setId,
           startIndex + i,

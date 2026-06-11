@@ -7,16 +7,17 @@ import { parseInterpretExcelRows, rowPreviewKeyWords, rowPreviewSentence, rowPre
 
 function downloadTemplate() {
   const aoa = [
-    ['영어 문장', '정답 의역', '핵심단어 (단어1:의미1,단어2:의미2)', '힌트'],
+    ['영어 문장', '정답 의역', '핵심단어 (단어1:의미1,단어2:의미2)', '힌트', 'Day (1~30)'],
     [
       'The selection of new vendors will take about two weeks.',
       '새 공급업체를 선정하는 데 약 2주가 걸린다',
       'selection:선정하다,vendor:공급업체',
       'take about two weeks = 약 2주 걸리다',
+      '1',
     ],
   ]
   const ws = XLSX.utils.aoa_to_sheet(aoa)
-  ws['!cols'] = [{ wch: 48 }, { wch: 36 }, { wch: 42 }, { wch: 32 }]
+  ws['!cols'] = [{ wch: 48 }, { wch: 36 }, { wch: 42 }, { wch: 32 }, { wch: 10 }]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '독해해석')
   XLSX.writeFile(wb, 'tokpass_독해해석양식.xlsx')
@@ -95,7 +96,7 @@ export default function ReadingInterpretBulkImport({ open, onClose, onImported, 
       >
         <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800 }}>가져오기 추가</h2>
         <p style={{ margin: '0 0 16px', fontSize: 13, color: COLORS.textSecondary }}>
-          A 영어 문장 · B 정답 의역 · C 핵심단어 (단어:의미,…) · D 힌트
+          A 영어 문장 · B 정답 의역 · C 핵심단어 (단어:의미,…) · D 힌트 · E Day (1~30, 비우면 NULL)
         </p>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -121,6 +122,7 @@ export default function ReadingInterpretBulkImport({ open, onClose, onImported, 
               <thead>
                 <tr style={{ background: COLORS.primarySoft }}>
                   <th style={thStyle}>#</th>
+                  <th style={thStyle}>Day</th>
                   <th style={thStyle}>영어 문장</th>
                   <th style={thStyle}>정답 의역</th>
                   <th style={thStyle}>핵심 단어</th>
@@ -131,6 +133,7 @@ export default function ReadingInterpretBulkImport({ open, onClose, onImported, 
                 {preview.map((row, i) => (
                   <tr key={i}>
                     <td style={tdStyle}>{i + 1}</td>
+                    <td style={tdStyle}>{row.day != null ? row.day : '-'}</td>
                     <td style={tdStyle}>{rowPreviewSentence(row.sentence_en)}</td>
                     <td style={tdStyle}>{rowPreviewTranslation(row.correct_translation)}</td>
                     <td style={tdStyle}>{rowPreviewKeyWords(row.key_words)}</td>
