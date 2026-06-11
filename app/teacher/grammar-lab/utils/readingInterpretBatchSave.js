@@ -1,4 +1,4 @@
-import { READING_INTERPRET_CHUNK_SIZE } from './readingInterpretRows'
+import { isInterpretRowValid, READING_INTERPRET_CHUNK_SIZE, rowToItemUpdate } from './readingInterpretRows'
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
@@ -20,6 +20,32 @@ export async function batchInsertReadingInterpretItems(supabase, payload, onProg
     })
   }
   return inserted
+}
+
+/**
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {string} setId
+ * @param {object[]} rows
+ * @param {(p: { stage: string, current: number, total: number }) => void} [onProgress]
+ */
+export async function batchUpdateReadingInterpretItems(supabase, setId, rows, onProgress) {
+  const targets = rows.filter(
+    (r) => !String(r.id || '').startsWith('temp-') && isInterpretRowValid(r),
+  )
+  const total = targets.length
+  let current = 0
+  for (const row of targets) {
+    const payload = rowToItemUpdate(row)
+    const { error } = await supabase
+      .from('reading_interpret_items')
+      .update(payload)
+      .eq('id', row.id)
+      .eq('set_id', setId)
+    if (error) throw error
+    current += 1
+    onProgress?.({ stage: '저장 중', current, total })
+  }
+  return current
 }
 
 export {

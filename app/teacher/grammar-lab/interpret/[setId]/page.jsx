@@ -13,7 +13,7 @@ import {
   rowToItemUpdate,
   sortInterpretRowsByDay,
 } from '../../utils/readingInterpretRows'
-import { batchInsertReadingInterpretItems, scheduleClearSaveProgress } from '../../utils/readingInterpretBatchSave'
+import { batchInsertReadingInterpretItems, batchUpdateReadingInterpretItems, scheduleClearSaveProgress } from '../../utils/readingInterpretBatchSave'
 import { deleteReadingInterpretItem } from '../../utils/readingInterpretDelete'
 import { bulkGenerateInterpretMeta } from '../../utils/readingInterpretAi'
 import ReadingInterpretItemTable from '../../components/ReadingInterpretItemTable'
@@ -38,6 +38,7 @@ function ReadingInterpretSetDetailContent() {
   const [renaming, setRenaming] = useState(false)
   const [bulkAiRunning, setBulkAiRunning] = useState(false)
   const [bulkAiProgress, setBulkAiProgress] = useState(null)
+  const [bulkSaving, setBulkSaving] = useState(false)
 
   const loadSet = useCallback(async () => {
     if (!teacherId || !setId) return null
@@ -180,6 +181,33 @@ function ReadingInterpretSetDetailContent() {
     }
   }
 
+  const saveAllRows = async (rowsToSave) => {
+    const count = await batchUpdateReadingInterpretItems(supabase, setId, rowsToSave, (p) =>
+      setSaveProgress(p),
+    )
+    scheduleClearSaveProgress(setSaveProgress, count)
+    return count
+  }
+
+  const handleBulkSaveAll = async () => {
+    if (!quizSet || bulkSaving) return
+    const targets = rows.filter((r) => !String(r.id).startsWith('temp-'))
+    if (!targets.length) {
+      alert('저장할 문항이 없습니다.')
+      return
+    }
+    setBulkSaving(true)
+    try {
+      const count = await saveAllRows(targets)
+      alert(`${count}개 항목 저장 완료`)
+    } catch (e) {
+      alert('저장 실패: ' + (e?.message || e))
+      setSaveProgress(null)
+    } finally {
+      setBulkSaving(false)
+    }
+  }
+
   const handleBulkAi = async () => {
     if (!quizSet || bulkAiRunning) return
     if (!rows.some((r) => !String(r.id).startsWith('temp-'))) {
@@ -200,7 +228,12 @@ function ReadingInterpretSetDetailContent() {
         (p) => setBulkAiProgress(p),
       )
       setRows(updatedRows)
-      alert(`${processed}개 처리, ${skipped}개 스킵`)
+      if (processed > 0) {
+        const saved = await saveAllRows(updatedRows)
+        alert(`${processed}개 AI 생성, ${skipped}개 스킵 · ${saved}개 항목 저장 완료`)
+      } else {
+        alert(`${processed}개 처리, ${skipped}개 스킵`)
+      }
     } catch (e) {
       alert('일괄 AI 생성 실패: ' + (e?.message || e))
     } finally {
@@ -365,6 +398,14 @@ function ReadingInterpretSetDetailContent() {
               ? `${bulkAiProgress.current}/${bulkAiProgress.total || '…'} 처리 중`
               : 'AI 생성 중…'
             : '✨ 전체 AI 자동 생성'}
+        </button>
+        <button
+          type="button"
+          disabled={bulkSaving || bulkAiRunning || !rows.some((r) => !String(r.id).startsWith('temp-'))}
+          onClick={() => void handleBulkSaveAll()}
+          style={secondaryBtn}
+        >
+          {bulkSaving ? '저장 중…' : '💾 변경사항 전체 저장'}
         </button>
       </div>
 

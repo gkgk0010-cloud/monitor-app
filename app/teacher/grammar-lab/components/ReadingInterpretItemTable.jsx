@@ -94,7 +94,11 @@ export default function ReadingInterpretItemTable({
         alert('AI 결과가 없습니다.')
         return
       }
-      updateRow(row.id, applyAIResultToRow(row, ai))
+      const merged = applyAIResultToRow(row, ai)
+      updateRow(row.id, merged)
+      if (onRowCommit) {
+        await onRowCommit(merged)
+      }
     } catch (e) {
       alert('AI 생성 실패: ' + (e?.message || e))
     } finally {
