@@ -51,6 +51,41 @@ function ReadingInterpretSetDetailContent() {
     return [...set].sort((a, b) => a - b)
   }, [rows])
 
+  /** DB jsonb → 폼 state (키는 문자열 Day 번호) */
+  const parseDayLabels = useCallback((raw) => {
+    let obj = raw
+    if (typeof obj === 'string') {
+      try {
+        obj = JSON.parse(obj)
+      } catch (_parseErr) {
+        return {}
+      }
+    }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {}
+    const out = {}
+    Object.entries(obj).forEach(([key, value]) => {
+      const dayKey = String(key).trim()
+      const text = String(value ?? '').trim()
+      if (dayKey && text) out[dayKey] = text
+    })
+    return out
+  }, [])
+
+  /** uniqueDays + state → 저장용 payload (빈 칸 제외) */
+  const buildDayLabelsPayload = useCallback(
+    (labelsState, days) => {
+      const cleaned = {}
+      ;(days || []).forEach((day) => {
+        const key = String(day)
+        const raw = labelsState?.[key] ?? labelsState?.[day] ?? ''
+        const text = String(raw).trim()
+        if (text) cleaned[key] = text
+      })
+      return cleaned
+    },
+    [],
+  )
+
   const loadSet = useCallback(async () => {
     if (!teacherId || !setId) return null
     const { data, error } = await supabase
@@ -95,12 +130,7 @@ function ReadingInterpretSetDetailContent() {
       setQuizSet(setRow)
       if (setRow) {
         setEditSetName(setRow.set_name)
-        const rawLabels = setRow.day_labels
-        if (rawLabels && typeof rawLabels === 'object' && !Array.isArray(rawLabels)) {
-          setDayLabels(rawLabels)
-        } else {
-          setDayLabels({})
-        }
+        setDayLabels(parseDayLabels(setRow.day_labels))
         await loadItems()
       } else {
         setRows([])
@@ -108,7 +138,7 @@ function ReadingInterpretSetDetailContent() {
     } finally {
       setLoading(false)
     }
-  }, [teacherId, setId, loadSet, loadItems])
+  }, [teacherId, setId, loadSet, loadItems, parseDayLabels])
 
   useEffect(() => {
     void reload()
@@ -260,25 +290,49 @@ function ReadingInterpretSetDetailContent() {
   }
 
   const handleSaveDayLabels = async () => {
-    if (!teacherId || !quizSet || dayLabelsSaving) return
-    const cleaned = {}
-    Object.entries(dayLabels).forEach(([key, value]) => {
-      const text = String(value || '').trim()
-      if (text) cleaned[String(key)] = text
+    if (!teacherId) {
+      console.warn('[day_labels] save aborted — no teacherId')
+      return
+    }
+    if (!quizSet?.id) {
+      console.warn('[day_labels] save aborted — no quizSet.id')
+      return
+    }
+    if (dayLabelsSaving) return
+
+    const cleaned = buildDayLabelsPayload(dayLabels, uniqueDays)
+    uniqueDays.forEach((day) => {
+      const key = String(day)
+      const el = document.getElementById(`day-label-${quizSet.id}-${day}`)
+      if (!el || !('value' in el)) return
+      const text = String(el.value || '').trim()
+      if (text) cleaned[key] = text
+      else delete cleaned[key]
     })
+    console.log('[day_labels] save payload', cleaned)
+
     setDayLabelsSaving(true)
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('reading_interpret_sets')
         .update({ day_labels: cleaned })
-        .eq('id', setId)
+        .eq('id', quizSet.id)
         .eq('teacher_id', teacherId)
+        .select('id, day_labels')
+        .maybeSingle()
       if (error) {
         alert('Day 설명 저장 실패: ' + error.message)
+        console.warn('[day_labels] update error', error.message)
         return
       }
-      setDayLabels(cleaned)
-      setQuizSet((prev) => (prev ? { ...prev, day_labels: cleaned } : prev))
+      if (!data) {
+        alert('Day 설명 저장 실패: 변경된 행이 없습니다. (권한 또는 세트 ID 확인)')
+        console.warn('[day_labels] update returned no row', { setId: quizSet.id, teacherId })
+        return
+      }
+      const saved = parseDayLabels(data.day_labels)
+      setDayLabels(saved)
+      setQuizSet((prev) => (prev ? { ...prev, day_labels: saved } : prev))
     } finally {
       setDayLabelsSaving(false)
     }
@@ -444,19 +498,21 @@ function ReadingInterpretSetDetailContent() {
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {uniqueDays.map((day) => (
-              <label
+              <div
                 key={day}
                 style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 14 }}
               >
                 <span style={{ minWidth: 56, fontWeight: 800 }}>Day {day}</span>
                 <input
-                  value={dayLabels[String(day)] || ''}
-                  onChange={(e) =>
+                  id={`day-label-${quizSet.id}-${day}`}
+                  value={dayLabels[String(day)] ?? ''}
+                  onChange={(e) => {
+                    const next = String(e.target.value)
                     setDayLabels((prev) => ({
                       ...prev,
-                      [String(day)]: e.target.value,
+                      [String(day)]: next,
                     }))
-                  }
+                  }}
                   placeholder="예: be+추상명사"
                   style={{
                     flex: '1 1 200px',
@@ -467,7 +523,7 @@ function ReadingInterpretSetDetailContent() {
                     fontSize: 14,
                   }}
                 />
-              </label>
+              </div>
             ))}
           </div>
         </section>
