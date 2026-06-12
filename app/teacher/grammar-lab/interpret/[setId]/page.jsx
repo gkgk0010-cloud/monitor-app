@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState, Suspense } from 'react'
+import { useCallback, useEffect, useMemo, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/utils/supabaseClient'
@@ -39,12 +39,23 @@ function ReadingInterpretSetDetailContent() {
   const [bulkAiRunning, setBulkAiRunning] = useState(false)
   const [bulkAiProgress, setBulkAiProgress] = useState(null)
   const [bulkSaving, setBulkSaving] = useState(false)
+  const [dayLabels, setDayLabels] = useState({})
+  const [dayLabelsSaving, setDayLabelsSaving] = useState(false)
+
+  const uniqueDays = useMemo(() => {
+    const set = new Set()
+    rows.forEach((r) => {
+      const d = Number(r.day)
+      if (Number.isFinite(d) && d >= 1) set.add(d)
+    })
+    return [...set].sort((a, b) => a - b)
+  }, [rows])
 
   const loadSet = useCallback(async () => {
     if (!teacherId || !setId) return null
     const { data, error } = await supabase
       .from('reading_interpret_sets')
-      .select('id, set_name, description, hint_tone, awkward_guide')
+      .select('id, set_name, description, hint_tone, awkward_guide, day_labels')
       .eq('id', setId)
       .eq('teacher_id', teacherId)
       .maybeSingle()
@@ -84,6 +95,12 @@ function ReadingInterpretSetDetailContent() {
       setQuizSet(setRow)
       if (setRow) {
         setEditSetName(setRow.set_name)
+        const rawLabels = setRow.day_labels
+        if (rawLabels && typeof rawLabels === 'object' && !Array.isArray(rawLabels)) {
+          setDayLabels(rawLabels)
+        } else {
+          setDayLabels({})
+        }
         await loadItems()
       } else {
         setRows([])
@@ -242,6 +259,31 @@ function ReadingInterpretSetDetailContent() {
     }
   }
 
+  const handleSaveDayLabels = async () => {
+    if (!teacherId || !quizSet || dayLabelsSaving) return
+    const cleaned = {}
+    Object.entries(dayLabels).forEach(([key, value]) => {
+      const text = String(value || '').trim()
+      if (text) cleaned[String(key)] = text
+    })
+    setDayLabelsSaving(true)
+    try {
+      const { error } = await supabase
+        .from('reading_interpret_sets')
+        .update({ day_labels: cleaned })
+        .eq('id', setId)
+        .eq('teacher_id', teacherId)
+      if (error) {
+        alert('Day 설명 저장 실패: ' + error.message)
+        return
+      }
+      setDayLabels(cleaned)
+      setQuizSet((prev) => (prev ? { ...prev, day_labels: cleaned } : prev))
+    } finally {
+      setDayLabelsSaving(false)
+    }
+  }
+
   const handleRenameSet = async () => {
     if (!teacherId || !quizSet) return
     const newName = String(editSetName).trim()
@@ -372,6 +414,61 @@ function ReadingInterpretSetDetailContent() {
             <button type="button" onClick={() => setEditOpen(false)} style={secondaryBtn}>
               취소
             </button>
+          </div>
+        </section>
+      ) : null}
+
+      {uniqueDays.length > 0 ? (
+        <section
+          style={{
+            marginBottom: 16,
+            padding: 16,
+            borderRadius: RADIUS.lg,
+            border: `1px solid ${COLORS.border}`,
+            background: COLORS.surface,
+          }}
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Day 설명</h2>
+            <button
+              type="button"
+              disabled={dayLabelsSaving}
+              onClick={() => void handleSaveDayLabels()}
+              style={secondaryBtn}
+            >
+              {dayLabelsSaving ? '저장 중…' : 'Day 설명 저장'}
+            </button>
+          </div>
+          <p style={{ margin: '0 0 12px', fontSize: 13, color: COLORS.textSecondary }}>
+            학생앱 Day 선택 화면에 표시됩니다. 빈 칸은 저장되지 않습니다.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {uniqueDays.map((day) => (
+              <label
+                key={day}
+                style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 14 }}
+              >
+                <span style={{ minWidth: 56, fontWeight: 800 }}>Day {day}</span>
+                <input
+                  value={dayLabels[String(day)] || ''}
+                  onChange={(e) =>
+                    setDayLabels((prev) => ({
+                      ...prev,
+                      [String(day)]: e.target.value,
+                    }))
+                  }
+                  placeholder="예: be+추상명사"
+                  style={{
+                    flex: '1 1 200px',
+                    minWidth: 0,
+                    padding: '8px 10px',
+                    borderRadius: RADIUS.md,
+                    border: `1px solid ${COLORS.border}`,
+                    fontSize: 14,
+                  }}
+                />
+              </label>
+            ))}
           </div>
         </section>
       ) : null}
