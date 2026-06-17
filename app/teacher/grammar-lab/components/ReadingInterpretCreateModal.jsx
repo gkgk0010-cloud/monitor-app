@@ -13,6 +13,12 @@ const INTERPRET_TYPE_PRESETS = {
     hint_tone: '능동으로 자연스럽게',
     awkward_guide: '~받고 있다, ~에 의해',
   },
+  sentence_question: {
+    hint_tone:
+      '끊어읽기(박스) 순서대로, 의문사 덩어리를 명사로 잡고 푸세요. 예: Who approved the budget → 승인한 사람은? / 예산을?',
+    awkward_guide:
+      '[끊어읽기모드] 영어 어순 무시하고 한 문장으로 합치기 / 의문사 덩어리를 명사화 안 하고 \'누가 ~했나요?\'로 풀어쓰기 / 박스 의미단위(누가·무엇을·언제) 누락',
+  },
 }
 
 /**
@@ -128,6 +134,7 @@ export default function ReadingInterpretCreateModal({ open, onClose, onSubmit, i
             <option value="custom">직접 입력</option>
             <option value="abstract_noun">추상명사 (abstract_noun)</option>
             <option value="passive">수동태 (passive)</option>
+            <option value="sentence_question">끊어읽기 (sentence_question)</option>
           </select>
         </label>
 
