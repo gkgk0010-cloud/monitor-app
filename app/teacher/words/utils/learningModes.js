@@ -45,13 +45,17 @@ export const MODE_DESCRIPTIONS = {
   wrong_note: '오늘 복습할 오답 단어만 풀어요. Day 학습 독에서도 사용할 수 있어요.',
 }
 
-/** word | sentence_writing | sentence_speaking (구 image·sentence 는 normalizeSetType 로 정규화) */
+/** word | sentence_writing | sentence_speaking | kids (구 image·sentence 는 normalizeSetType 로 정규화) */
 /** 세트 타입별 기본(추천) 필수 후보 모드 — create·루틴 추천과 동일 소스 */
 export const DEFAULT_MODES_BY_TYPE = {
   word: ['flashcard', 'recall', 'mypick', 'test', 'matching'],
   sentence_writing: ['reading', 'dictation', 'writing', 'mypick', 'scramble'],
   sentence_speaking: ['dictation', 'listening', 'shadowing', 'mypick', 'scramble'],
+  kids: ['flashcard', 'image', 'listening', 'readAloud', 'writing', 'matching', 'test'],
 }
+
+/** 키즈 세트 독·DB 저장 순서 (학생 앱 좌→우) */
+export const KIDS_MODE_ORDER = DEFAULT_MODES_BY_TYPE.kids
 
 const HEAD_CANON_ORDER = ['flashcard', 'recall', 'mypick']
 
@@ -111,13 +115,23 @@ export function sortLearningModeDbKeys(keys) {
   return [...head, ...mid, ...test, ...scramble, ...matching]
 }
 
-/** DB·구버전 값 → word | sentence_writing | sentence_speaking */
+/** DB·구버전 값 → word | sentence_writing | sentence_speaking | kids */
 export function normalizeSetType(t) {
   const s = String(t || 'word').trim()
   if (s === 'image') return 'word'
   if (s === 'sentence') return 'sentence_writing'
-  if (s === 'sentence_writing' || s === 'sentence_speaking') return s
+  if (s === 'sentence_writing' || s === 'sentence_speaking' || s === 'kids') return s
   return 'word'
+}
+
+/** 세트 타입별 저장·표시 순서 (키즈는 고정 순서, 그 외 sortLearningModeDbKeys) */
+export function orderKeysForSetType(setType, keys) {
+  const st = normalizeSetType(setType)
+  if (st === 'kids') {
+    const set = new Set(keys || [])
+    return KIDS_MODE_ORDER.filter((k) => set.has(k))
+  }
+  return sortLearningModeDbKeys(keys)
 }
 
 /** 세트 타입별 기본 체크 — 루틴 추천과 동일하게 해당 키 전부 필수(true) */
@@ -192,8 +206,9 @@ export function normalizeRawAvailableModes(raw) {
  * word_sets.available_modes 저장용 — 순수 JSON 직렬화 가능한 plain object 배열만 반환.
  * @returns {object[]}
  */
-export function buildModesDataForWordSetSave(modes, requiredByMode, _passScore, _maxAttempts) {
-  const selectedKeys = sortLearningModeDbKeys(ALL_MODE_KEYS.filter((k) => modes[k]))
+export function buildModesDataForWordSetSave(modes, requiredByMode, _passScore, _maxAttempts, setType = 'word') {
+  const enabled = ALL_MODE_KEYS.filter((k) => modes[k])
+  const selectedKeys = orderKeysForSetType(setType, enabled)
   const modesData = selectedKeys.map((modeName) => ({
     mode: modeName,
     required: !!requiredByMode[modeName],
@@ -205,7 +220,10 @@ export function buildModesDataForWordSetSave(modes, requiredByMode, _passScore, 
 export function formatAvailableModesSummary(am, setType) {
   const parsed = parseAvailableModes(am, setType)
   const labels = []
-  for (const k of sortLearningModeDbKeys(ALL_MODE_KEYS.filter((key) => parsed.modes[key]))) {
+  for (const k of orderKeysForSetType(
+    setType,
+    ALL_MODE_KEYS.filter((key) => parsed.modes[key]),
+  )) {
     labels.push(MODE_LABELS[k] || k)
   }
   if (labels.length === 0) return '—'
@@ -272,8 +290,8 @@ export function parseAvailableModes(am, setType) {
  * @param {Record<string, boolean>} modes
  * @param {Record<string, boolean>} requiredByMode
  */
-export function buildAvailableModesJson(modes, requiredByMode, passScore, maxAttempts) {
-  return buildModesDataForWordSetSave(modes, requiredByMode, passScore, maxAttempts)
+export function buildAvailableModesJson(modes, requiredByMode, passScore, maxAttempts, setType = 'word') {
+  return buildModesDataForWordSetSave(modes, requiredByMode, passScore, maxAttempts, setType)
 }
 
 /** 새 세트 STEP2 / 세트 타입 변경 시 초기 상태 */

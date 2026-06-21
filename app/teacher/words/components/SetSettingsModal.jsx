@@ -10,6 +10,7 @@ import {
   parseAvailableModes,
   buildModesDataForWordSetSave,
   defaultRequiredForBaseKeys,
+  initModesStateForType,
   normalizeSetType,
 } from '../utils/learningModes'
 import LearningModesPicker from './LearningModesPicker'
@@ -23,9 +24,17 @@ const SET_TYPE_LABELS = {
   word: '단어 세트',
   sentence_writing: '문장 세트 — 라이팅',
   sentence_speaking: '문장 세트 — 스피킹',
+  kids: '키즈 세트',
   sentence: '문장 세트 — 라이팅',
   image: '단어 세트',
 }
+
+const SET_TYPE_RADIO_OPTIONS = [
+  { id: 'word', label: '단어 세트' },
+  { id: 'sentence_writing', label: '문장 세트 — 라이팅' },
+  { id: 'sentence_speaking', label: '문장 세트 — 스피킹' },
+  { id: 'kids', label: '키즈 세트' },
+]
 
 /**
  * @param {{
@@ -127,6 +136,19 @@ export default function SetSettingsModal({
     if (!open) return
     void load()
   }, [open, load])
+
+  const handleSetTypeChange = (newType) => {
+    setSetType(newType)
+    const init = initModesStateForType(newType)
+    setModes(init.modes)
+    setRequiredByMode(init.requiredByMode)
+  }
+
+  const applyRecommendedModesClick = () => {
+    const init = initModesStateForType(setType)
+    setModes(init.modes)
+    setRequiredByMode(init.requiredByMode)
+  }
 
   const handleToggleMode = (key) => {
     setModes((prev) => {
@@ -340,7 +362,7 @@ export default function SetSettingsModal({
       return
     }
     const sn = String(setName || '').trim()
-    const modesData = buildModesDataForWordSetSave(modes, requiredByMode, 70, 3)
+    const modesData = buildModesDataForWordSetSave(modes, requiredByMode, 70, 3, setType)
     setSavingModes(true)
     try {
       let wid = wordSetId ? String(wordSetId) : null
@@ -563,10 +585,38 @@ export default function SetSettingsModal({
                 </p>
               </div>
             </div>
-            <p style={{ margin: '0 0 18px', fontSize: 14, color: COLORS.textPrimary }}>
-              <span style={{ fontWeight: 700, color: COLORS.accentText }}>세트 타입:</span>{' '}
-              {SET_TYPE_LABELS[setType] || setType}
-            </p>
+            <div style={{ margin: '0 0 18px' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.textPrimary, marginBottom: 10 }}>세트 타입</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {SET_TYPE_RADIO_OPTIONS.map((opt) => {
+                  const active = setType === opt.id
+                  return (
+                    <label
+                      key={opt.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '12px 14px',
+                        borderRadius: RADIUS.md,
+                        border: active ? `2px solid ${COLORS.primary}` : `1px solid ${COLORS.border}`,
+                        background: active ? COLORS.primarySoft : COLORS.bg,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="set-settings-set-type"
+                        checked={active}
+                        onChange={() => handleSetTypeChange(opt.id)}
+                        style={{ marginTop: 3 }}
+                      />
+                      <span style={{ fontWeight: 700, color: COLORS.textPrimary }}>{opt.label}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
 
             <label style={{ display: 'block', fontSize: 13, fontWeight: 800, color: COLORS.accentText, marginBottom: 8 }}>
               세트 언어 (학습·TTS)
@@ -770,6 +820,28 @@ export default function SetSettingsModal({
               필수·선택은 <code style={{ fontSize: 11 }}>word_sets.available_modes</code>에만 저장됩니다. 객관식 테스트의 문항 수·통과 점수·출제 유형 등은 세트 단어
               목록 상단의 <strong>테스트 설정</strong>에서 수정하세요 (학생 앱·루틴과 동일한 단일 규칙).
             </p>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <button
+                type="button"
+                onClick={applyRecommendedModesClick}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: RADIUS.md,
+                  border: `1px solid ${COLORS.primary}`,
+                  background: COLORS.primarySoft,
+                  color: COLORS.accentText,
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                }}
+              >
+                추천 모드 적용 ({SET_TYPE_LABELS[setType] ?? setType})
+              </button>
+              <span style={{ fontSize: 11, color: COLORS.textSecondary }}>
+                선택한 세트 타입에 맞춰 필수 후보 모드를 한 번에 켭니다.
+              </span>
+            </div>
 
             <LearningModesPicker
               setType={setType}

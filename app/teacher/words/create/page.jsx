@@ -49,7 +49,7 @@ async function ensureWordSetIdForCreate(teacherId, setName, createSetType, avail
   const available_modes =
     availableModesPayload != null
       ? availableModesPayload
-      : buildAvailableModesJson(init.modes, init.requiredByMode, init.passScore, init.maxAttempts)
+      : buildAvailableModesJson(init.modes, init.requiredByMode, init.passScore, init.maxAttempts, st)
   const { data, error } = await supabase
     .from('word_sets')
     .insert({
@@ -80,12 +80,14 @@ const SET_TYPE_LABELS = {
   word: '단어 세트',
   sentence_writing: '문장 세트 — 라이팅',
   sentence_speaking: '문장 세트 — 스피킹',
+  kids: '키즈 세트',
 }
 
 const SET_TYPE_RADIO_OPTIONS = [
   { id: 'word', label: '단어 세트' },
   { id: 'sentence_writing', label: '문장 세트 — 라이팅' },
   { id: 'sentence_speaking', label: '문장 세트 — 스피킹' },
+  { id: 'kids', label: '키즈 세트' },
 ]
 
 function emptyRow(setName) {
@@ -159,7 +161,7 @@ function CreateWordSetPageContent() {
   /** URL `?type=` 초기값 — 페이지에서 라디오로 변경 가능 */
   const createSetTypeFromQuery = useMemo(() => {
     const t = searchParams.get('type')
-    if (t === 'sentence_writing' || t === 'sentence_speaking') return t
+    if (t === 'sentence_writing' || t === 'sentence_speaking' || t === 'kids') return t
     if (t === 'sentence' || t === 'image') return 'sentence_writing'
     return 'word'
   }, [searchParams])
@@ -585,7 +587,7 @@ function CreateWordSetPageContent() {
           teacherId,
           sn,
           createSetType,
-          buildAvailableModesJson(modes, requiredByMode, testPassScore, testMaxAttempts),
+          buildAvailableModesJson(modes, requiredByMode, testPassScore, testMaxAttempts, createSetType),
         )
       } catch (e2) {
         console.warn('[word_sets]', e2)
