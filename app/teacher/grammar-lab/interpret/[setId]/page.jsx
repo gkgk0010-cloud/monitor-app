@@ -482,6 +482,17 @@ function ReadingInterpretSetDetailContent() {
         awkwardGuide={quizSet.awkward_guide}
         boxSourceSetName={quizSet.box_source_set_name}
         onUpdated={() => void reload()}
+        onItemsCopied={() => void loadItems()}
+        onCopyProgress={(p) => {
+          if (!p) {
+            setSaveProgress(null)
+            return
+          }
+          setSaveProgress(p)
+          if (p.current >= p.total && p.total > 0) {
+            scheduleClearSaveProgress(setSaveProgress, p.total)
+          }
+        }}
       />
 
       {uniqueDays.length > 0 ? (

@@ -9,6 +9,7 @@ import {
   enableReadingBreakGuide,
   hasReadingBreakMode,
 } from '../utils/slotDrillMode'
+import { copyBoxDrillSetToInterpretSet, formatCopyFromBoxResult } from '../utils/readingInterpretBoxImport'
 
 /**
  * 독해해석 세트 — 끊어읽기 모드 (한 줄 해석 + 박스별 입력)
@@ -18,6 +19,8 @@ import {
  *   awkwardGuide?: string | null,
  *   boxSourceSetName?: string | null,
  *   onUpdated?: () => void,
+ *   onItemsCopied?: () => void,
+ *   onCopyProgress?: (p: { stage: string, current: number, total: number } | null) => void,
  * }} props
  */
 export default function SlotDrillSetPanel({
@@ -26,6 +29,8 @@ export default function SlotDrillSetPanel({
   awkwardGuide = '',
   boxSourceSetName = '',
   onUpdated,
+  onItemsCopied,
+  onCopyProgress,
 }) {
   const [enabled, setEnabled] = useState(false)
   const [boxSource, setBoxSource] = useState('')
@@ -66,25 +71,29 @@ export default function SlotDrillSetPanel({
     setLoading(false)
   }, [setId])
 
+  const persistSettings = async (nextEnabled, nextBoxSource) => {
+    const nextGuide = nextEnabled
+      ? enableReadingBreakGuide(awkwardGuide)
+      : disableReadingBreakGuide(awkwardGuide)
+    const { error } = await supabase
+      .from('reading_interpret_sets')
+      .update({
+        awkward_guide: nextGuide,
+        box_source_set_name: nextEnabled ? String(nextBoxSource || '').trim() || null : null,
+      })
+      .eq('id', setId)
+      .eq('teacher_id', teacherId)
+    if (error) throw error
+    setEnabled(nextEnabled)
+    setBoxSource(nextEnabled ? String(nextBoxSource || '').trim() : '')
+    onUpdated?.()
+  }
+
   const persist = async (nextEnabled, nextBoxSource) => {
     if (!setId || !teacherId || busy) return
     setBusy(true)
     try {
-      const nextGuide = nextEnabled
-        ? enableReadingBreakGuide(awkwardGuide)
-        : disableReadingBreakGuide(awkwardGuide)
-      const { error } = await supabase
-        .from('reading_interpret_sets')
-        .update({
-          awkward_guide: nextGuide,
-          box_source_set_name: nextEnabled ? String(nextBoxSource || '').trim() || null : null,
-        })
-        .eq('id', setId)
-        .eq('teacher_id', teacherId)
-      if (error) throw error
-      setEnabled(nextEnabled)
-      setBoxSource(nextEnabled ? String(nextBoxSource || '').trim() : '')
-      onUpdated?.()
+      await persistSettings(nextEnabled, nextBoxSource)
     } catch (e) {
       alert('끊어읽기 설정 저장 실패: ' + (e?.message || e))
     } finally {
@@ -107,6 +116,45 @@ export default function SlotDrillSetPanel({
       return
     }
     await persist(true, name)
+  }
+
+  const copyFromBoxSource = async () => {
+    const name = String(boxSource).trim()
+    if (!name) {
+      alert('먼저 문장분석(박스 만들기) 세트를 선택하세요.')
+      return
+    }
+    if (
+      !confirm(
+        `「${name}」 세트의 영문·의역(힌트)을 이 독해해석 세트로 복사합니다.\n` +
+          '이미 같은 영문 문장은 건너뜁니다. 계속할까요?',
+      )
+    ) {
+      return
+    }
+    setBusy(true)
+    onCopyProgress?.({ stage: '문항 복사', current: 0, total: 1 })
+    try {
+      if (!enabled || String(boxSourceSetName ?? '').trim() !== name) {
+        await persistSettings(true, name)
+      }
+      const result = await copyBoxDrillSetToInterpretSet(supabase, {
+        teacherId,
+        interpretSetId: setId,
+        boxSourceSetName: name,
+        onProgress: onCopyProgress,
+      })
+      alert(formatCopyFromBoxResult(result))
+      if (result.inserted > 0) {
+        onItemsCopied?.()
+      }
+    } catch (e) {
+      alert('복사 실패: ' + (e?.message || e))
+      onCopyProgress?.(null)
+    } finally {
+      setBusy(false)
+      onCopyProgress?.(null)
+    }
   }
 
   return (
@@ -184,8 +232,28 @@ export default function SlotDrillSetPanel({
         >
           출처 저장
         </button>
+        <button
+          type="button"
+          disabled={busy || !boxSource.trim()}
+          onClick={() => void copyFromBoxSource()}
+          style={{
+            padding: '8px 14px',
+            borderRadius: RADIUS.md,
+            border: 'none',
+            background: COLORS.primary,
+            color: COLORS.textOnGreen,
+            fontWeight: 700,
+            cursor: busy || !boxSource.trim() ? 'not-allowed' : 'pointer',
+            opacity: busy || !boxSource.trim() ? 0.55 : 1,
+          }}
+        >
+          출처 → 해석 문항 복사
+        </button>
       </div>
       <p style={{ margin: '10px 0 0', fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
+        <strong>출처 → 해석 문항 복사</strong>: 문장분석 세트의 영문·의역(힌트)을 아래 표에 한 번에
+        등록합니다. 끊어읽기 출처도 함께 저장됩니다.
+        <br />
         한 줄 끊어읽기만 쓸 때는 출처 없이 ON 가능합니다. 박스별 입력은 해석{' '}
         <code>sentence_en</code> ↔ 박스 세트 <code>sentence_text</code> 매칭 + 출처 세트가 필요합니다.
       </p>
