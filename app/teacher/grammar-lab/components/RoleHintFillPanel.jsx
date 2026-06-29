@@ -8,19 +8,25 @@ import { ROLE_HINT_SUGGESTIONS } from '../utils/slotDrillMode'
 /**
  * @param {{ setName: string, teacherId: string, trainingKind: string, itemIds: string[] }} props
  */
-export default function RoleHintFillPanel({ setName, teacherId, trainingKind, itemIds }) {
+export default function RoleHintFillPanel({
+  setName,
+  teacherId,
+  trainingKind,
+  itemIds = [],
+}) {
+  const safeItemIds = Array.isArray(itemIds) ? itemIds : []
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState('')
   const [missingCount, setMissingCount] = useState(null)
 
-  const canUse = trainingKind === 'box_drill' && itemIds.length > 0
+  const canUse = trainingKind === 'box_drill' && safeItemIds.length > 0
 
   const loadMissing = async () => {
     if (!canUse) return 0
     const { data, error } = await supabase
       .from('box_drill_answers')
       .select('id, role_hint')
-      .in('item_id', itemIds)
+      .in('item_id', safeItemIds)
     if (error) return null
     const n = (data || []).filter((r) => !String(r.role_hint ?? '').trim()).length
     setMissingCount(n)
@@ -29,7 +35,7 @@ export default function RoleHintFillPanel({ setName, teacherId, trainingKind, it
 
   useEffect(() => {
     void loadMissing()
-  }, [setName, itemIds.join('|'), canUse])
+  }, [setName, safeItemIds.join('|'), canUse])
 
   const runFill = async () => {
     if (!canUse || busy) return
@@ -42,13 +48,13 @@ export default function RoleHintFillPanel({ setName, teacherId, trainingKind, it
         .eq('teacher_id', teacherId)
         .eq('set_name', setName)
         .eq('training_kind', 'box_drill')
-        .in('id', itemIds)
+        .in('id', safeItemIds)
       if (itemErr) throw itemErr
 
       const { data: boxes, error: boxErr } = await supabase
         .from('box_drill_answers')
         .select('id, item_id, box_index, start_char, end_char, role_hint')
-        .in('item_id', itemIds)
+        .in('item_id', safeItemIds)
         .order('box_index')
       if (boxErr) throw boxErr
 

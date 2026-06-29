@@ -593,7 +593,7 @@ export default function BoxAnswerModal({
                     type="text"
                     list="gl-role-hint-suggestions"
                     value={b.role_hint ?? ''}
-                    placeholder="역할 (칸 나누기)"
+                    placeholder="역할 (끊어읽기)"
                     disabled={saving}
                     onChange={(e) => {
                       const v = e.target.value
@@ -615,7 +615,7 @@ export default function BoxAnswerModal({
                   />
                   {!String(b.role_hint ?? '').trim() ? (
                     <span
-                      title="칸 나누기 모드에 필요"
+                      title="끊어읽기(박스별) 모드에 필요"
                       style={{
                         fontSize: 10,
                         fontWeight: 800,

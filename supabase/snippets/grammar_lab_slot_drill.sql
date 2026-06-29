@@ -1,12 +1,8 @@
 -- 칸 나누기(slot_drill) — monitor-app snippets (tokpass-app/migrations/grammar_lab_slot_drill.sql 동일)
 
-ALTER TABLE public.sentence_training_items
-  ADD COLUMN IF NOT EXISTS awkward_guide text;
-
 ALTER TABLE public.box_drill_answers
   ADD COLUMN IF NOT EXISTS role_hint text;
 
-COMMENT ON COLUMN public.sentence_training_items.awkward_guide IS '세트/문항 모드 플래그 등. [칸나누기모드] 포함 시 칸 나누기 학습 가능';
 COMMENT ON COLUMN public.box_drill_answers.role_hint IS '칸 나누기 UI 박스 역할 라벨 (예: 주절, 시점)';
 
 DO $$

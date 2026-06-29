@@ -19,6 +19,7 @@ import { bulkGenerateInterpretMeta } from '../../utils/readingInterpretAi'
 import ReadingInterpretItemTable from '../../components/ReadingInterpretItemTable'
 import ReadingInterpretBulkImport from '../../components/ReadingInterpretBulkImport'
 import SaveProgressOverlay from '../../components/SaveProgressOverlay'
+import SlotDrillSetPanel from '../../components/SlotDrillSetPanel'
 
 function ReadingInterpretSetDetailContent() {
   const params = useParams()
@@ -90,7 +91,7 @@ function ReadingInterpretSetDetailContent() {
     if (!teacherId || !setId) return null
     const { data, error } = await supabase
       .from('reading_interpret_sets')
-      .select('id, set_name, description, hint_tone, awkward_guide, day_labels')
+      .select('id, set_name, description, hint_tone, awkward_guide, day_labels, box_source_set_name')
       .eq('id', setId)
       .eq('teacher_id', teacherId)
       .maybeSingle()
@@ -474,6 +475,14 @@ function ReadingInterpretSetDetailContent() {
           </div>
         </section>
       ) : null}
+
+      <SlotDrillSetPanel
+        setId={setId}
+        teacherId={teacherId}
+        awkwardGuide={quizSet.awkward_guide}
+        boxSourceSetName={quizSet.box_source_set_name}
+        onUpdated={() => void reload()}
+      />
 
       {uniqueDays.length > 0 ? (
         <section

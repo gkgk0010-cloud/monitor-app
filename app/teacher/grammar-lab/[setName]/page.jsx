@@ -31,7 +31,6 @@ import {
 } from '../utils/grammarLabBatchSave'
 import SaveProgressOverlay from '../components/SaveProgressOverlay'
 import GrammarHintFillPanel from '../components/GrammarHintFillPanel'
-import SlotDrillSetPanel from '../components/SlotDrillSetPanel'
 import RoleHintFillPanel from '../components/RoleHintFillPanel'
 import { persistHintKoRow } from '../utils/grammarHintPersist'
 
@@ -341,15 +340,12 @@ function GrammarSetDetailContent() {
       </section>
 
       {trainingKind === 'box_drill' ? (
-        <>
-          <SlotDrillSetPanel setName={setName} teacherId={teacherId} trainingKind={trainingKind} />
-          <RoleHintFillPanel
-            setName={setName}
-            teacherId={teacherId}
-            trainingKind={trainingKind}
-            itemIds={itemIds}
-          />
-        </>
+        <RoleHintFillPanel
+          setName={setName}
+          teacherId={teacherId}
+          trainingKind={trainingKind}
+          itemIds={itemIds}
+        />
       ) : null}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
