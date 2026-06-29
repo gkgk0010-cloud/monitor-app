@@ -65,9 +65,19 @@ export async function fillBoxDrillRoleHintsForSet(supabase, { teacherId, boxSour
     })
   }
 
-  const payload = [...byItem.values()].filter((x) => x.boxes.length)
-  if (!payload.length) {
+  const payload = [...byItem.values()]
+    .map((row) => ({
+      ...row,
+      boxes: row.boxes.filter((b) => !String(b.role_hint ?? '').trim()),
+    }))
+    .filter((x) => x.boxes.length)
+
+  const totalBoxCount = [...byItem.values()].reduce((n, r) => n + r.boxes.length, 0)
+  if (!totalBoxCount) {
     return { ok: false, error: 'no-boxes', updated: 0 }
+  }
+  if (!payload.length) {
+    return { ok: true, updated: 0, setName, skipped: true }
   }
 
   const res = await fetch('/api/grammar-lab/fill-role-hints', {
@@ -90,5 +100,10 @@ export async function fillBoxDrillRoleHintsForSet(supabase, { teacherId, boxSour
     if (!upErr) updated += 1
   }
 
-  return { ok: true, updated, setName }
+  return {
+    ok: true,
+    updated,
+    setName,
+    failedChunks: Number(json.failedChunks || 0),
+  }
 }

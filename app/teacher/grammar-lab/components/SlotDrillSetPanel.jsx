@@ -139,7 +139,14 @@ export default function SlotDrillSetPanel({
         }
         return
       }
-      setRoleHintLog(`완료 · ${result.updated}개 박스 role_hint 저장`)
+      if (result.skipped) {
+        setRoleHintLog('이미 모든 박스에 역할 라벨이 있습니다.')
+        await refreshRoleHintMissing()
+        return
+      }
+      const extra =
+        result.failedChunks > 0 ? ` · ${result.failedChunks}배치 실패(나머지는 저장됨)` : ''
+      setRoleHintLog(`완료 · ${result.updated}개 박스 role_hint 저장${extra}`)
       await refreshRoleHintMissing()
     } catch (e) {
       setRoleHintLog('')
