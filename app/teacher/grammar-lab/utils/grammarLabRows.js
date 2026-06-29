@@ -26,20 +26,89 @@ export function splitExampleSentence(ex) {
     .map((s) => s.trim())
     .filter(Boolean)
   if (parts.length <= 1) {
-    return { sentence_text: parts[0] || '', example_ko: '' }
+    const { sentence_text } = parseBracketBoxMarkers(parts[0] || '')
+    return { sentence_text, example_ko: '' }
   }
-  return { sentence_text: parts[0], example_ko: parts.slice(1).join('\n') }
+  const { sentence_text } = parseBracketBoxMarkers(parts[0])
+  return { sentence_text, example_ko: parts.slice(1).join('\n') }
+}
+
+/**
+ * 엑셀 예문의 [박스] 표시 → 괄호 제거 sentence_text + box_drill_answers용 char 범위
+ * @returns {{ sentence_text: string, boxes: { box_index: number, start_char: number, end_char: number }[] }}
+ */
+export function parseBracketBoxMarkers(raw) {
+  const text = String(raw ?? '')
+  if (!text.includes('[')) {
+    return { sentence_text: text.trim(), boxes: [] }
+  }
+  let clean = ''
+  const boxes = []
+  let i = 0
+  while (i < text.length) {
+    if (text[i] === '[') {
+      const close = text.indexOf(']', i + 1)
+      if (close === -1) {
+        clean += text[i]
+        i += 1
+        continue
+      }
+      const inner = text.slice(i + 1, close)
+      const start = clean.length
+      clean += inner
+      const end = clean.length
+      if (inner.trim()) {
+        boxes.push({ box_index: boxes.length, start_char: start, end_char: end })
+      }
+      i = close + 1
+      continue
+    }
+    clean += text[i]
+    i += 1
+  }
+  return { sentence_text: clean.trim(), boxes }
+}
+
+/**
+ * meaning 컬럼 "(박스타입) 한국어 / …" → hint_ko용 한국어만 (타입 라벨 제거)
+ */
+export function normalizeMeaningForHintKo(meaning) {
+  const m = String(meaning ?? '').trim()
+  if (!m) return ''
+  if (/\([^)]+\)/.test(m) && m.includes('/')) {
+    const parts = m
+      .split(/\s*\/\s*/)
+      .map((seg) => seg.replace(/^\([^)]*\)\s*/, '').trim())
+      .filter(Boolean)
+    if (parts.length) return parts.join(' / ')
+  }
+  return m
 }
 
 /** meaning + example_ko → hint_ko (\n merge) */
 export function buildHintKo(meaning, exampleKo, exampleSentence) {
-  const m = String(meaning ?? '').trim()
+  const m = normalizeMeaningForHintKo(meaning)
   let ko = String(exampleKo ?? '').trim()
   if (!ko && String(exampleSentence || '').includes('\n')) {
     ko = splitExampleSentence(exampleSentence).example_ko
   }
   if (m && ko) return `${m}\n${ko}`
   return m || ko || null
+}
+
+/** WordTable 행 example_sentence에 [ ]가 있으면 표시용·저장용 문장 정리 + 박스 메타 */
+export function normalizeGrammarExampleRow(row) {
+  const ex = String(row.example_sentence ?? '').trim()
+  if (!ex.includes('[')) return row
+  const firstLine = ex.split('\n')[0]
+  const rest = ex.includes('\n') ? ex.slice(ex.indexOf('\n')) : ''
+  const { sentence_text, boxes } = parseBracketBoxMarkers(firstLine)
+  const merged = rest ? `${sentence_text}${rest}` : sentence_text
+  return {
+    ...row,
+    example_sentence: merged,
+    _bracketBoxes: boxes.length ? boxes : row._bracketBoxes ?? null,
+  }
 }
 
 export function rowToStiInsert(row, teacherId, trainingKind, sortOrder) {

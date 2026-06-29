@@ -29,6 +29,9 @@ import {
   scheduleClearSaveProgress,
 } from '../utils/grammarLabBatchSave'
 import SaveProgressOverlay from '../components/SaveProgressOverlay'
+import GrammarHintFillPanel from '../components/GrammarHintFillPanel'
+import SlotDrillSetPanel from '../components/SlotDrillSetPanel'
+import RoleHintFillPanel from '../components/RoleHintFillPanel'
 
 function trainingKindFromQuery(searchParams) {
   const k = searchParams.get('kind')
@@ -252,6 +255,11 @@ function GrammarSetDetailContent() {
     }
   }
 
+  const itemIds = useMemo(
+    () => rows.filter((r) => !String(r.id).startsWith('temp-')).map((r) => r.id),
+    [rows],
+  )
+
   if (teacherLoading || loading) {
     return <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
   }
@@ -322,6 +330,18 @@ function GrammarSetDetailContent() {
         </div>
       </section>
 
+      {trainingKind === 'box_drill' ? (
+        <>
+          <SlotDrillSetPanel setName={setName} teacherId={teacherId} trainingKind={trainingKind} />
+          <RoleHintFillPanel
+            setName={setName}
+            teacherId={teacherId}
+            trainingKind={trainingKind}
+            itemIds={itemIds}
+          />
+        </>
+      ) : null}
+
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <button type="button" onClick={() => setBulkOpen(true)} style={primaryBtn}>
           가져오기 추가
@@ -355,6 +375,26 @@ function GrammarSetDetailContent() {
         getRowBackground={(row) =>
           trainingKind === 'box_drill' && !row._boxCount ? 'rgba(254,226,226,0.2)' : undefined
         }
+      />
+
+      <GrammarHintFillPanel
+        rows={
+          selectedIds.size > 0 ? rows.filter((r) => selectedIds.has(String(r.id))) : rows
+        }
+        onFilled={async (updated) => {
+          setRows(updated)
+          const toSave = updated.filter(
+            (r) =>
+              !String(r.id).startsWith('temp-') &&
+              String(r.example_sentence ?? '').trim() &&
+              String(r.meaning ?? '').trim(),
+          )
+          for (const row of toSave) {
+            const prev = rows.find((x) => x.id === row.id)
+            if (prev && String(prev.meaning ?? '').trim() === String(row.meaning ?? '').trim()) continue
+            await handleRowCommit(row)
+          }
+        }}
       />
 
       <SaveProgressOverlay progress={saveProgress} />

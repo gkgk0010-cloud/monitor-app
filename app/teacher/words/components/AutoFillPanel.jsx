@@ -2,15 +2,29 @@
 
 import { useState, useMemo } from 'react'
 import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
+import GrammarHintFillPanel from '../../grammar-lab/components/GrammarHintFillPanel'
 
 /**
  * @param {{
  *   rows: Array<Record<string, unknown>>
  *   onFilled: updatedRows => void | Promise<void>
  *   dayEmptyCount?: number | null
+ *   sentenceHintMode?: boolean
  * }} props
  */
-export default function AutoFillPanel({ rows, onFilled, dayEmptyCount = null }) {
+export default function AutoFillPanel({
+  rows,
+  onFilled,
+  dayEmptyCount = null,
+  sentenceHintMode = false,
+}) {
+  if (sentenceHintMode) {
+    return <GrammarHintFillPanel rows={rows} onFilled={onFilled} />
+  }
+  return <WordAutoFillPanel rows={rows} onFilled={onFilled} dayEmptyCount={dayEmptyCount} />
+}
+
+function WordAutoFillPanel({ rows, onFilled, dayEmptyCount = null }) {
   const [busy, setBusy] = useState(false)
   const [log, setLog] = useState('')
   const [progress, setProgress] = useState(0)

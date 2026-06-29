@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS } from '@/utils/tokens'
+import { ROLE_HINT_SUGGESTIONS } from '../utils/slotDrillMode'
 
 function tokenizeWordsWithSpans(sentence) {
   const text = String(sentence || '')
@@ -87,7 +88,7 @@ export default function BoxAnswerModal({
     setLoading(true)
     const { data, error } = await supabase
       .from('box_drill_answers')
-      .select('box_index, start_char, end_char, chunk_label')
+      .select('box_index, start_char, end_char, chunk_label, role_hint')
       .eq('item_id', item.id)
       .order('box_index')
     setLoading(false)
@@ -100,6 +101,7 @@ export default function BoxAnswerModal({
         start: b.start_char,
         end: b.end_char,
         chunk_label: b.chunk_label,
+        role_hint: b.role_hint != null ? String(b.role_hint) : '',
       })),
     )
   }, [item?.id])
@@ -161,7 +163,7 @@ export default function BoxAnswerModal({
       const t0 = tokens[lo]
       const t1 = tokens[hi]
       if (!t0 || !t1) return false
-      setBoxes((p) => [...p, { start: t0.start, end: t1.end, chunk_label: null }])
+      setBoxes((p) => [...p, { start: t0.start, end: t1.end, chunk_label: null, role_hint: '' }])
       return true
     },
     [tokens, rangeHasOverlap],
@@ -179,6 +181,7 @@ export default function BoxAnswerModal({
       start_char: b.start,
       end_char: b.end,
       chunk_label: b.chunk_label ?? null,
+      role_hint: String(b.role_hint ?? '').trim() || null,
     }))
     const { error } = await supabase.from('box_drill_answers').insert(rows)
     setSaving(false)
@@ -207,7 +210,8 @@ export default function BoxAnswerModal({
         box_index: i,
         start_char: b.start,
         end_char: b.end,
-        chunk_label: null,
+        chunk_label: b.chunk_label ?? null,
+        role_hint: String(b.role_hint ?? '').trim() || null,
       }))
       const { error } = await supabase.from('box_drill_answers').insert(rows)
       setSaving(false)
@@ -585,6 +589,46 @@ export default function BoxAnswerModal({
                   >
                     [{sentence.slice(b.start, b.end)}]
                   </span>
+                  <input
+                    type="text"
+                    list="gl-role-hint-suggestions"
+                    value={b.role_hint ?? ''}
+                    placeholder="역할 (칸 나누기)"
+                    disabled={saving}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setBoxes((prev) =>
+                        prev.map((box, j) => (j === i ? { ...box, role_hint: v } : box)),
+                      )
+                    }}
+                    style={{
+                      width: 120,
+                      flexShrink: 0,
+                      padding: '4px 6px',
+                      fontSize: 12,
+                      borderRadius: RADIUS.sm,
+                      border: String(b.role_hint ?? '').trim()
+                        ? '1px solid #86efac'
+                        : '1px solid #fca5a5',
+                      background: '#fff',
+                    }}
+                  />
+                  {!String(b.role_hint ?? '').trim() ? (
+                    <span
+                      title="칸 나누기 모드에 필요"
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        color: '#b91c1c',
+                        background: '#fee2e2',
+                        padding: '2px 6px',
+                        borderRadius: 999,
+                        flexShrink: 0,
+                      }}
+                    >
+                      역할 없음
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     disabled={saving}
@@ -629,6 +673,11 @@ export default function BoxAnswerModal({
           ) : (
             <p style={{ fontSize: 12, color: COLORS.textSecondary, margin: '0 0 8px' }}>만든 박스가 없습니다. 드래그로 추가하세요.</p>
           )}
+          <datalist id="gl-role-hint-suggestions">
+            {ROLE_HINT_SUGGESTIONS.map((label) => (
+              <option key={label} value={label} />
+            ))}
+          </datalist>
         </div>
 
         <div

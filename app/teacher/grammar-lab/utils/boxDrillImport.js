@@ -44,13 +44,23 @@ export async function applyBoxAnswersForImportedRowsBatched(
     const src = sourceRows[i]
     const item = insertedItems[i]
     const ans = String(src?._boxAnswer ?? '').trim()
-    if (!ans) {
+    const bracketBoxes = Array.isArray(src?._bracketBoxes) ? src._bracketBoxes : null
+    if (!ans && !bracketBoxes?.length) {
       skipped += 1
       continue
     }
     const sentence =
       String(item.sentence_text ?? '').trim() || sentenceTextForBoxMatch(src.example_sentence)
-    const boxes = parseBoxDrillFromSentence(sentence, ans)
+    let boxes = null
+    if (bracketBoxes?.length) {
+      boxes = bracketBoxes.map((b, idx) => ({
+        box_index: idx,
+        start_char: b.start_char,
+        end_char: b.end_char,
+      }))
+    } else {
+      boxes = parseBoxDrillFromSentence(sentence, ans)
+    }
     if (!boxes) {
       fail += 1
       continue

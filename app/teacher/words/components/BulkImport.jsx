@@ -11,6 +11,7 @@ import {
   formatEmptyMeaningAlert,
   formatSupabaseWordsSaveError,
 } from '../utils/wordMeaningGuard'
+import { parseBracketBoxMarkers } from '../../grammar-lab/utils/grammarLabRows'
 import { fetchWordSetsLangMapByTeacher, buildTtsJobsFromRowsWithSetLangMap } from '@/utils/ttsJobs'
 import { runTeacherTtsPrefetchWithOverlay } from '@/utils/ttsPrefetchRunner'
 import { showToast } from '@/utils/toastBus'
@@ -486,11 +487,12 @@ export default function BulkImport({
         const boxAnswer = isBoxDrillImport
           ? getExcelCell(raw, 'box_answer', '정답', 'answer', 'boxes')
           : ''
+        const { sentence_text: cleanEx, boxes: bracketBoxes } = parseBracketBoxMarkers(ex)
         rows.push({
           id: `import-${stamp}-${idx}`,
           word,
           meaning,
-          example_sentence: mergeExampleFields(ex, ko),
+          example_sentence: mergeExampleFields(cleanEx, ko),
           set_name: sn,
           day: rowDay,
           dayExplicit,
@@ -498,6 +500,7 @@ export default function BulkImport({
           image_source: image_url ? 'upload' : 'none',
           youtube_url,
           _boxAnswer: boxAnswer || null,
+          _bracketBoxes: bracketBoxes.length ? bracketBoxes : null,
         })
         idx += 1
       }
@@ -896,6 +899,7 @@ export default function BulkImport({
                   const map = new Map(updated.map((r) => [String(r.id), r]))
                   setPreviewRows((prev) => prev.map((r) => map.get(String(r.id)) || r))
                 }}
+                sentenceHintMode={setType === 'sentence'}
               />
               <button
                 type="button"

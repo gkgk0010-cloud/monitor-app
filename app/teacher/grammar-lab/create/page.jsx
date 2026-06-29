@@ -29,6 +29,7 @@ import {
   scheduleClearSaveProgress,
 } from '../utils/grammarLabBatchSave'
 import SaveProgressOverlay from '../components/SaveProgressOverlay'
+import GrammarHintFillPanel from '../components/GrammarHintFillPanel'
 
 function CreateGrammarSetContent() {
   const router = useRouter()
@@ -218,6 +219,13 @@ function CreateGrammarSetContent() {
         rowGroupMode="chunk10"
         scrollContainer="window"
         stickyHeaderOffsetPx={120}
+      />
+
+      <GrammarHintFillPanel
+        rows={
+          selectedIds.size > 0 ? rows.filter((r) => selectedIds.has(String(r.id))) : rows
+        }
+        onFilled={setRows}
       />
 
       <SaveProgressOverlay progress={saveProgress} />
