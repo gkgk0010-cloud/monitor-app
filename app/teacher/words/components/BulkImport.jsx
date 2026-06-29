@@ -12,6 +12,7 @@ import {
   formatSupabaseWordsSaveError,
 } from '../utils/wordMeaningGuard'
 import { parseBracketBoxMarkers } from '../../grammar-lab/utils/grammarLabRows'
+import { parseBoxDrillExcelRow } from '../../grammar-lab/utils/boxDrillExcel'
 import { fetchWordSetsLangMapByTeacher, buildTtsJobsFromRowsWithSetLangMap } from '@/utils/ttsJobs'
 import { runTeacherTtsPrefetchWithOverlay } from '@/utils/ttsPrefetchRunner'
 import { showToast } from '@/utils/toastBus'
@@ -102,30 +103,56 @@ function downloadTokpassExcelTemplate(importSetType = 'word', options = {}) {
       : 'word'
   const fileName = EXCEL_FILE_NAMES[t] || EXCEL_FILE_NAMES.word
   if (t === 'box_drill') {
-    aoa = [
-      ['예문', '의미', '정답', 'image_url', 'youtube_url'],
+    const wsA = XLSX.utils.aoa_to_sheet([
+      ['예문', '의미', '정답', 'day', 'image_url', 'youtube_url'],
       [
         'The new policy will take effect from next month.',
         '(결론) 그 새 정책은 시행된다 / (세부) 시점: 다음 달부터.',
         'The new policy / will take effect / from next month.',
+        '1',
         '(선택)',
         '(선택)',
       ],
-      ['She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '', '(선택)', '(선택)'],
-    ]
-    cols = [{ wch: 42 }, { wch: 28 }, { wch: 48 }, { wch: 24 }, { wch: 28 }]
-    const ws = XLSX.utils.aoa_to_sheet(aoa)
-    ws['!cols'] = cols
-    if (!ws['!comments']) ws['!comments'] = []
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '박스만들기')
-    const guide = XLSX.utils.aoa_to_sheet([
-      ['박스 만들기 엑셀 안내'],
-      ['정답 컬럼은 예문을 " / "(앞뒤 공백 1칸)로 구분합니다.'],
-      ["예: The new policy / will take effect / from next month."],
-      ['정답이 비어 있으면 예문·의미만 등록되고 박스는 수동 등록합니다.'],
+      ['She lent me a book.', '그녀는 나에게 책을 빌려줬다.', '', '1', '(선택)', '(선택)'],
     ])
-    guide['!cols'] = [{ wch: 72 }]
+    wsA['!cols'] = [{ wch: 42 }, { wch: 28 }, { wch: 48 }, { wch: 6 }, { wch: 24 }, { wch: 28 }]
+    const wsB = XLSX.utils.aoa_to_sheet([
+      ['example_sentence', 'meaning', 'day', 'image_url', 'youtube_url'],
+      [
+        '[The accounting director revised the budget proposal] [before it was sent] [for approval] [this past Monday].',
+        '주어+동사+목적어 / 부사절(수동) / 전치사구 / 부사구 → 회계부서장이 … 수정하였다',
+        '1',
+        '(선택)',
+        '(선택)',
+      ],
+      [
+        'She [is a doctor] at the local hospital.',
+        '그녀는 지역 병원의 의사다',
+        '1',
+        '(선택)',
+        '(선택)',
+      ],
+    ])
+    wsB['!cols'] = [{ wch: 72 }, { wch: 36 }, { wch: 6 }, { wch: 24 }, { wch: 28 }]
+    const guide = XLSX.utils.aoa_to_sheet([
+      ['박스 만들기 엑셀 — 양식 A · B'],
+      [''],
+      ['양식 A (시트: 양식A_정답열)'],
+      ['컬럼: 예문 · 의미 · 정답 · day(선택)'],
+      ['정답: 예문을 " / "(앞뒤 공백 1칸)로 구분 — 예: The new policy / will take effect / from next month.'],
+      [''],
+      ['양식 B (시트: 양식B_괄호)'],
+      ['컬럼: example_sentence · meaning · day(선택)'],
+      ['예문 안에 [박스1] [박스2] … 표시 — 괄호 제거한 평문이 저장되고 박스 좌표 자동 계산'],
+      ['예: [The accounting director …] [before it was sent] [for approval] [this past Monday].'],
+      [''],
+      ['day: 같은 세트 안에서 Day 1, 2, … 구분 (비우면 1)'],
+      ['정답·괄호 모두 없으면 예문·의미만 등록, 박스는 수동 등록'],
+    ])
+    guide['!cols'] = [{ wch: 88 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, wsA, '양식A_정답열')
+    XLSX.utils.book_append_sheet(wb, wsB, '양식B_괄호')
     XLSX.utils.book_append_sheet(wb, guide, '안내')
     XLSX.writeFile(wb, fileName)
     return
@@ -487,7 +514,15 @@ export default function BulkImport({
         const boxAnswer = isBoxDrillImport
           ? getExcelCell(raw, 'box_answer', '정답', 'answer', 'boxes')
           : ''
-        const { sentence_text: cleanEx, boxes: bracketBoxes } = parseBracketBoxMarkers(ex)
+        const parsed = isBoxDrillImport
+          ? parseBoxDrillExcelRow(ex, boxAnswer)
+          : parseBracketBoxMarkers(ex)
+        const cleanEx = isBoxDrillImport ? parsed.cleanExample : parsed.sentence_text
+        const bracketBoxes = isBoxDrillImport
+          ? parsed.boxes || null
+          : parsed.boxes?.length
+            ? parsed.boxes
+            : null
         rows.push({
           id: `import-${stamp}-${idx}`,
           word,
@@ -499,8 +534,9 @@ export default function BulkImport({
           image_url,
           image_source: image_url ? 'upload' : 'none',
           youtube_url,
-          _boxAnswer: boxAnswer || null,
-          _bracketBoxes: bracketBoxes.length ? bracketBoxes : null,
+          _boxAnswer: isBoxDrillImport ? parsed.boxAnswer || null : boxAnswer || null,
+          _bracketBoxes: bracketBoxes?.length ? bracketBoxes : null,
+          _boxImportFormat: isBoxDrillImport ? parsed.format : null,
         })
         idx += 1
       }
@@ -646,7 +682,7 @@ export default function BulkImport({
               <>
                 <br />
                 <strong style={{ color: COLORS.primaryDark }}>
-                  박스 만들기 전용: {EXCEL_FILE_NAMES.box_drill} (예문·의미·정답 3열)
+                  박스 만들기: {EXCEL_FILE_NAMES.box_drill} — 양식 A(정답 / ) · 양식 B([ ] 괄호) 2시트
                 </strong>
               </>
             ) : null}
@@ -690,7 +726,7 @@ export default function BulkImport({
           </div>
           <p style={{ fontSize: 12, color: COLORS.textHint, margin: '10px 0 0' }}>
             {isBoxDrillImport
-              ? '컬럼: 예문 · 의미 · 정답( / 로 구분) — 정답이 비어 있으면 박스는 나중에 수동 등록'
+              ? '양식 A: 예문·의미·정답( / 구분) · 양식 B: example_sentence에 [박스] 표시 — day(선택)로 Day 1·2… 구분'
               : forceDayOne && setType === 'sentence'
                 ? '컬럼: example_sentence · meaning · image_url(선택) · youtube_url(선택) — Day 없음(자동 1)'
                 : setType === 'sentence'

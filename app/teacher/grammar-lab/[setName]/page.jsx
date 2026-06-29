@@ -22,6 +22,7 @@ import {
   formatBoxImportResultMessage,
 } from '../utils/boxDrillImport'
 import { fetchBoxCountsByItemId } from '../utils/boxDrillQuery'
+import { estimateImportBoxCount, rowHasImportBoxes } from '../utils/boxDrillExcel'
 import { deleteGrammarLabItem } from '../utils/grammarLabDelete'
 import { renameGrammarLabSet } from '../utils/grammarLabRename'
 import {
@@ -371,7 +372,7 @@ function GrammarSetDetailContent() {
         onRowCommit={handleRowCommit}
         columnPreset="sentence"
         showSetNameColumn={false}
-        showDayColumn={false}
+        showDayColumn={trainingKind === 'box_drill'}
         showImageColumn
         showDeleteColumn
         onRowDelete={(row) => void handleRowDelete(row)}
@@ -411,12 +412,16 @@ function GrammarSetDetailContent() {
         initialSetName={setName}
         teacherId={teacherId}
         importSetType={trainingKind === 'box_drill' ? 'box_drill' : 'sentence'}
-        forceDayOne
+        forceDayOne={trainingKind !== 'box_drill'}
         onLocalImported={async (imported) => {
           if (!teacherId) return
-          const validImported = imported
-            .filter(isGrammarRowValid)
-            .map((r) => ({ ...r, day: 1 }))
+          const validImported = imported.filter(isGrammarRowValid).map((r) => ({
+            ...r,
+            day:
+              trainingKind === 'box_drill'
+                ? Math.max(1, parseInt(String(r.day ?? 1), 10) || 1)
+                : 1,
+          }))
           const payload = validImported
             .map((r, i) =>
               rowToStiInsert({ ...r, set_name: setName }, teacherId, trainingKind, rows.length + i),
@@ -434,13 +439,11 @@ function GrammarSetDetailContent() {
               const inserted = await batchInsertSentenceTrainingItems(supabase, payload, (p) =>
                 setSaveProgress(p),
               )
-              const withBox = validImported.filter((r) => String(r._boxAnswer ?? '').trim())
+              const withBox = validImported.filter((r) => rowHasImportBoxes(r))
               if (withBox.length && inserted.length) {
                 let estBoxRows = 0
-                for (const r of validImported) {
-                  const ans = String(r._boxAnswer ?? '').trim()
-                  if (!ans) continue
-                  estBoxRows += ans.split(' / ').filter((s) => s.trim()).length
+                for (const r of withBox) {
+                  estBoxRows += estimateImportBoxCount(r)
                 }
                 setSaveProgress({
                   stage: '박스 정답 등록',

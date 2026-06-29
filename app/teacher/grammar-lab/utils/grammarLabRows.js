@@ -2,8 +2,14 @@ import { normalizeWordDifficulty } from '../../words/utils/parsers'
 
 /** WordTable/BulkImport 행 ↔ sentence_training_items 변환 */
 
-/** 문법 해부실(박스 만들기·어순 배열): 학습 흐름상 Day 미사용, DB에는 항상 1 */
+/** 문법 해부실(박스 만들기·어순 배열): 기본 Day — 엑셀 day 컬럼 또는 행 day 값이 있으면 그 값 사용 */
 export const GRAMMAR_LAB_FIXED_DAY = 1
+
+export function resolveGrammarRowDay(row, fallback = GRAMMAR_LAB_FIXED_DAY) {
+  const d = parseInt(String(row?.day ?? ''), 10)
+  if (Number.isFinite(d) && d >= 1) return d
+  return fallback
+}
 
 export function emptyGrammarRow(setName) {
   return {
@@ -12,7 +18,7 @@ export function emptyGrammarRow(setName) {
     meaning: '',
     example_sentence: '',
     set_name: setName,
-    day: GRAMMAR_LAB_FIXED_DAY,
+    day: resolveGrammarRowDay(row),
     difficulty: 3,
     image_url: null,
     image_source: 'none',
@@ -119,7 +125,7 @@ export function rowToStiInsert(row, teacherId, trainingKind, sortOrder) {
   return {
     teacher_id: teacherId,
     set_name: String(row.set_name || '').trim(),
-    day: GRAMMAR_LAB_FIXED_DAY,
+    day: resolveGrammarRowDay(row),
     sentence_text: text,
     hint_ko: buildHintKo(row.meaning, example_ko, ex),
     youtube_url: row.youtube_url ? String(row.youtube_url).trim() : null,
@@ -138,7 +144,7 @@ export function rowToStiUpdate(row, trainingKind) {
   return {
     sentence_text: text,
     hint_ko: buildHintKo(row.meaning, example_ko, ex),
-    day: GRAMMAR_LAB_FIXED_DAY,
+    day: resolveGrammarRowDay(row),
     youtube_url: row.youtube_url ? String(row.youtube_url).trim() : null,
     image_url: row.image_url ? String(row.image_url).trim() : null,
     difficulty: normalizeWordDifficulty(row.difficulty) || 3,

@@ -24,6 +24,7 @@ import {
   applyBoxAnswersForImportedRowsBatched,
   formatBoxImportResultMessage,
 } from '../utils/boxDrillImport'
+import { estimateImportBoxCount, rowHasImportBoxes } from '../utils/boxDrillExcel'
 import {
   batchInsertSentenceTrainingItems,
   scheduleClearSaveProgress,
@@ -59,9 +60,7 @@ function CreateGrammarSetContent() {
       alert('세트 이름을 입력하세요.')
       return
     }
-    const candidates = rows
-      .filter(isGrammarRowValid)
-      .map((r) => ({ ...r, day: GRAMMAR_LAB_FIXED_DAY }))
+    const candidates = rows.filter(isGrammarRowValid)
     if (!candidates.length) {
       alert('저장할 구문이 없습니다. 예문과 해석(뜻)을 입력했는지 확인하세요.')
       return
@@ -92,13 +91,11 @@ function CreateGrammarSetContent() {
         const inserted = await batchInsertSentenceTrainingItems(supabase, payload, (p) =>
           setSaveProgress(p),
         )
-        const withBox = candidates.filter((r) => String(r._boxAnswer ?? '').trim())
+        const withBox = candidates.filter((r) => rowHasImportBoxes(r))
         if (withBox.length && inserted.length) {
           let estBoxRows = 0
-          for (const r of candidates) {
-            const ans = String(r._boxAnswer ?? '').trim()
-            if (!ans) continue
-            estBoxRows += ans.split(' / ').filter((s) => s.trim()).length
+          for (const r of withBox) {
+            estBoxRows += estimateImportBoxCount(r)
           }
           setSaveProgress({
             stage: '박스 정답 등록',
@@ -150,10 +147,8 @@ function CreateGrammarSetContent() {
       <p style={{ margin: '0 0 20px', color: COLORS.textSecondary, fontSize: 14 }}>
         엑셀·AI·텍스트 일괄 등록 후 저장 ·{' '}
         {trainingKind === 'box_drill'
-          ? '엑셀 정답(C) 컬럼이 있으면 저장 시 박스 정답 자동 등록'
-          : '어순 구문 저장'}
-        {' '}
-        (Day 구분 없음)
+          ? '엑셀 양식 A(정답 / )·B([ ] 괄호) 지원 · day 컬럼으로 Day 구분 · 저장 시 박스 자동 등록'
+          : '어순 구문 저장 (Day 1 고정)'}
       </p>
 
       <section style={{ marginBottom: 20, padding: 16, borderRadius: RADIUS.lg, border: `1px solid ${COLORS.border}`, background: COLORS.surface }}>
@@ -212,7 +207,7 @@ function CreateGrammarSetContent() {
         onSelectedIdsChange={setSelectedIds}
         columnPreset="sentence"
         showSetNameColumn={false}
-        showDayColumn={false}
+        showDayColumn={trainingKind === 'box_drill'}
         showDeleteColumn
         onRowDelete={(row) => setRows((p) => p.filter((r) => r.id !== row.id))}
         highlightRowIds={meaningHighlightRowIds}
@@ -239,13 +234,16 @@ function CreateGrammarSetContent() {
         initialSetName={setName}
         teacherId={teacherId}
         importSetType={trainingKind === 'box_drill' ? 'box_drill' : 'sentence'}
-        forceDayOne
+        forceDayOne={trainingKind !== 'box_drill'}
         onLocalImported={(imported) => {
           setRows((prev) => [
             ...imported.map((r) => ({
               ...r,
               set_name: setName,
-              day: GRAMMAR_LAB_FIXED_DAY,
+              day:
+                trainingKind === 'box_drill'
+                  ? Math.max(1, parseInt(String(r.day ?? GRAMMAR_LAB_FIXED_DAY), 10) || GRAMMAR_LAB_FIXED_DAY)
+                  : GRAMMAR_LAB_FIXED_DAY,
             })),
             ...prev,
           ])

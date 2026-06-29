@@ -1,4 +1,4 @@
-import { splitExampleSentence } from './grammarLabRows'
+import { parseBracketBoxMarkers, splitExampleSentence } from './grammarLabRows'
 
 /** C 컬럼 박스 구분자: 앞뒤 공백 1칸 + 슬래시 + 공백 1칸 */
 export const BOX_ANSWER_DELIMITER = ' / '
@@ -56,4 +56,63 @@ export function parseBoxDrillFromSentence(exampleSentence, boxAnswerColumn) {
   const original = sentenceTextForBoxMatch(exampleSentence)
   if (!original) return null
   return computeBoxCharRanges(original, pieces)
+}
+
+/**
+ * 엑셀 한 행 → 양식 B([ ]) 우선, 없으면 양식 A(정답 / ) 파싱
+ * @returns {{ cleanExample: string, boxes: { box_index: number, start_char: number, end_char: number }[] | null, format: 'bracket' | 'slash' | null, boxAnswer: string | null }}
+ */
+export function parseBoxDrillExcelRow(exampleSentence, boxAnswerColumn) {
+  const ex = String(exampleSentence ?? '').trim()
+  const ans = String(boxAnswerColumn ?? '').trim()
+  const { sentence_text, boxes: bracketBoxes } = parseBracketBoxMarkers(ex)
+  if (bracketBoxes.length) {
+    return {
+      cleanExample: sentence_text,
+      boxes: bracketBoxes,
+      format: 'bracket',
+      boxAnswer: null,
+    }
+  }
+  if (ans) {
+    const slashBoxes = parseBoxDrillFromSentence(ex, ans)
+    if (slashBoxes?.length) {
+      return {
+        cleanExample: sentenceTextForBoxMatch(ex),
+        boxes: slashBoxes,
+        format: 'slash',
+        boxAnswer: ans,
+      }
+    }
+  }
+  return {
+    cleanExample: sentenceTextForBoxMatch(ex) || ex,
+    boxes: null,
+    format: null,
+    boxAnswer: ans || null,
+  }
+}
+
+/** 가져오기 행에 자동 박스 데이터가 있는지 */
+export function rowHasImportBoxes(row) {
+  if (Array.isArray(row?._bracketBoxes) && row._bracketBoxes.length) return true
+  if (String(row?._boxAnswer ?? '').trim()) return true
+  const ex = String(row?.example_sentence ?? '')
+  if (ex.includes('[') && ex.includes(']')) {
+    const { boxes } = parseBracketBoxMarkers(ex.split('\n')[0])
+    if (boxes.length) return true
+  }
+  return false
+}
+
+export function estimateImportBoxCount(row) {
+  if (Array.isArray(row?._bracketBoxes) && row._bracketBoxes.length) {
+    return row._bracketBoxes.length
+  }
+  const ans = String(row?._boxAnswer ?? '').trim()
+  if (ans) {
+    const pieces = splitBoxAnswerColumn(ans)
+    if (pieces?.length) return pieces.length
+  }
+  return 1
 }
