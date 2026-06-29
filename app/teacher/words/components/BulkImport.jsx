@@ -70,6 +70,68 @@ function getExcelCell(row, ...aliases) {
   return ''
 }
 
+function isGuideExcelSheet(name) {
+  const t = String(name ?? '').trim()
+  return t === '안내' || /^guide$/i.test(t)
+}
+
+function sheetJsonRows(wb, name) {
+  const ws = wb.Sheets[name]
+  if (!ws) return []
+  const jsonRows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false })
+  return Array.isArray(jsonRows) ? jsonRows : []
+}
+
+/** 양식 B(괄호) 시트에 데이터가 있으면 B 우선, 없으면 A·기타 */
+function resolveBoxDrillImportSheetNames(wb) {
+  const all = (wb.SheetNames || []).filter((n) => !isGuideExcelSheet(n))
+  if (!all.length) return wb.SheetNames?.length ? [wb.SheetNames[0]] : []
+
+  const countValid = (jsonRows) => {
+    let n = 0
+    for (const raw of jsonRows) {
+      const ex = getExcelCell(raw, 'example_sentence', '예문')
+      const meaning = getExcelCell(raw, 'meaning', '의미')
+      if (ex && meaning) n += 1
+    }
+    return n
+  }
+
+  const bName = all.find((n) => /양식B|괄호/i.test(String(n)))
+  const aName = all.find((n) => /양식A|정답/i.test(String(n)))
+
+  if (bName && countValid(sheetJsonRows(wb, bName)) > 0) return [bName]
+  if (aName && countValid(sheetJsonRows(wb, aName)) > 0) return [aName]
+
+  for (const name of all) {
+    if (countValid(sheetJsonRows(wb, name)) > 0) return [name]
+  }
+  return [all[0]]
+}
+
+function resolveImportSheetNames(wb, isBoxDrillImport) {
+  if (!wb.SheetNames?.length) return []
+  if (isBoxDrillImport) return resolveBoxDrillImportSheetNames(wb)
+  return [wb.SheetNames[0]]
+}
+
+function mergeSheetJsonRows(wb, sheetNames) {
+  let combined = []
+  let headerHasDay = false
+  for (const name of sheetNames) {
+    const jsonRows = sheetJsonRows(wb, name)
+    if (!jsonRows.length) continue
+    if (
+      jsonRows[0] &&
+      Object.keys(jsonRows[0]).some((k) => normalizeExcelHeaderKey(k) === 'day')
+    ) {
+      headerHasDay = true
+    }
+    combined = combined.concat(jsonRows)
+  }
+  return { jsonRows: combined, headerHasDay }
+}
+
 /** DB 예문 칸 하나에 넣기: 영문 + 한글 예문 줄바꿈 */
 function mergeExampleFields(exampleEn, exampleKo) {
   const e = String(exampleEn ?? '').trim()
@@ -583,30 +645,35 @@ export default function BulkImport({
     try {
       const buf = await file.arrayBuffer()
       const wb = XLSX.read(buf, { type: 'array' })
-      const name = wb.SheetNames[0]
-      if (!name) {
+      const sheetNames = resolveImportSheetNames(wb, isBoxDrillImport)
+      if (!sheetNames.length) {
         alert('시트가 비어 있습니다.')
         return
       }
-      const ws = wb.Sheets[name]
-      const jsonRows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false })
-      if (!Array.isArray(jsonRows) || jsonRows.length === 0) {
+      const { jsonRows, headerHasDay } = mergeSheetJsonRows(wb, sheetNames)
+      if (!jsonRows.length) {
         alert('데이터 행이 없습니다. 양식 2행부터 채워 주세요.')
         return
       }
-      const headerHasDay =
-        !forceDayOne &&
-        !!jsonRows[0] &&
-        Object.keys(jsonRows[0]).some((k) => normalizeExcelHeaderKey(k) === 'day')
-      setExcelDayColumnInSheet(headerHasDay)
-      const rows = buildPreviewFromExcelJson(jsonRows, headerHasDay)
+      const headerHasDayFinal = !forceDayOne && headerHasDay
+      setExcelDayColumnInSheet(headerHasDayFinal)
+      const rows = buildPreviewFromExcelJson(jsonRows, headerHasDayFinal)
       if (rows.length === 0) {
         alert(
           setType === 'sentence'
-            ? '읽을 수 있는 문장(example_sentence·meaning) 행이 없습니다. 헤더와 열 이름을 확인해 주세요.'
+            ? isBoxDrillImport
+              ? '읽을 수 있는 문장 행이 없습니다. 양식 B는 example_sentence·meaning, 양식 A는 예문·의미·정답 열을 확인해 주세요.'
+              : '읽을 수 있는 문장(example_sentence·meaning) 행이 없습니다. 헤더와 열 이름을 확인해 주세요.'
             : '읽을 수 있는 단어(word) 행이 없습니다. 헤더와 열 이름을 확인해 주세요.',
         )
         return
+      }
+      if (isBoxDrillImport) {
+        const bracketN = rows.filter((r) => r._boxImportFormat === 'bracket').length
+        const slashN = rows.filter((r) => r._boxImportFormat === 'slash').length
+        if (bracketN === 0 && slashN === 0) {
+          console.warn('[box_drill import] 박스 자동 인식 0건 — 정답( / ) 또는 [ ] 괄호 확인')
+        }
       }
       setPreviewRows(rows)
       setSelectedIds(new Set(rows.map((r) => String(r.id))))
@@ -726,7 +793,7 @@ export default function BulkImport({
           </div>
           <p style={{ fontSize: 12, color: COLORS.textHint, margin: '10px 0 0' }}>
             {isBoxDrillImport
-              ? '양식 A: 예문·의미·정답( / 구분) · 양식 B: example_sentence에 [박스] 표시 — day(선택)로 Day 1·2… 구분'
+              ? '양식 A: 예문·의미·정답( / 구분) · 양식 B: example_sentence에 [박스] 표시 — 업로드 시 양식B 시트에 데이터가 있으면 B를 읽습니다'
               : forceDayOne && setType === 'sentence'
                 ? '컬럼: example_sentence · meaning · image_url(선택) · youtube_url(선택) — Day 없음(자동 1)'
                 : setType === 'sentence'
