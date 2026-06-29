@@ -499,9 +499,6 @@ function ReadingInterpretSetDetailContent() {
             return
           }
           setSaveProgress(p)
-          if (p.stage === '완료') {
-            scheduleClearSaveProgress(setSaveProgress, p.total)
-          }
         }}
       />
 

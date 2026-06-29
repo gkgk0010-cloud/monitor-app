@@ -60,14 +60,29 @@ async function fetchRoleHintChunk(items, attempt = 0) {
 export async function countMissingBoxRoleHints(supabase, itemIds) {
   const ids = (itemIds || []).filter(Boolean)
   if (!ids.length) return { total: 0, missing: 0 }
-  const { data, error } = await supabase
-    .from('box_drill_answers')
-    .select('id, role_hint')
-    .in('item_id', ids)
-  if (error) throw error
-  const rows = data || []
-  const missing = rows.filter((r) => !String(r.role_hint ?? '').trim()).length
-  return { total: rows.length, missing }
+
+  let total = 0
+  let missing = 0
+  const ID_CHUNK = 40
+  const PAGE = 1000
+
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const idChunk = ids.slice(i, i + ID_CHUNK)
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('box_drill_answers')
+        .select('id, role_hint')
+        .in('item_id', idChunk)
+        .range(from, from + PAGE - 1)
+      if (error) throw error
+      const rows = data || []
+      total += rows.length
+      missing += rows.filter((r) => !String(r.role_hint ?? '').trim()).length
+      if (rows.length < PAGE) break
+    }
+  }
+
+  return { total, missing }
 }
 
 /**
@@ -185,8 +200,6 @@ export async function fillBoxDrillRoleHintsForSet(supabase, { teacherId, boxSour
   if (updated === 0 && failedChunks > 0) {
     throw new Error(chunkErrors[0] || 'AI 역할 채우기에 실패했습니다. 잠시 후 다시 시도해 주세요.')
   }
-
-  report('완료', totalToFill)
 
   return {
     ok: true,

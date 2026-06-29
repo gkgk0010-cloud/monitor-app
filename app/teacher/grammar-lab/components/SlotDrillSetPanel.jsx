@@ -156,7 +156,6 @@ export default function SlotDrillSetPanel({
       }
       if (result.skipped) {
         setRoleHintLog('이미 모든 박스에 역할 라벨이 있습니다.')
-        await refreshRoleHintMissing()
         return
       }
       const extra =
@@ -164,7 +163,6 @@ export default function SlotDrillSetPanel({
           ? ` · ${result.failedChunks}묶음 실패(저장 ${result.updated}개 유지 · 다시 누르면 남은 칸만 채움)`
           : ''
       setRoleHintLog(`완료 · ${result.updated}개 박스 role_hint 저장${extra}`)
-      await refreshRoleHintMissing()
     } catch (e) {
       setRoleHintLog('')
       alert('박스 역할 자동 채우기 실패: ' + (e?.message || e))
@@ -172,6 +170,7 @@ export default function SlotDrillSetPanel({
       setRoleHintProgress(null)
       onRoleHintProgress?.(null)
       setBusy(false)
+      void refreshRoleHintMissing()
     }
   }
 
