@@ -471,6 +471,8 @@ export default function BulkImport({
           youtube_url: payload[i].youtube_url,
           dayExplicit: r.dayExplicit === true,
           _boxAnswer: r._boxAnswer || null,
+          _bracketBoxes: Array.isArray(r._bracketBoxes) && r._bracketBoxes.length ? r._bracketBoxes : null,
+          _boxImportFormat: r._boxImportFormat || null,
         }))
         const canUseCsvDay =
           excelDayColumnInSheet && candidates.length > 0 && candidates.every((r) => r.dayExplicit === true)
