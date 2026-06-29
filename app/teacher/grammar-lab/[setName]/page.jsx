@@ -32,6 +32,7 @@ import {
 import SaveProgressOverlay from '../components/SaveProgressOverlay'
 import GrammarHintFillPanel from '../components/GrammarHintFillPanel'
 import SlotDrillSetPanel from '../components/SlotDrillSetPanel'
+import RoleHintFillPanel from '../components/RoleHintFillPanel'
 import { persistHintKoRow } from '../utils/grammarHintPersist'
 
 function trainingKindFromQuery(searchParams) {
