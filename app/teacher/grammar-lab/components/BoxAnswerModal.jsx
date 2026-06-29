@@ -4,19 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS } from '@/utils/tokens'
 import { ROLE_HINT_SUGGESTIONS } from '../utils/slotDrillMode'
-
-function tokenizeWordsWithSpans(sentence) {
-  const text = String(sentence || '')
-  const re = /\S+/g
-  const out = []
-  let m
-  let idx = 0
-  while ((m = re.exec(text)) !== null) {
-    out.push({ index: idx, text: m[0], start: m.index, end: m.index + m[0].length })
-    idx += 1
-  }
-  return out
-}
+import { normalizeBoxSpan, tokenizeWordsWithSpans } from '../utils/boxSpanUtils'
 
 const btnStyle = {
   padding: '10px 18px',
@@ -85,6 +73,7 @@ export default function BoxAnswerModal({
 
   const loadBoxes = useCallback(async () => {
     if (!item?.id) return
+    const sent = String(item.sentence_text || '')
     setLoading(true)
     const { data, error } = await supabase
       .from('box_drill_answers')
@@ -97,14 +86,17 @@ export default function BoxAnswerModal({
       return
     }
     setBoxes(
-      (data || []).map((b) => ({
-        start: b.start_char,
-        end: b.end_char,
-        chunk_label: b.chunk_label,
-        role_hint: b.role_hint != null ? String(b.role_hint) : '',
-      })),
+      (data || []).map((b) => {
+        const norm = normalizeBoxSpan(sent, b.start_char, b.end_char)
+        return {
+          start: norm.start,
+          end: norm.end,
+          chunk_label: b.chunk_label,
+          role_hint: b.role_hint != null ? String(b.role_hint) : '',
+        }
+      }),
     )
-  }, [item?.id])
+  }, [item?.id, item?.sentence_text])
 
   useEffect(() => {
     if (!open || !item?.id) return
@@ -163,7 +155,9 @@ export default function BoxAnswerModal({
       const t0 = tokens[lo]
       const t1 = tokens[hi]
       if (!t0 || !t1) return false
-      setBoxes((p) => [...p, { start: t0.start, end: t1.end, chunk_label: null, role_hint: '' }])
+      const span = normalizeBoxSpan(sentence, t0.start, t1.end)
+      if (span.end <= span.start) return false
+      setBoxes((p) => [...p, { start: span.start, end: span.end, chunk_label: null, role_hint: '' }])
       return true
     },
     [tokens, rangeHasOverlap],

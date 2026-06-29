@@ -1,4 +1,5 @@
 import { parseBoxDrillFromSentence, sentenceTextForBoxMatch } from './boxDrillExcel'
+import { normalizeBoxSpan } from './boxSpanUtils'
 import { GRAMMAR_LAB_CHUNK_SIZE } from './grammarLabBatchSave'
 
 /**
@@ -67,11 +68,12 @@ export async function applyBoxAnswersForImportedRowsBatched(
     }
     successItems += 1
     for (const b of boxes) {
+      const norm = normalizeBoxSpan(sentence, b.start_char, b.end_char)
       allBoxes.push({
         item_id: item.id,
         box_index: b.box_index,
-        start_char: b.start_char,
-        end_char: b.end_char,
+        start_char: norm.start,
+        end_char: norm.end,
         chunk_label: null,
       })
     }
