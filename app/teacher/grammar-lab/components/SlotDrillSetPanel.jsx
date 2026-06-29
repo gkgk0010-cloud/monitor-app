@@ -10,6 +10,8 @@ import {
   hasReadingBreakMode,
 } from '../utils/slotDrillMode'
 import { copyBoxDrillSetToInterpretSet, formatCopyFromBoxResult } from '../utils/readingInterpretBoxImport'
+import { countMissingBoxRoleHints, fillBoxDrillRoleHintsForSet } from '../utils/fillBoxDrillRoleHints'
+import { ROLE_HINT_SUGGESTIONS } from '../utils/slotDrillMode'
 
 /**
  * 독해해석 세트 — 끊어읽기 모드 (한 줄 해석 + 박스별 입력)
@@ -37,6 +39,8 @@ export default function SlotDrillSetPanel({
   const [boxSetOptions, setBoxSetOptions] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [roleHintMissing, setRoleHintMissing] = useState(null)
+  const [roleHintLog, setRoleHintLog] = useState('')
 
   useEffect(() => {
     setEnabled(hasReadingBreakMode(awkwardGuide))
@@ -70,6 +74,80 @@ export default function SlotDrillSetPanel({
   useEffect(() => {
     setLoading(false)
   }, [setId])
+
+  const refreshRoleHintMissing = useCallback(async () => {
+    const name = String(boxSource).trim()
+    if (!teacherId || !name) {
+      setRoleHintMissing(null)
+      return
+    }
+    try {
+      const { data: items } = await supabase
+        .from('sentence_training_items')
+        .select('id')
+        .eq('teacher_id', teacherId)
+        .eq('set_name', name)
+        .eq('training_kind', 'box_drill')
+      const ids = (items || []).map((r) => r.id).filter(Boolean)
+      if (!ids.length) {
+        setRoleHintMissing({ total: 0, missing: 0 })
+        return
+      }
+      const stats = await countMissingBoxRoleHints(supabase, ids)
+      setRoleHintMissing(stats)
+    } catch {
+      setRoleHintMissing(null)
+    }
+  }, [teacherId, boxSource])
+
+  useEffect(() => {
+    void refreshRoleHintMissing()
+  }, [refreshRoleHintMissing, boxSourceSetName])
+
+  const fillRoleHintsFromSource = async () => {
+    const name = String(boxSource).trim()
+    if (!name) {
+      alert('먼저 박스별 끊어읽기 출처 세트를 선택하세요.')
+      return
+    }
+    if (
+      !confirm(
+        `출처 「${name}」 세트의 박스마다 AI가 역할(시점·목적·주절 등)을 채웁니다.\n` +
+          '학생 끊어읽기(박스별) 화면에 [역할]로 표시됩니다. 계속할까요?',
+      )
+    ) {
+      return
+    }
+    setBusy(true)
+    setRoleHintLog('AI 역할 라벨 생성 중…')
+    try {
+      if (!enabled || String(boxSourceSetName ?? '').trim() !== name) {
+        await persistSettings(true, name)
+      }
+      const result = await fillBoxDrillRoleHintsForSet(supabase, {
+        teacherId,
+        boxSourceSetName: name,
+      })
+      if (!result.ok) {
+        if (result.error === 'no-boxes') {
+          alert('출처 세트에 박스 정답이 없습니다. 문장분석 세트에서 박스를 먼저 등록하세요.')
+          return
+        }
+        if (result.error === 'no-items') {
+          alert('출처 세트에 문항이 없습니다.')
+          return
+        }
+        return
+      }
+      setRoleHintLog(`완료 · ${result.updated}개 박스 role_hint 저장`)
+      await refreshRoleHintMissing()
+    } catch (e) {
+      setRoleHintLog('')
+      alert('박스 역할 자동 채우기 실패: ' + (e?.message || e))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const persistSettings = async (nextEnabled, nextBoxSource) => {
     const nextGuide = nextEnabled
@@ -250,6 +328,65 @@ export default function SlotDrillSetPanel({
           출처 → 해석 문항 복사
         </button>
       </div>
+
+      {boxSource.trim() ? (
+        <div
+          style={{
+            marginTop: 14,
+            padding: '12px 14px',
+            borderRadius: RADIUS.md,
+            border: `1px solid ${roleHintMissing?.missing ? '#c4b5fd' : COLORS.border}`,
+            background: roleHintMissing?.missing ? '#f5f3ff' : '#f8fafc',
+          }}
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontWeight: 700, fontSize: 14 }}>끊어읽기(박스별) 역할 라벨</span>
+            {roleHintMissing != null && roleHintMissing.total > 0 ? (
+              roleHintMissing.missing > 0 ? (
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    padding: '3px 8px',
+                    borderRadius: 999,
+                    background: '#7c3aed',
+                    color: '#fff',
+                  }}
+                >
+                  미입력 {roleHintMissing.missing} / {roleHintMissing.total}
+                </span>
+              ) : (
+                <span style={{ fontSize: 12, color: COLORS.textSecondary }}>역할 라벨 모두 입력됨</span>
+              )
+            ) : null}
+          </div>
+          <p style={{ margin: '0 0 10px', fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
+            출처 세트 박스마다 AI가 <strong>시점·목적·주절</strong> 등을 붙입니다. 학생이 끊어읽기(박스별)를
+            풀 때 <code>[시점]</code>처럼 표시됩니다. (허용 예: {ROLE_HINT_SUGGESTIONS.slice(0, 6).join(', ')}…)
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void fillRoleHintsFromSource()}
+            style={{
+              padding: '8px 14px',
+              borderRadius: RADIUS.md,
+              border: 'none',
+              background: '#7c3aed',
+              color: '#fff',
+              fontWeight: 700,
+              cursor: busy ? 'wait' : 'pointer',
+              opacity: busy ? 0.6 : 1,
+            }}
+          >
+            {busy ? '처리 중…' : '✨ 출처 박스 역할 AI 자동 채우기'}
+          </button>
+          {roleHintLog ? (
+            <p style={{ margin: '8px 0 0', fontSize: 13, color: COLORS.textSecondary }}>{roleHintLog}</p>
+          ) : null}
+        </div>
+      ) : null}
+
       <p style={{ margin: '10px 0 0', fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
         <strong>출처 → 해석 문항 복사</strong>: 문장분석 세트의 영문·의역(힌트)을 아래 표에 한 번에
         등록합니다. 끊어읽기 출처도 함께 저장됩니다.
