@@ -1,4 +1,5 @@
 import { ANTHROPIC_SONNET_MODEL } from '@/utils/anthropicModel'
+import { friendlyHttpError } from '@/utils/fetchApiJson'
 import { ROLE_HINT_SUGGESTIONS } from '../../../teacher/grammar-lab/utils/slotDrillMode'
 
 const CORS_HEADERS = {
@@ -8,6 +9,17 @@ const CORS_HEADERS = {
 }
 
 const PASS_THRESHOLD = 75
+
+const JUDGE_SLOT_SYSTEM = `너는 원준쌤 토익 구문 채점 보조다. JSON 배열만 출력.
+
+채점 원칙:
+- hint_ko(운영자 해석)가 기준. 더 엄격하게 채점 금지.
+- 조사·어미 차이(에/를/려고/을 위해/의/대상으로 등)는 절대 감점 사유 아님.
+- 의역 OK. 의미·역할 통하면 80~94점이 일반적. 95~100은 거의 동일할 때만.
+- of를 소유격으로만 요구하지 말 것. 대상이면 '대상으로' OK.
+- 의미가 명백히 틀린 경우만 60 미만.
+
+점수: 95~100 거의 동일 | 80~94 의역 통함 | 65~79 일부 누락 | 50~64 역할 헷갈림 | 0~49 명백 오답`
 
 function json(data, status = 200) {
   return Response.json(data, { status, headers: CORS_HEADERS })
@@ -26,9 +38,10 @@ ${JSON.stringify(payload.boxes, null, 2)}
 
 규칙:
 1. 각 box_index마다 score 0~100 (정수), feedback 한국어 1~2문장
-2. role_hint(역할)에 맞는 의미 단위인지 평가 (예: 주절·시간·목적)
-3. 의문문·구어체·동의어 허용 (예: 고치다=수정하다)
-4. JSON 배열만. 형식:
+2. role_hint(역할)에 맞는 의미인지 평가 — 표현·조사 일치는 요구하지 않음
+3. 의역·동의어 허용 (노력=헌신, 낮추려고=낮추는 데, 대상으로=…의)
+4. 의미 통하면 80점 이상. 조사·어미만 다르면 70점대 금지
+5. JSON 배열만. 형식:
 [{"box_index":0,"score":88,"feedback":"..."}]
 
 허용 role_hint 예: ${labels}
@@ -61,13 +74,19 @@ async function callClaude(key, prompt, retry) {
     body: JSON.stringify({
       model: ANTHROPIC_SONNET_MODEL,
       max_tokens: 2000,
-      system: 'JSON 배열만. 마크다운 없음.',
+      system: JUDGE_SLOT_SYSTEM,
       messages: [{ role: 'user', content: prompt }],
     }),
   })
-  const data = await res.json()
+  const raw = await res.text()
+  let data
+  try {
+    data = raw ? JSON.parse(raw) : {}
+  } catch {
+    throw new Error(friendlyHttpError(res.status, raw))
+  }
   if (!res.ok) {
-    const msg = data.error?.message || 'Claude 요청 실패'
+    const msg = data.error?.message || friendlyHttpError(res.status, raw)
     throw new Error(msg)
   }
   const text = data.content?.[0]?.text || '[]'
