@@ -31,7 +31,7 @@ import {
 import SaveProgressOverlay from '../components/SaveProgressOverlay'
 import GrammarHintFillPanel from '../components/GrammarHintFillPanel'
 import SlotDrillSetPanel from '../components/SlotDrillSetPanel'
-import RoleHintFillPanel from '../components/RoleHintFillPanel'
+import { persistHintKoRow } from '../utils/grammarHintPersist'
 
 function trainingKindFromQuery(searchParams) {
   const k = searchParams.get('kind')
@@ -255,6 +255,14 @@ function GrammarSetDetailContent() {
     }
   }
 
+  const persistHintKo = useCallback(
+    async (row) => {
+      if (!teacherId) return { ok: false }
+      return persistHintKoRow(supabase, { row, trainingKind, teacherId })
+    },
+    [teacherId, trainingKind],
+  )
+
   const itemIds = useMemo(
     () => rows.filter((r) => !String(r.id).startsWith('temp-')).map((r) => r.id),
     [rows],
@@ -381,19 +389,14 @@ function GrammarSetDetailContent() {
         rows={
           selectedIds.size > 0 ? rows.filter((r) => selectedIds.has(String(r.id))) : rows
         }
+        persistContext={{
+          teacherId,
+          setName,
+          trainingKind,
+          onPersistRow: persistHintKo,
+        }}
         onFilled={async (updated) => {
           setRows(updated)
-          const toSave = updated.filter(
-            (r) =>
-              !String(r.id).startsWith('temp-') &&
-              String(r.example_sentence ?? '').trim() &&
-              String(r.meaning ?? '').trim(),
-          )
-          for (const row of toSave) {
-            const prev = rows.find((x) => x.id === row.id)
-            if (prev && String(prev.meaning ?? '').trim() === String(row.meaning ?? '').trim()) continue
-            await handleRowCommit(row)
-          }
         }}
       />
 

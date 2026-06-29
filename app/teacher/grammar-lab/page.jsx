@@ -13,6 +13,7 @@ import { deleteReadingInterpretSet } from './utils/readingInterpretDelete'
 import ReadingInterpretCreateModal from './components/ReadingInterpretCreateModal'
 
 const TABS = [
+  { id: 'all', label: '📋 전체' },
   { id: 'word_order', label: '🔀 어순 배열' },
   { id: 'box_drill', label: '📦 박스 만들기' },
   { id: 'reading_interpret', label: '📝 독해해석' },
@@ -33,7 +34,10 @@ function GrammarLabDashboardContent() {
   const teacherId = teacher?.id
   const initialTab = searchParams.get('tab')
   const [tab, setTab] = useState(
-    initialTab === 'reading_interpret' || initialTab === 'box_drill' || initialTab === 'word_order'
+    initialTab === 'reading_interpret' ||
+      initialTab === 'box_drill' ||
+      initialTab === 'word_order' ||
+      initialTab === 'all'
       ? initialTab
       : 'word_order',
   )
@@ -43,9 +47,15 @@ function GrammarLabDashboardContent() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editSet, setEditSet] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
-    if (initialTab === 'reading_interpret' || initialTab === 'box_drill' || initialTab === 'word_order') {
+    if (
+      initialTab === 'reading_interpret' ||
+      initialTab === 'box_drill' ||
+      initialTab === 'word_order' ||
+      initialTab === 'all'
+    ) {
       setTab(initialTab)
     }
   }, [initialTab])
@@ -207,8 +217,27 @@ function GrammarLabDashboardContent() {
     }
   }
 
-  const filtered = sets.filter((s) => s.training_kind === tab)
+  const normalizedSearch = searchQuery.trim().toLowerCase()
+  const matchesSearch = (name) => {
+    if (!normalizedSearch) return true
+    return String(name || '').toLowerCase().includes(normalizedSearch)
+  }
+
+  const filteredGrammar = sets.filter((s) => {
+    if (tab !== 'all' && s.training_kind !== tab) return false
+    return matchesSearch(s.set_name)
+  })
+
+  const filteredInterpret = interpretSets.filter((s) => {
+    if (tab !== 'all' && tab !== 'reading_interpret') return false
+    return matchesSearch(s.set_name)
+  })
+
   const isInterpretTab = tab === 'reading_interpret'
+  const isAllTab = tab === 'all'
+  const showInterpretList = isInterpretTab || isAllTab || normalizedSearch
+  const showGrammarList = !isInterpretTab || normalizedSearch || isAllTab
+  const hasSearchResults = filteredGrammar.length > 0 || filteredInterpret.length > 0
 
   if (teacherLoading) {
     return <p style={{ color: COLORS.textSecondary }}>선생님 정보 확인 중…</p>
@@ -262,7 +291,7 @@ function GrammarLabDashboardContent() {
           </button>
         ) : (
           <Link
-            href={`/teacher/grammar-lab/create?kind=${tab}`}
+            href={`/teacher/grammar-lab/create?kind=${tab === 'all' ? 'word_order' : tab}`}
             style={{
               padding: '10px 18px',
               borderRadius: RADIUS.md,
@@ -277,6 +306,41 @@ function GrammarLabDashboardContent() {
           </Link>
         )}
       </header>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="세트 이름 검색 (전체 탭·독해해석 포함)"
+          style={{
+            flex: '1 1 240px',
+            minWidth: 220,
+            padding: '10px 14px',
+            borderRadius: RADIUS.md,
+            border: `1px solid ${COLORS.border}`,
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        />
+        {normalizedSearch ? (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            style={{
+              padding: '8px 12px',
+              borderRadius: RADIUS.sm,
+              border: `1px solid ${COLORS.border}`,
+              background: '#fff',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            검색 초기화
+          </button>
+        ) : null}
+      </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {TABS.map((t) => (
@@ -301,116 +365,138 @@ function GrammarLabDashboardContent() {
 
       {loading ? (
         <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
-      ) : isInterpretTab ? (
-        interpretSets.length === 0 ? (
-          <EmptyState onCreate={() => setCreateOpen(true)} isInterpret />
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {interpretSets.map((s) => (
-              <div
-                key={s.id}
-                style={{
-                  padding: '16px 18px',
-                  borderRadius: RADIUS.lg,
-                  border: `1px solid ${COLORS.border}`,
-                  background: COLORS.surface,
-                  boxShadow: SHADOW.card,
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  justifyContent: 'space-between',
-                  gap: 12,
-                  flexWrap: 'wrap',
-                }}
-              >
+      ) : !hasSearchResults && normalizedSearch ? (
+        <p style={{ color: COLORS.textSecondary }}>「{searchQuery.trim()}」 검색 결과가 없습니다.</p>
+      ) : (
+        <>
+          {showGrammarList && filteredGrammar.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: showInterpretList && filteredInterpret.length ? 20 : 0 }}>
+              {(isAllTab || normalizedSearch) && filteredGrammar.length ? (
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: COLORS.textSecondary }}>
+                  어순·박스 세트 {filteredGrammar.length}건
+                </p>
+              ) : null}
+              {filteredGrammar.map((s) => (
                 <div
+                  key={`${s.training_kind}-${s.set_name}`}
                   role="button"
                   tabIndex={0}
-                  onClick={() => router.push(interpretDetailHref(s.id))}
+                  onClick={() => router.push(setDetailHref(s.set_name, s.training_kind))}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') router.push(interpretDetailHref(s.id))
+                    if (e.key === 'Enter') router.push(setDetailHref(s.set_name, s.training_kind))
                   }}
-                  style={{ flex: '1 1 240px', cursor: 'pointer', minWidth: 0 }}
+                  style={{
+                    padding: '16px 18px',
+                    borderRadius: RADIUS.lg,
+                    border: `1px solid ${COLORS.border}`,
+                    background: COLORS.surface,
+                    boxShadow: SHADOW.card,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                  }}
                 >
-                  <div style={{ fontSize: 17, fontWeight: 800, color: COLORS.textPrimary }}>
-                    📝 {s.set_name} ({s.item_count}문항)
+                  <div>
+                    <div style={{ fontSize: 17, fontWeight: 800, color: COLORS.textPrimary }}>{s.set_name}</div>
+                    <div style={{ fontSize: 14, color: COLORS.textSecondary, marginTop: 4 }}>
+                      구문 {s.total}건 · {TRAINING_KIND_LABELS[s.training_kind]}
+                    </div>
                   </div>
-                  {s.description ? (
-                    <div style={{ fontSize: 14, color: COLORS.textSecondary, marginTop: 6 }}>설명: {s.description}</div>
-                  ) : null}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {s.training_kind === 'box_drill' && s.incomplete > 0 ? (
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          padding: '4px 10px',
+                          borderRadius: 999,
+                          background: '#fee2e2',
+                          color: '#b91c1c',
+                        }}
+                      >
+                        박스 미완료 {s.incomplete}건
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void handleDeleteGrammar(s.set_name, s.training_kind)
+                      }}
+                      style={deleteBtnStyle}
+                    >
+                      삭제
+                    </button>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button type="button" onClick={() => setEditSet(s)} style={editBtnStyle}>
-                    편집
-                  </button>
-                  <button type="button" onClick={() => void handleDeleteInterpret(s)} style={deleteBtnStyle}>
-                    삭제
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-      ) : filtered.length === 0 ? (
-        <EmptyState href={`/teacher/grammar-lab/create?kind=${tab}`} />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {filtered.map((s) => (
-            <div
-              key={`${s.training_kind}-${s.set_name}`}
-              role="button"
-              tabIndex={0}
-              onClick={() => router.push(setDetailHref(s.set_name, s.training_kind))}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') router.push(setDetailHref(s.set_name, s.training_kind))
-              }}
-              style={{
-                padding: '16px 18px',
-                borderRadius: RADIUS.lg,
-                border: `1px solid ${COLORS.border}`,
-                background: COLORS.surface,
-                boxShadow: SHADOW.card,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 17, fontWeight: 800, color: COLORS.textPrimary }}>{s.set_name}</div>
-                <div style={{ fontSize: 14, color: COLORS.textSecondary, marginTop: 4 }}>
-                  구문 {s.total}건 · {TRAINING_KIND_LABELS[s.training_kind]}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {s.training_kind === 'box_drill' && s.incomplete > 0 ? (
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 800,
-                      padding: '4px 10px',
-                      borderRadius: 999,
-                      background: '#fee2e2',
-                      color: '#b91c1c',
-                    }}
-                  >
-                    박스 미완료 {s.incomplete}건
-                  </span>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    void handleDeleteGrammar(s.set_name, s.training_kind)
-                  }}
-                  style={deleteBtnStyle}
-                >
-                  삭제
-                </button>
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
+          ) : null}
+
+          {showInterpretList && filteredInterpret.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {(isAllTab || normalizedSearch || !isInterpretTab) && filteredInterpret.length ? (
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: COLORS.textSecondary }}>
+                  독해해석 세트 {filteredInterpret.length}건
+                </p>
+              ) : null}
+              {filteredInterpret.map((s) => (
+                <div
+                  key={s.id}
+                  style={{
+                    padding: '16px 18px',
+                    borderRadius: RADIUS.lg,
+                    border: `1px solid ${COLORS.border}`,
+                    background: COLORS.surface,
+                    boxShadow: SHADOW.card,
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => router.push(interpretDetailHref(s.id))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') router.push(interpretDetailHref(s.id))
+                    }}
+                    style={{ flex: '1 1 240px', cursor: 'pointer', minWidth: 0 }}
+                  >
+                    <div style={{ fontSize: 17, fontWeight: 800, color: COLORS.textPrimary }}>
+                      📝 {s.set_name} ({s.item_count}문항)
+                    </div>
+                    {s.description ? (
+                      <div style={{ fontSize: 14, color: COLORS.textSecondary, marginTop: 6 }}>
+                        설명: {s.description}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" onClick={() => setEditSet(s)} style={editBtnStyle}>
+                      편집
+                    </button>
+                    <button type="button" onClick={() => void handleDeleteInterpret(s)} style={deleteBtnStyle}>
+                      삭제
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {!hasSearchResults && !normalizedSearch ? (
+            isInterpretTab ? (
+              <EmptyState onCreate={() => setCreateOpen(true)} isInterpret />
+            ) : (
+              <EmptyState href={`/teacher/grammar-lab/create?kind=${tab === 'all' ? 'word_order' : tab}`} />
+            )
+          ) : null}
+        </>
       )}
 
       <ReadingInterpretCreateModal

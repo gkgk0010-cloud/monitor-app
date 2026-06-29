@@ -268,16 +268,19 @@ function ReadingInterpretSetDetailContent() {
         hint_tone: quizSet.hint_tone,
         awkward_guide: quizSet.awkward_guide,
       }
-      const { updatedRows, processed, skipped } = await bulkGenerateInterpretMeta(
+      const { updatedRows, processed, skipped, saved, failedChunkCount } = await bulkGenerateInterpretMeta(
         supabase,
         rows,
         setContext,
         (p) => setBulkAiProgress(p),
+        setId,
       )
       setRows(updatedRows)
-      if (processed > 0) {
-        const saved = await saveAllRows(updatedRows)
-        alert(`${processed}개 AI 생성, ${skipped}개 스킵 · ${saved}개 항목 저장 완료`)
+      if (processed > 0 || saved > 0) {
+        alert(
+          `${processed}개 AI 생성 · ${saved}개 DB 저장 · ${skipped}개 스킵` +
+            (failedChunkCount ? ` · ${failedChunkCount}배치 실패(나머지는 저장됨)` : ''),
+        )
       } else {
         alert(`${processed}개 처리, ${skipped}개 스킵`)
       }
