@@ -1,3 +1,5 @@
+import { ANTHROPIC_SONNET_MODEL } from '@/utils/anthropicModel'
+
 export async function POST(req) {
   const key = process.env.ANTHROPIC_API_KEY
   if (!key) {
@@ -35,7 +37,7 @@ ${JSON.stringify(
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: ANTHROPIC_SONNET_MODEL,
       max_tokens: 4000,
       system: 'JSON 배열만 응답. 마크다운 없음. 코드블록 없음.',
       messages: [{ role: 'user', content: prompt }],

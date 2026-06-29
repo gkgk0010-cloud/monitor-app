@@ -1,3 +1,4 @@
+import { ANTHROPIC_SONNET_MODEL } from '@/utils/anthropicModel'
 import { ROLE_HINT_SUGGESTIONS } from '../../../teacher/grammar-lab/utils/slotDrillMode'
 
 const CORS_HEADERS = {
@@ -58,7 +59,7 @@ async function callClaude(key, prompt, retry) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: ANTHROPIC_SONNET_MODEL,
       max_tokens: 2000,
       system: 'JSON 배열만. 마크다운 없음.',
       messages: [{ role: 'user', content: prompt }],

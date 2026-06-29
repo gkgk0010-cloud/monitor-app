@@ -1,3 +1,4 @@
+import { ANTHROPIC_SONNET_MODEL } from '@/utils/anthropicModel'
 import { ROLE_HINT_SUGGESTIONS } from '../../../teacher/grammar-lab/utils/slotDrillMode'
 
 function buildPrompt(items) {
@@ -37,14 +38,20 @@ async function callClaude(key, prompt, retry) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: ANTHROPIC_SONNET_MODEL,
       max_tokens: 4000,
       system: 'JSON 배열만. 마크다운 없음.',
       messages: [{ role: 'user', content: prompt }],
     }),
   })
   const data = await res.json()
-  if (!res.ok) throw new Error(data.error?.message || 'Claude 요청 실패')
+  if (!res.ok) {
+    let msg = data.error?.message || data.detail || 'Claude 요청 실패'
+    if (/model|retired|not found|does not exist/i.test(String(msg))) {
+      msg = `[Anthropic] 모델 오류 (${ANTHROPIC_SONNET_MODEL}): ${msg}`
+    }
+    throw new Error(msg)
+  }
   const text = data.content?.[0]?.text || '[]'
   try {
     return parseFilled(text)

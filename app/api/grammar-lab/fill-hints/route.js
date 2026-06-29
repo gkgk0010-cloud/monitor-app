@@ -1,3 +1,5 @@
+import { ANTHROPIC_SONNET_MODEL } from '@/utils/anthropicModel'
+
 const BATCH_SYSTEM =
   'JSON 배열만 응답. 마크다운·코드블록·설명 없음. 각 id마다 hint_ko는 반드시 비어 있지 않은 한국어 문자열.'
 
@@ -53,7 +55,7 @@ async function callClaude(key, prompt, system) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: ANTHROPIC_SONNET_MODEL,
       max_tokens: 4000,
       system: system || BATCH_SYSTEM,
       messages: [{ role: 'user', content: prompt }],
