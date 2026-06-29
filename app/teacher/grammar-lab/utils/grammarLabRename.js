@@ -2,6 +2,8 @@
  * 문법 해부실 세트 이름 변경 — 구문 + 학습 기록 set_name 동기화
  */
 
+import { renameGrammarLabSetMeta } from './grammarLabSetMeta'
+
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {{ teacherId: string, oldName: string, newName: string, trainingKind: 'word_order' | 'box_drill' }} opts
@@ -106,6 +108,8 @@ export async function renameGrammarLabSet(supabase, { teacherId, oldName, newNam
       .eq('training_type', kind)
       .in('user_id', affectedUsers)
   }
+
+  await renameGrammarLabSetMeta(supabase, { teacherId, oldName: oldSn, newName: newSn, trainingKind: kind })
 
   return { ok: true, renamed }
 }

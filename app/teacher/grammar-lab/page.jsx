@@ -9,6 +9,7 @@ import { COLORS, RADIUS, SHADOW } from '@/utils/tokens'
 import { TRAINING_KIND_LABELS } from './utils/grammarLabRows'
 import { deleteGrammarLabSet } from './utils/grammarLabDelete'
 import { fetchItemIdsWithBoxAnswers } from './utils/boxDrillQuery'
+import { fetchGrammarLabSetMetaMap } from './utils/grammarLabSetMeta'
 import { deleteReadingInterpretSet } from './utils/readingInterpretDelete'
 import ReadingInterpretCreateModal from './components/ReadingInterpretCreateModal'
 
@@ -83,6 +84,7 @@ function GrammarLabDashboardContent() {
 
     const boxIds = (items || []).filter((r) => r.training_kind === 'box_drill').map((r) => r.id)
     const boxedSet = boxIds.length ? await fetchItemIdsWithBoxAnswers(supabase, boxIds) : new Set()
+    const boxMetaMap = await fetchGrammarLabSetMetaMap(supabase, teacherId, 'box_drill')
 
     return Object.values(byKey).map((s) => {
       let incomplete = 0
@@ -91,11 +93,14 @@ function GrammarLabDashboardContent() {
           if (!boxedSet.has(id)) incomplete++
         }
       }
+      const meta = s.training_kind === 'box_drill' ? boxMetaMap[s.set_name] : null
       return {
         set_name: s.set_name,
         training_kind: s.training_kind,
         total: s.total,
         incomplete,
+        box_mode: meta?.box_mode || 'full',
+        task_description: meta?.task_description || '',
       }
     })
   }, [teacherId])
@@ -404,7 +409,28 @@ function GrammarLabDashboardContent() {
                       구문 {s.total}건 · {TRAINING_KIND_LABELS[s.training_kind]}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    {s.training_kind === 'box_drill' ? (
+                      <span
+                        title={
+                          s.box_mode === 'target' && s.task_description
+                            ? s.task_description
+                            : s.box_mode === 'target'
+                              ? '타겟 박스 모드'
+                              : '전체 박스 모드'
+                        }
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          padding: '4px 10px',
+                          borderRadius: 999,
+                          background: s.box_mode === 'target' ? '#ede9fe' : '#e0f2fe',
+                          color: s.box_mode === 'target' ? '#5b21b6' : '#0369a1',
+                        }}
+                      >
+                        {s.box_mode === 'target' ? '타겟' : '전체'}
+                      </span>
+                    ) : null}
                     {s.training_kind === 'box_drill' && s.incomplete > 0 ? (
                       <span
                         style={{

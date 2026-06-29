@@ -31,7 +31,9 @@ import {
 } from '../utils/grammarLabBatchSave'
 import SaveProgressOverlay from '../components/SaveProgressOverlay'
 import GrammarHintFillPanel from '../components/GrammarHintFillPanel'
+import BoxDrillModePanel from '../components/BoxDrillModePanel'
 import { persistHintKoRow } from '../utils/grammarHintPersist'
+import { fetchGrammarLabSetMeta, upsertGrammarLabBoxMode } from '../utils/grammarLabSetMeta'
 
 function trainingKindFromQuery(searchParams) {
   const k = searchParams.get('kind')
@@ -60,6 +62,9 @@ function GrammarSetDetailContent() {
   const [boxCounts, setBoxCounts] = useState({})
   const [importSaving, setImportSaving] = useState(false)
   const [saveProgress, setSaveProgress] = useState(null)
+  const [boxMode, setBoxMode] = useState('full')
+  const [taskDescription, setTaskDescription] = useState('')
+  const [modeSaving, setModeSaving] = useState(false)
 
   useEffect(() => {
     setEditSetName(setName)
@@ -88,6 +93,41 @@ function GrammarSetDetailContent() {
       cancelled = true
     }
   }, [teacherId, setName, kindFromUrl])
+
+  useEffect(() => {
+    if (!teacherId || !setName || trainingKind !== 'box_drill') return
+    let cancelled = false
+    ;(async () => {
+      const meta = await fetchGrammarLabSetMeta(supabase, teacherId, setName, 'box_drill')
+      if (cancelled) return
+      setBoxMode(meta.box_mode)
+      setTaskDescription(meta.task_description)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [teacherId, setName, trainingKind])
+
+  const handleSaveBoxMode = useCallback(async () => {
+    if (!teacherId || trainingKind !== 'box_drill') return
+    setModeSaving(true)
+    try {
+      const res = await upsertGrammarLabBoxMode(supabase, {
+        teacherId,
+        setName,
+        trainingKind: 'box_drill',
+        boxMode,
+        taskDescription,
+      })
+      if (!res.ok) {
+        alert('박스 모드 저장 실패: ' + (res.error || ''))
+        return
+      }
+      alert('박스 모드가 저장되었습니다.')
+    } finally {
+      setModeSaving(false)
+    }
+  }, [teacherId, setName, trainingKind, boxMode, taskDescription])
 
   const loadItems = useCallback(async () => {
     if (!teacherId || !setName) return { navItems: [], incompleteItems: [] }
@@ -332,6 +372,17 @@ function GrammarSetDetailContent() {
           </button>
         </div>
       </section>
+
+      {trainingKind === 'box_drill' ? (
+        <BoxDrillModePanel
+          boxMode={boxMode}
+          taskDescription={taskDescription}
+          saving={modeSaving}
+          onBoxModeChange={setBoxMode}
+          onTaskDescriptionChange={setTaskDescription}
+          onSave={handleSaveBoxMode}
+        />
+      ) : null}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <button type="button" onClick={() => setBulkOpen(true)} style={primaryBtn}>

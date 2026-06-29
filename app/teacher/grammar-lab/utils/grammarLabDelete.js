@@ -1,6 +1,4 @@
-/**
- * 문법 해부실 세트/구문 삭제 — Supabase 실제 삭제 건수 확인 + 연관 행 정리
- */
+import { deleteGrammarLabSetMeta } from './grammarLabSetMeta'
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
@@ -60,6 +58,8 @@ export async function deleteGrammarLabSet(supabase, { teacherId, setName, traini
   if (delErr) {
     return { ok: false, error: delErr.message, deletedItems: 0, expected }
   }
+
+  await deleteGrammarLabSetMeta(supabase, { teacherId, setName: sn, trainingKind: kind })
 
   const deletedItems = deleted?.length ?? 0
   if (deletedItems === 0 && expected > 0) {
