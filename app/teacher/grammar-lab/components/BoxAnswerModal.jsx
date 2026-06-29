@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '@/utils/supabaseClient'
 import { COLORS, RADIUS } from '@/utils/tokens'
 import { ROLE_HINT_SUGGESTIONS } from '../utils/slotDrillMode'
-import { normalizeBoxSpan, tokenizeWordsWithSpans } from '../utils/boxSpanUtils'
+import { normalizeBoxSpan, tokenizeWordsWithSpans, isBoxPunctuationToken } from '../utils/boxSpanUtils'
 
 const btnStyle = {
   padding: '10px 18px',
@@ -495,7 +495,7 @@ export default function BoxAnswerModal({
                     key={i}
                     type="button"
                     data-token-idx={i}
-                    disabled={inBox(i)}
+                    disabled={inBox(i) || isBoxPunctuationToken(t.text)}
                     onPointerDown={(e) => handleTokenPointerDown(e, i)}
                     onMouseEnter={() => {
                       if (!inBox(i)) setHoveredTokenIdx(i)

@@ -35,3 +35,7 @@ export function normalizeBoxSpan(sentence, start, end) {
   while (e > s && /[.,;:!?]/.test(text[e - 1])) e -= 1
   return { start: s, end: e }
 }
+
+export function isBoxPunctuationToken(text) {
+  return /^[.,;:!?]+$/.test(String(text ?? '').trim())
+}
