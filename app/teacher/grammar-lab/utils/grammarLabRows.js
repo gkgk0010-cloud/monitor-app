@@ -18,7 +18,7 @@ export function emptyGrammarRow(setName) {
     meaning: '',
     example_sentence: '',
     set_name: setName,
-    day: resolveGrammarRowDay(row),
+    day: GRAMMAR_LAB_FIXED_DAY,
     difficulty: 3,
     image_url: null,
     image_source: 'none',

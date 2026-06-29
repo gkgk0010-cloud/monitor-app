@@ -31,7 +31,6 @@ import {
 } from '../utils/grammarLabBatchSave'
 import SaveProgressOverlay from '../components/SaveProgressOverlay'
 import GrammarHintFillPanel from '../components/GrammarHintFillPanel'
-import RoleHintFillPanel from '../components/RoleHintFillPanel'
 import { persistHintKoRow } from '../utils/grammarHintPersist'
 
 function trainingKindFromQuery(searchParams) {
@@ -264,11 +263,6 @@ function GrammarSetDetailContent() {
     [teacherId, trainingKind],
   )
 
-  const itemIds = useMemo(
-    () => rows.filter((r) => !String(r.id).startsWith('temp-')).map((r) => r.id),
-    [rows],
-  )
-
   if (teacherLoading || loading) {
     return <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
   }
@@ -338,15 +332,6 @@ function GrammarSetDetailContent() {
           </button>
         </div>
       </section>
-
-      {trainingKind === 'box_drill' ? (
-        <RoleHintFillPanel
-          setName={setName}
-          teacherId={teacherId}
-          trainingKind={trainingKind}
-          itemIds={itemIds}
-        />
-      ) : null}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <button type="button" onClick={() => setBulkOpen(true)} style={primaryBtn}>
