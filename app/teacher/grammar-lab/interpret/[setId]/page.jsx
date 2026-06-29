@@ -493,6 +493,16 @@ function ReadingInterpretSetDetailContent() {
             scheduleClearSaveProgress(setSaveProgress, p.total)
           }
         }}
+        onRoleHintProgress={(p) => {
+          if (!p) {
+            setSaveProgress(null)
+            return
+          }
+          setSaveProgress(p)
+          if (p.stage === '완료') {
+            scheduleClearSaveProgress(setSaveProgress, p.total)
+          }
+        }}
       />
 
       {uniqueDays.length > 0 ? (

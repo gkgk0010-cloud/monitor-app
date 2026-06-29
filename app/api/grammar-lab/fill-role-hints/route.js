@@ -1,12 +1,12 @@
 import { ANTHROPIC_SONNET_MODEL } from '@/utils/anthropicModel'
+import { friendlyHttpError } from '@/utils/fetchApiJson'
 import { ROLE_HINT_SUGGESTIONS } from '../../../teacher/grammar-lab/utils/slotDrillMode'
+
+/** Vercel serverless — Claude 호출 여유 */
+export const maxDuration = 60
 
 const BATCH_SYSTEM =
   'JSON 배열만 응답. 마크다운·코드블록·설명 없음. role_hint는 허용 라벨 중 하나의 짧은 한국어 문자열.'
-
-/** 한 번에 보낼 박스 수 — 응답 JSON 잘림(max_tokens) 방지 */
-const MAX_BOXES_PER_CHUNK = 20
-const MAX_ITEMS_PER_CHUNK = 6
 
 function buildPrompt(items) {
   const labels = ROLE_HINT_SUGGESTIONS.join(', ')
@@ -63,42 +63,6 @@ function normalizeFilled(arr) {
     .filter((f) => f.item_id && Number.isFinite(f.box_index) && f.role_hint)
 }
 
-function chunkItems(items) {
-  const chunks = []
-  let current = []
-  let boxCount = 0
-
-  for (const item of items) {
-    const boxes = (item.boxes || []).filter((b) => !b.role_hint)
-    if (!boxes.length) continue
-
-    const next = {
-      item_id: item.item_id,
-      sentence_text: item.sentence_text,
-      boxes: boxes.map((b) => ({
-        box_index: b.box_index,
-        english: b.english,
-        role_hint: null,
-      })),
-    }
-
-    if (
-      current.length &&
-      (boxCount + next.boxes.length > MAX_BOXES_PER_CHUNK || current.length >= MAX_ITEMS_PER_CHUNK)
-    ) {
-      chunks.push(current)
-      current = []
-      boxCount = 0
-    }
-
-    current.push(next)
-    boxCount += next.boxes.length
-  }
-
-  if (current.length) chunks.push(current)
-  return chunks
-}
-
 async function callClaude(key, prompt, system) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -114,9 +78,15 @@ async function callClaude(key, prompt, system) {
       messages: [{ role: 'user', content: prompt }],
     }),
   })
-  const data = await res.json()
+  const raw = await res.text()
+  let data
+  try {
+    data = raw ? JSON.parse(raw) : {}
+  } catch {
+    throw new Error(friendlyHttpError(res.status, raw))
+  }
   if (!res.ok) {
-    let msg = data.error?.message || data.detail || 'Claude 요청 실패'
+    let msg = data.error?.message || data.detail || friendlyHttpError(res.status, raw)
     if (/model|retired|not found|does not exist/i.test(String(msg))) {
       msg = `[Anthropic] 모델 오류 (${ANTHROPIC_SONNET_MODEL}): ${msg}`
     }
@@ -149,9 +119,9 @@ async function fillChunk(key, items) {
       return normalizeFilled(tryParseJsonArray(text))
     } catch (retryErr) {
       if (stopReason === 'max_tokens') {
-        throw new Error('응답이 너무 길어 잘렸습니다. 잠시 후 다시 시도해 주세요.')
+        throw new Error('응답이 너무 길어 잘렸습니다. 다시 누르면 남은 박스만 이어서 채웁니다.')
       }
-      throw retryErr
+      throw new Error('AI 응답 형식 오류. 잠시 후 다시 시도해 주세요.')
     }
   }
 }
@@ -179,38 +149,18 @@ export async function POST(req) {
     }))
     .filter((it) => it.item_id && it.sentence_text && it.boxes.length)
 
-  const chunks = chunkItems(payload)
-  if (!chunks.length) {
+  if (!payload.length) {
     return Response.json({ filled: [], error: '채울 박스가 없습니다.' }, { status: 400 })
   }
 
   try {
-    const filled = []
-    let failedChunks = 0
-
-    for (const chunk of chunks) {
-      try {
-        const part = await fillChunk(key, chunk)
-        filled.push(...part)
-      } catch (chunkErr) {
-        failedChunks += 1
-        console.error('[fill-role-hints] chunk failed', chunkErr?.message)
-      }
-    }
-
-    if (!filled.length && failedChunks > 0) {
-      return Response.json(
-        { filled: [], error: 'role_hint 응답 파싱 실패. 잠시 후 재시도해 주세요.', parseError: true },
-        { status: 502 },
-      )
-    }
-
+    const filled = await fillChunk(key, payload)
     return Response.json({
       filled,
-      failedChunks,
-      chunkCount: chunks.length,
+      failedChunks: 0,
+      chunkCount: 1,
     })
   } catch (e) {
-    return Response.json({ filled: [], error: e.message || '실패' }, { status: 502 })
+    return Response.json({ filled: [], error: e.message || '실패', failedChunks: 1 }, { status: 502 })
   }
 }

@@ -2,6 +2,57 @@
  * 출처 문장분석 세트 box_drill_answers.role_hint AI 일괄 채우기
  */
 
+import { readFetchJson, sleep, friendlyHttpError } from '@/utils/fetchApiJson'
+import { chunkRoleHintPayload, countRoleHintBoxes } from './roleHintChunkUtils'
+
+const CHUNK_RETRY_ATTEMPTS = 3
+const CHUNK_PAUSE_MS = 400
+
+/**
+ * @param {{ item_id: string, sentence_text: string, boxes: object[] }[]} items
+ * @param {number} [attempt]
+ */
+async function fetchRoleHintChunk(items, attempt = 0) {
+  try {
+    const res = await fetch('/api/grammar-lab/fill-role-hints', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    })
+    const { json, parseError, friendlyError } = await readFetchJson(res)
+
+    if (parseError) {
+      const err = friendlyError || friendlyHttpError(res.status)
+      if (attempt + 1 < CHUNK_RETRY_ATTEMPTS) {
+        await sleep(800 * (attempt + 1))
+        return fetchRoleHintChunk(items, attempt + 1)
+      }
+      return { ok: false, error: err, filled: [] }
+    }
+
+    if (!res.ok) {
+      const err = String(json.error || friendlyHttpError(res.status))
+      if (attempt + 1 < CHUNK_RETRY_ATTEMPTS && res.status >= 500) {
+        await sleep(800 * (attempt + 1))
+        return fetchRoleHintChunk(items, attempt + 1)
+      }
+      return { ok: false, error: err, filled: [] }
+    }
+
+    return {
+      ok: true,
+      filled: Array.isArray(json.filled) ? json.filled : [],
+      failedChunks: Number(json.failedChunks || 0),
+    }
+  } catch {
+    if (attempt + 1 < CHUNK_RETRY_ATTEMPTS) {
+      await sleep(800 * (attempt + 1))
+      return fetchRoleHintChunk(items, attempt + 1)
+    }
+    return { ok: false, error: '네트워크 오류. 연결을 확인하고 다시 시도해 주세요.', filled: [] }
+  }
+}
+
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {string[]} itemIds
@@ -21,9 +72,13 @@ export async function countMissingBoxRoleHints(supabase, itemIds) {
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
- * @param {{ teacherId: string, boxSourceSetName: string }} opts
+ * @param {{
+ *   teacherId: string,
+ *   boxSourceSetName: string,
+ *   onProgress?: (p: { stage: string, current: number, total: number } | null) => void,
+ * }} opts
  */
-export async function fillBoxDrillRoleHintsForSet(supabase, { teacherId, boxSourceSetName }) {
+export async function fillBoxDrillRoleHintsForSet(supabase, { teacherId, boxSourceSetName, onProgress }) {
   const setName = String(boxSourceSetName || '').trim()
   if (!teacherId || !setName) {
     return { ok: false, error: 'invalid-args', updated: 0 }
@@ -80,30 +135,65 @@ export async function fillBoxDrillRoleHintsForSet(supabase, { teacherId, boxSour
     return { ok: true, updated: 0, setName, skipped: true }
   }
 
-  const res = await fetch('/api/grammar-lab/fill-role-hints', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items: payload }),
-  })
-  const json = await res.json()
-  if (!res.ok) throw new Error(json.error || 'AI 채우기 실패')
-
+  const chunks = chunkRoleHintPayload(payload)
+  const totalToFill = countRoleHintBoxes(payload)
   let updated = 0
-  for (const f of json.filled || []) {
-    const parent = byItem.get(f.item_id)
-    const box = parent?.boxes?.find((x) => Number(x.box_index) === Number(f.box_index))
-    if (!box?.answer_id || !f.role_hint) continue
-    const { error: upErr } = await supabase
-      .from('box_drill_answers')
-      .update({ role_hint: f.role_hint })
-      .eq('id', box.answer_id)
-    if (!upErr) updated += 1
+  let savedBoxes = 0
+  let failedChunks = 0
+  const chunkErrors = []
+
+  const report = (stage, current) => {
+    onProgress?.({ stage, current, total: totalToFill })
   }
+
+  report('역할 라벨 AI 생성', 0)
+
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const chunk = chunks[ci]
+    const chunkBoxCount = countRoleHintBoxes(chunk)
+
+    report(`역할 라벨 AI (${ci + 1}/${chunks.length}묶음 · ${chunkBoxCount}칸)`, savedBoxes)
+
+    const result = await fetchRoleHintChunk(chunk)
+    if (!result.ok) {
+      failedChunks += 1
+      chunkErrors.push(result.error || 'AI 묶음 실패')
+      await sleep(CHUNK_PAUSE_MS)
+      continue
+    }
+    if (Number(result.failedChunks || 0) > 0) failedChunks += Number(result.failedChunks)
+
+    for (const f of result.filled || []) {
+      const parent = byItem.get(f.item_id)
+      const box = parent?.boxes?.find((x) => Number(x.box_index) === Number(f.box_index))
+      if (!box?.answer_id || !f.role_hint) continue
+      const { error: upErr } = await supabase
+        .from('box_drill_answers')
+        .update({ role_hint: f.role_hint })
+        .eq('id', box.answer_id)
+      if (!upErr) {
+        updated += 1
+        savedBoxes += 1
+        box.role_hint = f.role_hint
+        report(`역할 라벨 저장 (${ci + 1}/${chunks.length}묶음)`, savedBoxes)
+      }
+    }
+
+    if (ci + 1 < chunks.length) await sleep(CHUNK_PAUSE_MS)
+  }
+
+  if (updated === 0 && failedChunks > 0) {
+    throw new Error(chunkErrors[0] || 'AI 역할 채우기에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+  }
+
+  report('완료', totalToFill)
 
   return {
     ok: true,
     updated,
     setName,
-    failedChunks: Number(json.failedChunks || 0),
+    failedChunks,
+    partial: failedChunks > 0,
+    totalToFill,
   }
 }

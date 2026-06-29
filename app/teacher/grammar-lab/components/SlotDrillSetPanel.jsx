@@ -11,6 +11,7 @@ import {
 } from '../utils/slotDrillMode'
 import { copyBoxDrillSetToInterpretSet, formatCopyFromBoxResult } from '../utils/readingInterpretBoxImport'
 import { countMissingBoxRoleHints, fillBoxDrillRoleHintsForSet } from '../utils/fillBoxDrillRoleHints'
+import { progressPercent } from '../utils/grammarLabBatchSave'
 import { ROLE_HINT_SUGGESTIONS } from '../utils/slotDrillMode'
 
 /**
@@ -23,6 +24,7 @@ import { ROLE_HINT_SUGGESTIONS } from '../utils/slotDrillMode'
  *   onUpdated?: () => void,
  *   onItemsCopied?: () => void,
  *   onCopyProgress?: (p: { stage: string, current: number, total: number } | null) => void,
+ *   onRoleHintProgress?: (p: { stage: string, current: number, total: number } | null) => void,
  * }} props
  */
 export default function SlotDrillSetPanel({
@@ -33,6 +35,7 @@ export default function SlotDrillSetPanel({
   onUpdated,
   onItemsCopied,
   onCopyProgress,
+  onRoleHintProgress,
 }) {
   const [enabled, setEnabled] = useState(false)
   const [boxSource, setBoxSource] = useState('')
@@ -41,6 +44,7 @@ export default function SlotDrillSetPanel({
   const [busy, setBusy] = useState(false)
   const [roleHintMissing, setRoleHintMissing] = useState(null)
   const [roleHintLog, setRoleHintLog] = useState('')
+  const [roleHintProgress, setRoleHintProgress] = useState(null)
 
   useEffect(() => {
     setEnabled(hasReadingBreakMode(awkwardGuide))
@@ -119,7 +123,8 @@ export default function SlotDrillSetPanel({
       return
     }
     setBusy(true)
-    setRoleHintLog('AI 역할 라벨 생성 중…')
+    setRoleHintLog('')
+    setRoleHintProgress(null)
     try {
       if (!enabled || String(boxSourceSetName ?? '').trim() !== name) {
         await persistSettings(true, name)
@@ -127,6 +132,16 @@ export default function SlotDrillSetPanel({
       const result = await fillBoxDrillRoleHintsForSet(supabase, {
         teacherId,
         boxSourceSetName: name,
+        onProgress: (p) => {
+          setRoleHintProgress(p)
+          onRoleHintProgress?.(p)
+          if (p?.total) {
+            const pct = progressPercent(p.current, p.total)
+            setRoleHintLog(`${p.stage} · ${p.current}/${p.total} (${pct}%)`)
+          } else if (!p) {
+            setRoleHintLog('')
+          }
+        },
       })
       if (!result.ok) {
         if (result.error === 'no-boxes') {
@@ -145,13 +160,17 @@ export default function SlotDrillSetPanel({
         return
       }
       const extra =
-        result.failedChunks > 0 ? ` · ${result.failedChunks}배치 실패(나머지는 저장됨)` : ''
+        result.failedChunks > 0
+          ? ` · ${result.failedChunks}묶음 실패(저장 ${result.updated}개 유지 · 다시 누르면 남은 칸만 채움)`
+          : ''
       setRoleHintLog(`완료 · ${result.updated}개 박스 role_hint 저장${extra}`)
       await refreshRoleHintMissing()
     } catch (e) {
       setRoleHintLog('')
       alert('박스 역할 자동 채우기 실패: ' + (e?.message || e))
     } finally {
+      setRoleHintProgress(null)
+      onRoleHintProgress?.(null)
       setBusy(false)
     }
   }
@@ -386,7 +405,11 @@ export default function SlotDrillSetPanel({
               opacity: busy ? 0.6 : 1,
             }}
           >
-            {busy ? '처리 중…' : '✨ 출처 박스 역할 AI 자동 채우기'}
+            {busy
+              ? roleHintProgress?.total
+                ? `${progressPercent(roleHintProgress.current, roleHintProgress.total)}% 처리 중…`
+                : '처리 중…'
+              : '✨ 출처 박스 역할 AI 자동 채우기'}
           </button>
           {roleHintLog ? (
             <p style={{ margin: '8px 0 0', fontSize: 13, color: COLORS.textSecondary }}>{roleHintLog}</p>
