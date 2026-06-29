@@ -1,4 +1,4 @@
-import { ANTHROPIC_SONNET_MODEL } from '@/utils/anthropicModel'
+import { ANTHROPIC_HAIKU_MODEL } from '@/utils/anthropicModel'
 import { friendlyHttpError } from '@/utils/fetchApiJson'
 import { ROLE_HINT_SUGGESTIONS } from '../../../teacher/grammar-lab/utils/slotDrillMode'
 
@@ -65,7 +65,8 @@ function parseScores(text) {
     .filter((r) => Number.isFinite(r.box_index))
 }
 
-async function callClaude(key, prompt, retry) {
+async function callClaude(key, prompt, retry, boxCount) {
+  const maxTokens = Math.min(2048, Math.max(400, (boxCount || 4) * 90))
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -74,8 +75,8 @@ async function callClaude(key, prompt, retry) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: ANTHROPIC_SONNET_MODEL,
-      max_tokens: 2000,
+      model: ANTHROPIC_HAIKU_MODEL,
+      max_tokens: maxTokens,
       system: JUDGE_SLOT_SYSTEM,
       messages: [{ role: 'user', content: prompt }],
     }),
@@ -100,6 +101,7 @@ async function callClaude(key, prompt, retry) {
         key,
         `${prompt}\n\n이전 응답 JSON 파싱 실패. 유효한 JSON 배열만 다시 출력.`,
         true,
+        boxCount,
       )
     }
     console.error('[judge-slot] parse failed', e?.message, text?.slice?.(0, 400))
@@ -149,6 +151,7 @@ export async function POST(req) {
       key,
       buildJudgePrompt({ sentence_text: sentenceText, hint_ko: hintKo, boxes }),
       false,
+      boxes.length,
     )
     const scoreByIdx = new Map(scores.map((s) => [s.box_index, s]))
     const merged = boxes.map((b) => {
