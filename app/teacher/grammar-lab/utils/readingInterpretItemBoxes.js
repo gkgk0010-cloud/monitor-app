@@ -1,4 +1,5 @@
 import { applyBracketParseToRow } from './readingInterpretBracketParse'
+import { READING_INTERPRET_CHUNK_SIZE } from './readingInterpretRows'
 
 /**
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
@@ -57,22 +58,51 @@ export async function syncInterpretItemBoxesFromRow(supabase, itemId, row) {
  * @param {import('@supabase/supabase-js').SupabaseClient} supabase
  * @param {{ id: string }[]} insertedIds
  * @param {object[]} importedRows
+ * @param {(p: { stage: string, current: number, total: number }) => void} [onProgress]
  */
-export async function syncBoxesAfterBulkInsert(supabase, insertedIds, importedRows) {
+export async function syncBoxesAfterBulkInsert(supabase, insertedIds, importedRows, onProgress) {
+  /** @type {{ id: string, row: object }[]} */
+  const pairs = []
   for (let i = 0; i < insertedIds.length; i++) {
     const id = insertedIds[i]?.id
     const row = importedRows[i]
     if (!id || !row?.boxes?.length) continue
-    await deleteInterpretItemBoxes(supabase, id)
-    await insertInterpretItemBoxes(supabase, id, row.boxes)
-    if (row.boxed_sentence) {
-      await supabase
-        .from('reading_interpret_items')
-        .update({
-          boxed_sentence: row.boxed_sentence,
-          sentence_en: row.sentence_en,
+    pairs.push({ id, row })
+  }
+
+  const total = pairs.length
+  if (!total) {
+    onProgress?.({ stage: '박스 정보 저장', current: 0, total: 0 })
+    return
+  }
+
+  let current = 0
+  for (let i = 0; i < pairs.length; i += READING_INTERPRET_CHUNK_SIZE) {
+    const chunk = pairs.slice(i, i + READING_INTERPRET_CHUNK_SIZE)
+    const itemIds = chunk.map((p) => p.id)
+
+    const { error: delErr } = await supabase.from('reading_interpret_boxes').delete().in('item_id', itemIds)
+    if (delErr) throw delErr
+
+    const boxPayload = []
+    for (const { id, row } of chunk) {
+      for (const b of row.boxes) {
+        boxPayload.push({
+          item_id: id,
+          box_index: b.box_index,
+          start_char: b.start_char,
+          end_char: b.end_char,
+          chunk_label: b.chunk_label ?? null,
+          role_hint: b.role_hint ?? null,
         })
-        .eq('id', id)
+      }
     }
+    if (boxPayload.length) {
+      const { error: insErr } = await supabase.from('reading_interpret_boxes').insert(boxPayload)
+      if (insErr) throw insErr
+    }
+
+    current = Math.min(i + chunk.length, total)
+    onProgress?.({ stage: '박스 정보 저장', current, total })
   }
 }

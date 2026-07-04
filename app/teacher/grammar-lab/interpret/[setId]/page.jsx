@@ -290,8 +290,9 @@ function ReadingInterpretSetDetailContent() {
       )
       setSaveProgress({ stage: '문항 등록', current: 0, total: payload.length })
       const inserted = await batchInsertReadingInterpretItems(supabase, payload, (p) => setSaveProgress(p))
-      setSaveProgress({ stage: '박스 정보 저장', current: 0, total: imported.length })
-      await syncBoxesAfterBulkInsert(supabase, inserted, imported)
+      const boxItemCount = imported.filter((r) => r?.boxes?.length).length
+      setSaveProgress({ stage: '박스 정보 저장', current: 0, total: boxItemCount })
+      await syncBoxesAfterBulkInsert(supabase, inserted, imported, (p) => setSaveProgress(p))
       scheduleClearSaveProgress(setSaveProgress, payload.length)
       setBulkOpen(false)
       await refreshInterpret({ invalidate: true })
