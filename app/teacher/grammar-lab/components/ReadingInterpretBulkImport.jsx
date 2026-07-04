@@ -94,8 +94,9 @@ export default function ReadingInterpretBulkImport({ open, onClose, onImported, 
       >
         <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800 }}>가져오기 추가</h2>
         <p style={{ margin: '0 0 16px', fontSize: 13, color: COLORS.textSecondary }}>
-          A 영어 문장 · B 정답 의역 · C Day (1~30, 비우면 NULL). A열에 <code>[ ]</code>가 있으면 박스가
-          자동 파싱됩니다. 핵심단어·힌트·어색패턴은 AI 도우미로 채웁니다.
+          A 영어 문장 · B 정답 의역(correct_translation, <code>/</code>로 박스별 구분) · C Day (1~30, 비우면 NULL).
+          A열에 <code>[ ]</code>가 있으면 박스가 자동 파싱됩니다. 핵심단어·힌트(hint) 등은 AI 도우미로
+          채웁니다.
         </p>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>

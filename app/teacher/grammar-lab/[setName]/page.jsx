@@ -34,6 +34,13 @@ import GrammarHintFillPanel from '../components/GrammarHintFillPanel'
 import BoxDrillModePanel from '../components/BoxDrillModePanel'
 import { persistHintKoRow } from '../utils/grammarHintPersist'
 import { fetchGrammarLabSetMeta, upsertGrammarLabBoxMode } from '../utils/grammarLabSetMeta'
+import { exportGrammarLabRowsFromDetail } from '../utils/exportSetToExcel'
+import { useStaleWhileRevalidate } from '../hooks/useStaleWhileRevalidate'
+import {
+  grammarLabDetailCacheKey,
+  invalidateGrammarLabDetailCache,
+  invalidateGrammarLabListCache,
+} from '../utils/grammarLabCache'
 
 function trainingKindFromQuery(searchParams) {
   const k = searchParams.get('kind')
@@ -56,7 +63,6 @@ function GrammarSetDetailContent() {
 
   const [rows, setRows] = useState([])
   const [selectedIds, setSelectedIds] = useState(() => new Set())
-  const [loading, setLoading] = useState(true)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [boxItem, setBoxItem] = useState(null)
   const [boxCounts, setBoxCounts] = useState({})
@@ -65,48 +71,102 @@ function GrammarSetDetailContent() {
   const [boxMode, setBoxMode] = useState('full')
   const [taskDescription, setTaskDescription] = useState('')
   const [modeSaving, setModeSaving] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => {
     setEditSetName(setName)
   }, [setName])
 
-  /** URL에 ?kind= 가 없어도 DB training_kind 기준으로 박스/어순 분기 */
-  useEffect(() => {
-    if (!teacherId || !setName) return
-    let cancelled = false
-    ;(async () => {
-      const { data, error } = await supabase
-        .from('sentence_training_items')
-        .select('training_kind')
-        .eq('teacher_id', teacherId)
-        .eq('set_name', setName)
-        .limit(1)
-      if (cancelled || error) return
-      const dbKind = data?.[0]?.training_kind
-      if (dbKind === 'box_drill' || dbKind === 'word_order') {
-        setTrainingKind(dbKind)
-        return
+  const fetchDetailBundle = useCallback(async () => {
+    if (!teacherId || !setName) return null
+
+    let resolvedKind = kindFromUrl || 'word_order'
+    const { data: kindRows, error: kindErr } = await supabase
+      .from('sentence_training_items')
+      .select('training_kind')
+      .eq('teacher_id', teacherId)
+      .eq('set_name', setName)
+      .limit(1)
+    if (!kindErr) {
+      const dbKind = kindRows?.[0]?.training_kind
+      if (dbKind === 'box_drill' || dbKind === 'word_order') resolvedKind = dbKind
+    }
+
+    const { data, error } = await supabase
+      .from('sentence_training_items')
+      .select('id, sentence_text, hint_ko, set_name, day, sort_order, difficulty, image_url, youtube_url, training_kind')
+      .eq('teacher_id', teacherId)
+      .eq('set_name', setName)
+      .eq('training_kind', resolvedKind)
+      .order('day')
+      .order('sort_order')
+    if (error) {
+      console.warn('[grammar-lab detail]', error.message)
+      return {
+        trainingKind: resolvedKind,
+        rows: [],
+        boxCounts: {},
+        boxMode: 'full',
+        taskDescription: '',
       }
-      if (kindFromUrl) setTrainingKind(kindFromUrl)
-    })()
-    return () => {
-      cancelled = true
+    }
+
+    const ids = (data || []).map((d) => d.id)
+    const counts =
+      resolvedKind === 'box_drill' && ids.length ? await fetchBoxCountsByItemId(supabase, ids) : {}
+    const tableRows = (data || []).map((item) => stiToTableRow(item, counts[item.id] || 0))
+
+    let boxMode = 'full'
+    let taskDescription = ''
+    if (resolvedKind === 'box_drill') {
+      const meta = await fetchGrammarLabSetMeta(supabase, teacherId, setName, 'box_drill')
+      boxMode = meta.box_mode
+      taskDescription = meta.task_description
+    }
+
+    return {
+      trainingKind: resolvedKind,
+      rows: tableRows,
+      boxCounts: counts,
+      boxMode,
+      taskDescription,
     }
   }, [teacherId, setName, kindFromUrl])
 
+  const detailCacheKey = teacherId && setName ? grammarLabDetailCacheKey(teacherId, setName) : null
+  const {
+    data: detailBundle,
+    loading,
+    revalidating,
+    revalidate: revalidateDetail,
+  } = useStaleWhileRevalidate(detailCacheKey, fetchDetailBundle, {
+    enabled: Boolean(teacherId && setName),
+  })
+
   useEffect(() => {
-    if (!teacherId || !setName || trainingKind !== 'box_drill') return
-    let cancelled = false
-    ;(async () => {
-      const meta = await fetchGrammarLabSetMeta(supabase, teacherId, setName, 'box_drill')
-      if (cancelled) return
-      setBoxMode(meta.box_mode)
-      setTaskDescription(meta.task_description)
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [teacherId, setName, trainingKind])
+    if (!detailBundle) return
+    setTrainingKind(detailBundle.trainingKind || kindFromUrl || 'word_order')
+    setRows(detailBundle.rows || [])
+    setBoxCounts(detailBundle.boxCounts || {})
+    setBoxMode(detailBundle.boxMode || 'full')
+    setTaskDescription(detailBundle.taskDescription || '')
+  }, [detailBundle, kindFromUrl])
+
+  const refreshDetail = useCallback(
+    (opts = {}) => {
+      if (opts.invalidate && teacherId && setName) {
+        invalidateGrammarLabDetailCache(teacherId, setName)
+        invalidateGrammarLabListCache(teacherId)
+      }
+      return revalidateDetail({
+        background: Boolean(detailBundle),
+        skipCache: opts.force === true,
+      })
+    },
+    [teacherId, setName, detailBundle, revalidateDetail],
+  )
+
+  /** URL에 ?kind= 가 없어도 DB training_kind 기준으로 박스/어순 분기 — 캐시 bundle에서 처리 */
 
   const handleSaveBoxMode = useCallback(async () => {
     if (!teacherId || trainingKind !== 'box_drill') return
@@ -129,49 +189,20 @@ function GrammarSetDetailContent() {
     }
   }, [teacherId, setName, trainingKind, boxMode, taskDescription])
 
-  const loadItems = useCallback(async () => {
-    if (!teacherId || !setName) return { navItems: [], incompleteItems: [] }
-    setLoading(true)
-    try {
-      const { data, error } = await supabase
-        .from('sentence_training_items')
-        .select('id, sentence_text, hint_ko, set_name, day, sort_order, difficulty, image_url, youtube_url, training_kind')
-        .eq('teacher_id', teacherId)
-        .eq('set_name', setName)
-        .eq('training_kind', trainingKind)
-        .order('day')
-        .order('sort_order')
-      if (error) {
-        console.warn('[grammar-lab detail]', error.message)
-        setRows([])
-        setBoxCounts({})
-        return { navItems: [], incompleteItems: [] }
-      }
-      const ids = (data || []).map((d) => d.id)
-      const counts =
-        trainingKind === 'box_drill' && ids.length
-          ? await fetchBoxCountsByItemId(supabase, ids)
-          : {}
-      setBoxCounts(counts)
-      const tableRows = (data || []).map((item) => stiToTableRow(item, counts[item.id] || 0))
-      setRows(tableRows)
-      const navItems = tableRows
-        .filter((r) => !String(r.id).startsWith('temp-'))
-        .map((r) => ({
-          id: r.id,
-          sentence_text: String(r.example_sentence || '').split('\n')[0],
-          hint_ko: String(r.meaning || '').trim(),
-        }))
-      const incompleteItems = navItems.filter((item) => !(counts[item.id] > 0))
-      return { navItems, incompleteItems }
-    } finally {
-      setLoading(false)
+  const handleExportExcel = useCallback(async () => {
+    if (!setName || !rows.length) {
+      alert('내보낼 문항이 없습니다.')
+      return
     }
-  }, [teacherId, setName, trainingKind])
-
-  useEffect(() => {
-    void loadItems()
-  }, [loadItems])
+    setExporting(true)
+    try {
+      await exportGrammarLabRowsFromDetail(supabase, setName, trainingKind, rows)
+    } catch (e) {
+      alert('엑셀 내보내기 실패: ' + (e?.message || e))
+    } finally {
+      setExporting(false)
+    }
+  }, [setName, trainingKind, rows])
 
   const stats = useMemo(() => {
     const total = rows.length
@@ -246,7 +277,7 @@ function GrammarSetDetailContent() {
       alert('삭제 실패: ' + (result.error || '알 수 없음'))
       return
     }
-    void loadItems()
+    void refreshDetail({ invalidate: true })
   }
 
   const openBoxEditor = (row) => {
@@ -289,6 +320,8 @@ function GrammarSetDetailContent() {
         }
         return
       }
+      invalidateGrammarLabDetailCache(teacherId, setName)
+      invalidateGrammarLabListCache(teacherId)
       router.replace(`/teacher/grammar-lab/${encodeURIComponent(newSn)}?kind=${trainingKind}`)
     } finally {
       setRenaming(false)
@@ -303,7 +336,7 @@ function GrammarSetDetailContent() {
     [teacherId, trainingKind],
   )
 
-  if (teacherLoading || loading) {
+  if (teacherLoading || (loading && !detailBundle)) {
     return <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
   }
   if (!teacherId) {
@@ -332,6 +365,7 @@ function GrammarSetDetailContent() {
           {trainingKind === 'box_drill'
             ? ` · 박스 완료 ${stats.complete} / 미완료 ${stats.incomplete}`
             : ''}
+          {revalidating ? ' · 갱신 중…' : ''}
         </p>
       </header>
 
@@ -387,6 +421,22 @@ function GrammarSetDetailContent() {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <button type="button" onClick={() => setBulkOpen(true)} style={primaryBtn}>
           가져오기 추가
+        </button>
+        <button
+          type="button"
+          disabled={exporting || !rows.length}
+          onClick={() => void handleExportExcel()}
+          style={{ ...secondaryBtn, opacity: exporting || !rows.length ? 0.55 : 1 }}
+        >
+          {exporting ? '내보내는 중…' : '⬇ 엑셀로 내보내기'}
+        </button>
+        <button
+          type="button"
+          disabled={revalidating}
+          onClick={() => void refreshDetail({ force: true })}
+          style={{ ...secondaryBtn, opacity: revalidating ? 0.55 : 1 }}
+        >
+          ↻ 새로고침
         </button>
         <button
           type="button"
@@ -497,7 +547,7 @@ function GrammarSetDetailContent() {
               if (error) throw error
             }
             setBulkOpen(false)
-            await loadItems()
+            await refreshDetail({ invalidate: true })
             if (boxMsg) alert(boxMsg)
           } catch (e) {
             alert('저장 실패: ' + (e?.message || e))
@@ -514,7 +564,7 @@ function GrammarSetDetailContent() {
         navItems={navItems}
         queueMeta={boxQueueMeta}
         onClose={() => setBoxItem(null)}
-        onSaved={() => loadItems()}
+        onSaved={() => refreshDetail({ invalidate: true })}
         onNavigateToItem={handleNavigateBoxItem}
       />
     </div>

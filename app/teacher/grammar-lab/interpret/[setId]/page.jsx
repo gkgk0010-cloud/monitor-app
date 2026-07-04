@@ -21,6 +21,13 @@ import ReadingInterpretItemTable from '../../components/ReadingInterpretItemTabl
 import ReadingInterpretBulkImport from '../../components/ReadingInterpretBulkImport'
 import SaveProgressOverlay from '../../components/SaveProgressOverlay'
 import SlotDrillSetPanel from '../../components/SlotDrillSetPanel'
+import { exportReadingInterpretRowsToExcel } from '../../utils/exportSetToExcel'
+import { useStaleWhileRevalidate } from '../../hooks/useStaleWhileRevalidate'
+import {
+  invalidateGrammarLabListCache,
+  invalidateReadingInterpretDetailCache,
+  readingInterpretDetailCacheKey,
+} from '../../utils/grammarLabCache'
 
 function ReadingInterpretSetDetailContent() {
   const params = useParams()
@@ -30,7 +37,6 @@ function ReadingInterpretSetDetailContent() {
 
   const [quizSet, setQuizSet] = useState(null)
   const [rows, setRows] = useState([])
-  const [loading, setLoading] = useState(true)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [importSaving, setImportSaving] = useState(false)
   const [saveProgress, setSaveProgress] = useState(null)
@@ -43,6 +49,7 @@ function ReadingInterpretSetDetailContent() {
   const [bulkSaving, setBulkSaving] = useState(false)
   const [dayLabels, setDayLabels] = useState({})
   const [dayLabelsSaving, setDayLabelsSaving] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const uniqueDays = useMemo(() => {
     const set = new Set()
@@ -104,7 +111,7 @@ function ReadingInterpretSetDetailContent() {
   }, [teacherId, setId])
 
   const loadItems = useCallback(async () => {
-    if (!setId) return
+    if (!setId) return []
     const { data, error } = await supabase
       .from('reading_interpret_items')
       .select('id, set_id, order_index, day, sentence_en, boxed_sentence, correct_translation, key_words, hint, awkward_patterns, critical_phrases')
@@ -113,8 +120,7 @@ function ReadingInterpretSetDetailContent() {
       .order('order_index', { ascending: true })
     if (error) {
       console.warn('[reading-interpret items]', error.message)
-      setRows([])
-      return
+      return []
     }
     const items = data || []
     const ids = items.map((r) => r.id).filter(Boolean)
@@ -125,51 +131,92 @@ function ReadingInterpretSetDetailContent() {
         boxCounts[b.item_id] = (boxCounts[b.item_id] || 0) + 1
       }
     }
-    setRows(
-      sortInterpretRowsByDay(
-        items.map((item, i) =>
-          itemToRow(
-            {
-              ...item,
-              box_count: boxCounts[item.id] || (String(item.boxed_sentence || '').trim() ? 1 : 0),
-            },
-            i,
-          ),
+    return sortInterpretRowsByDay(
+      items.map((item, i) =>
+        itemToRow(
+          {
+            ...item,
+            box_count: boxCounts[item.id] || (String(item.boxed_sentence || '').trim() ? 1 : 0),
+          },
+          i,
         ),
       ),
     )
   }, [setId])
 
-  const reload = useCallback(async () => {
-    if (!teacherId || !setId) {
-      setQuizSet(null)
-      setRows([])
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    try {
-      const setRow = await loadSet()
-      setQuizSet(setRow)
-      if (setRow) {
-        setEditSetName(setRow.set_name)
-        setDayLabels(parseDayLabels(setRow.day_labels))
-        await loadItems()
-      } else {
-        setRows([])
-      }
-    } finally {
-      setLoading(false)
+  const fetchInterpretBundle = useCallback(async () => {
+    if (!teacherId || !setId) return null
+    const setRow = await loadSet()
+    if (!setRow) return null
+    const itemRows = await loadItems()
+    return {
+      quizSet: setRow,
+      rows: itemRows,
+      dayLabels: parseDayLabels(setRow.day_labels),
     }
   }, [teacherId, setId, loadSet, loadItems, parseDayLabels])
 
+  const interpretCacheKey =
+    teacherId && setId ? readingInterpretDetailCacheKey(teacherId, setId) : null
+  const {
+    data: interpretBundle,
+    loading,
+    revalidating,
+    revalidate: revalidateInterpret,
+  } = useStaleWhileRevalidate(interpretCacheKey, fetchInterpretBundle, {
+    enabled: Boolean(teacherId && setId),
+  })
+
   useEffect(() => {
-    void reload()
-  }, [reload])
+    if (!interpretBundle) {
+      if (!loading) {
+        setQuizSet(null)
+        setRows([])
+      }
+      return
+    }
+    setQuizSet(interpretBundle.quizSet)
+    setRows(interpretBundle.rows || [])
+    setEditSetName(interpretBundle.quizSet?.set_name || '')
+    setDayLabels(interpretBundle.dayLabels || {})
+  }, [interpretBundle, loading])
+
+  const refreshInterpret = useCallback(
+    (opts = {}) => {
+      if (opts.invalidate && teacherId && setId) {
+        invalidateReadingInterpretDetailCache(teacherId, setId)
+        invalidateGrammarLabListCache(teacherId)
+      }
+      return revalidateInterpret({
+        background: Boolean(interpretBundle),
+        skipCache: opts.force === true,
+      })
+    },
+    [teacherId, setId, interpretBundle, revalidateInterpret],
+  )
+
+  const reload = useCallback(async () => {
+    await refreshInterpret({ invalidate: true })
+  }, [refreshInterpret])
 
   const nextOrderIndex = () => {
     if (!rows.length) return 0
     return Math.max(...rows.map((r) => Number(r.order_index) || 0)) + 1
+  }
+
+  const handleExportExcel = async () => {
+    if (!quizSet?.set_name || !rows.length) {
+      alert('내보낼 문항이 없습니다.')
+      return
+    }
+    setExporting(true)
+    try {
+      exportReadingInterpretRowsToExcel(quizSet.set_name, rows)
+    } catch (e) {
+      alert('엑셀 내보내기 실패: ' + (e?.message || e))
+    } finally {
+      setExporting(false)
+    }
   }
 
   const handleRowCommit = async (row) => {
@@ -219,7 +266,7 @@ function ReadingInterpretSetDetailContent() {
       alert('삭제 실패: ' + (result.error || '알 수 없음'))
       return
     }
-    void loadItems()
+    void refreshInterpret({ invalidate: true })
   }
 
   const handleBulkImport = async (imported) => {
@@ -247,7 +294,7 @@ function ReadingInterpretSetDetailContent() {
       await syncBoxesAfterBulkInsert(supabase, inserted, imported)
       scheduleClearSaveProgress(setSaveProgress, payload.length)
       setBulkOpen(false)
-      await loadItems()
+      await refreshInterpret({ invalidate: true })
     } catch (e) {
       alert('저장 실패: ' + (e?.message || e))
       setSaveProgress(null)
@@ -392,13 +439,14 @@ function ReadingInterpretSetDetailContent() {
         return
       }
       setQuizSet((prev) => (prev ? { ...prev, set_name: newName } : prev))
+      invalidateGrammarLabListCache(teacherId)
       setEditOpen(false)
     } finally {
       setRenaming(false)
     }
   }
 
-  if (teacherLoading || loading) {
+  if (teacherLoading || (loading && !interpretBundle)) {
     return <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
   }
   if (!teacherId) {
@@ -453,6 +501,7 @@ function ReadingInterpretSetDetailContent() {
         </div>
         <p style={{ margin: '8px 0 0', fontSize: 14, opacity: 0.92 }}>
           독해해석 · 문항 {rows.length}건
+          {revalidating ? ' · 갱신 중…' : ''}
         </p>
         {quizSet.description ? (
           <p style={{ margin: '6px 0 0', fontSize: 14, opacity: 0.88 }}>설명: {quizSet.description}</p>
@@ -509,8 +558,8 @@ function ReadingInterpretSetDetailContent() {
         awkwardGuide={quizSet.awkward_guide}
         boxSourceSetName={quizSet.box_source_set_name}
         selfBoxItemCount={rows.filter((r) => Number(r.box_count) > 0 || String(r.boxed_sentence || '').trim()).length}
-        onUpdated={() => void reload()}
-        onItemsCopied={() => void loadItems()}
+        onUpdated={() => void refreshInterpret({ invalidate: true })}
+        onItemsCopied={() => void refreshInterpret({ invalidate: true })}
         onCopyProgress={(p) => {
           if (!p) {
             setSaveProgress(null)
@@ -590,6 +639,22 @@ function ReadingInterpretSetDetailContent() {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
         <button type="button" onClick={() => setBulkOpen(true)} style={primaryBtn}>
           가져오기 추가
+        </button>
+        <button
+          type="button"
+          disabled={exporting || !rows.length}
+          onClick={() => void handleExportExcel()}
+          style={{ ...secondaryBtn, opacity: exporting || !rows.length ? 0.55 : 1 }}
+        >
+          {exporting ? '내보내는 중…' : '⬇ 엑셀로 내보내기'}
+        </button>
+        <button
+          type="button"
+          disabled={revalidating}
+          onClick={() => void refreshInterpret({ force: true })}
+          style={{ ...secondaryBtn, opacity: revalidating ? 0.55 : 1 }}
+        >
+          ↻ 새로고침
         </button>
         <button
           type="button"

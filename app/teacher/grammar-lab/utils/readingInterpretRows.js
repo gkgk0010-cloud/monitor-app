@@ -159,7 +159,7 @@ export function sortInterpretRowsByDay(rows) {
   })
 }
 
-/** @param {string[][]} rows — 엑셀 A~C (헤더 제외): A 영어([ ] 포함 가능), B 정답, C Day */
+/** @param {string[][]} rows — 엑셀 A~C (헤더 제외): A 영어([ ] 포함 가능), B 정답 의역(correct_translation, / 구분), C Day */
 export function parseInterpretExcelRows(rows) {
   const parsed = []
   for (const cells of rows) {

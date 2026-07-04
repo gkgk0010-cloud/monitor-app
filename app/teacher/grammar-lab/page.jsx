@@ -12,6 +12,17 @@ import { fetchItemIdsWithBoxAnswers } from './utils/boxDrillQuery'
 import { fetchGrammarLabSetMetaMap } from './utils/grammarLabSetMeta'
 import { deleteReadingInterpretSet } from './utils/readingInterpretDelete'
 import ReadingInterpretCreateModal from './components/ReadingInterpretCreateModal'
+import {
+  exportGrammarLabSetFromSupabase,
+  exportReadingInterpretSetFromSupabase,
+} from './utils/exportSetToExcel'
+import { useStaleWhileRevalidate } from './hooks/useStaleWhileRevalidate'
+import {
+  grammarLabListCacheKey,
+  invalidateAllGrammarLabCaches,
+  invalidateGrammarLabListCache,
+  invalidateReadingInterpretDetailCache,
+} from './utils/grammarLabCache'
 
 const TABS = [
   { id: 'all', label: '📋 전체' },
@@ -44,11 +55,11 @@ function GrammarLabDashboardContent() {
   )
   const [sets, setSets] = useState([])
   const [interpretSets, setInterpretSets] = useState([])
-  const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [editSet, setEditSet] = useState(null)
   const [saving, setSaving] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [exportingKey, setExportingKey] = useState('')
 
   useEffect(() => {
     if (
@@ -127,27 +138,40 @@ function GrammarLabDashboardContent() {
     return (setRows || []).map((s) => ({ ...s, item_count: counts[s.id] || 0 }))
   }, [teacherId])
 
-  const loadSets = useCallback(async () => {
-    if (!teacherId) {
-      setSets([])
-      setInterpretSets([])
-      setLoading(false)
-      return
-    }
-    setLoading(true)
-    try {
-      const [grammarList, interpretList] = await Promise.all([loadGrammarSets(), loadInterpretSets()])
-      grammarList.sort((a, b) => a.set_name.localeCompare(b.set_name, 'ko'))
-      setSets(grammarList)
-      setInterpretSets(interpretList)
-    } finally {
-      setLoading(false)
-    }
+  const loadSetsBundle = useCallback(async () => {
+    if (!teacherId) return { grammar: [], interpret: [] }
+    const [grammarList, interpretList] = await Promise.all([loadGrammarSets(), loadInterpretSets()])
+    grammarList.sort((a, b) => a.set_name.localeCompare(b.set_name, 'ko'))
+    return { grammar: grammarList, interpret: interpretList }
   }, [teacherId, loadGrammarSets, loadInterpretSets])
 
+  const listCacheKey = teacherId ? grammarLabListCacheKey(teacherId) : null
+  const {
+    data: listBundle,
+    loading,
+    revalidating,
+    revalidate: revalidateList,
+  } = useStaleWhileRevalidate(listCacheKey, loadSetsBundle, { enabled: Boolean(teacherId) })
+
   useEffect(() => {
-    void loadSets()
-  }, [loadSets])
+    if (!listBundle) {
+      if (!loading) {
+        setSets([])
+        setInterpretSets([])
+      }
+      return
+    }
+    setSets(listBundle.grammar || [])
+    setInterpretSets(listBundle.interpret || [])
+  }, [listBundle, loading])
+
+  const refreshList = useCallback(
+    (opts = {}) => {
+      if (opts.invalidate && teacherId) invalidateGrammarLabListCache(teacherId)
+      return revalidateList({ background: Boolean(listBundle), skipCache: opts.force === true })
+    },
+    [teacherId, listBundle, revalidateList],
+  )
 
   const handleDeleteGrammar = async (setName, kind) => {
     if (!teacherId) return
@@ -163,7 +187,34 @@ function GrammarLabDashboardContent() {
       alert('삭제 실패: ' + (result.error || '알 수 없음'))
       return
     }
-    void loadSets()
+    invalidateAllGrammarLabCaches(teacherId)
+    void refreshList({ invalidate: true })
+  }
+
+  const handleExportGrammar = async (setName, kind) => {
+    if (!teacherId) return
+    const key = `${kind}:${setName}`
+    setExportingKey(key)
+    try {
+      await exportGrammarLabSetFromSupabase(supabase, teacherId, setName, kind)
+    } catch (e) {
+      alert('엑셀 내보내기 실패: ' + (e?.message || e))
+    } finally {
+      setExportingKey('')
+    }
+  }
+
+  const handleExportInterpret = async (setRow) => {
+    if (!setRow?.id) return
+    const key = `ri:${setRow.id}`
+    setExportingKey(key)
+    try {
+      await exportReadingInterpretSetFromSupabase(supabase, setRow.id, setRow.set_name)
+    } catch (e) {
+      alert('엑셀 내보내기 실패: ' + (e?.message || e))
+    } finally {
+      setExportingKey('')
+    }
   }
 
   const handleDeleteInterpret = async (setRow) => {
@@ -174,10 +225,10 @@ function GrammarLabDashboardContent() {
       alert('삭제 실패: ' + (result.error || '알 수 없음'))
       return
     }
-    void loadSets()
+    invalidateReadingInterpretDetailCache(teacherId, setRow.id)
+    invalidateGrammarLabListCache(teacherId)
+    void refreshList({ invalidate: true })
   }
-
-  const handleCreateInterpret = async (values) => {
     if (!teacherId) return
     setSaving(true)
     try {
@@ -191,6 +242,7 @@ function GrammarLabDashboardContent() {
         return
       }
       setCreateOpen(false)
+      invalidateGrammarLabListCache(teacherId)
       router.push(interpretDetailHref(data.id))
     } finally {
       setSaving(false)
@@ -216,7 +268,8 @@ function GrammarLabDashboardContent() {
         return
       }
       setEditSet(null)
-      void loadSets()
+      invalidateGrammarLabListCache(teacherId)
+      void refreshList({ invalidate: true })
     } finally {
       setSaving(false)
     }
@@ -275,9 +328,31 @@ function GrammarLabDashboardContent() {
       >
         <div>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>독해 훈련소</h1>
-          <p style={{ margin: '6px 0 0', fontSize: 14, opacity: 0.92 }}>어순 배열 · 박스 만들기 · 독해해석</p>
+          <p style={{ margin: '6px 0 0', fontSize: 14, opacity: 0.92 }}>
+            어순 배열 · 박스 만들기 · 독해해석
+            {revalidating ? ' · 갱신 중…' : ''}
+          </p>
         </div>
-        {isInterpretTab ? (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            type="button"
+            title="목록 새로고침"
+            disabled={loading || revalidating}
+            onClick={() => void refreshList({ force: true })}
+            style={{
+              padding: '8px 12px',
+              borderRadius: RADIUS.md,
+              border: '1px solid rgba(255,255,255,0.35)',
+              background: 'rgba(255,255,255,0.15)',
+              color: COLORS.textOnGreen,
+              fontWeight: 700,
+              cursor: loading || revalidating ? 'wait' : 'pointer',
+              fontSize: 13,
+            }}
+          >
+            ↻
+          </button>
+          {isInterpretTab ? (
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
@@ -310,6 +385,7 @@ function GrammarLabDashboardContent() {
             + 새 세트 만들기
           </Link>
         )}
+        </div>
       </header>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -368,7 +444,7 @@ function GrammarLabDashboardContent() {
         ))}
       </div>
 
-      {loading ? (
+      {loading && !listBundle ? (
         <p style={{ color: COLORS.textSecondary }}>불러오는 중…</p>
       ) : !hasSearchResults && normalizedSearch ? (
         <p style={{ color: COLORS.textSecondary }}>「{searchQuery.trim()}」 검색 결과가 없습니다.</p>
@@ -447,6 +523,18 @@ function GrammarLabDashboardContent() {
                     ) : null}
                     <button
                       type="button"
+                      title="엑셀로 내보내기"
+                      disabled={exportingKey === `${s.training_kind}:${s.set_name}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void handleExportGrammar(s.set_name, s.training_kind)
+                      }}
+                      style={downloadBtnStyle}
+                    >
+                      {exportingKey === `${s.training_kind}:${s.set_name}` ? '…' : '⬇'}
+                    </button>
+                    <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation()
                         void handleDeleteGrammar(s.set_name, s.training_kind)
@@ -503,6 +591,15 @@ function GrammarLabDashboardContent() {
                     ) : null}
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      title="엑셀로 내보내기"
+                      disabled={exportingKey === `ri:${s.id}`}
+                      onClick={() => void handleExportInterpret(s)}
+                      style={downloadBtnStyle}
+                    >
+                      {exportingKey === `ri:${s.id}` ? '…' : '⬇'}
+                    </button>
                     <button type="button" onClick={() => setEditSet(s)} style={editBtnStyle}>
                       편집
                     </button>
@@ -598,6 +695,18 @@ const deleteBtnStyle = {
   fontSize: 13,
   fontWeight: 700,
   cursor: 'pointer',
+}
+
+const downloadBtnStyle = {
+  padding: '6px 10px',
+  borderRadius: RADIUS.md,
+  border: `1px solid ${COLORS.border}`,
+  background: '#fff',
+  color: COLORS.textPrimary,
+  fontSize: 14,
+  fontWeight: 800,
+  cursor: 'pointer',
+  minWidth: 36,
 }
 
 export default function GrammarLabDashboardPage() {

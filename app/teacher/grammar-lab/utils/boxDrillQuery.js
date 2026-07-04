@@ -66,3 +66,42 @@ export async function fetchBoxCountsByItemId(supabase, itemIds) {
   }
   return counts
 }
+
+/**
+ * item_id별 box_drill_answers 좌표 (export용)
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabase
+ * @param {string[]} itemIds
+ * @returns {Promise<Record<string, { box_index: number, start_char: number, end_char: number }[]>>}
+ */
+export async function fetchBoxDrillAnswersMap(supabase, itemIds) {
+  const ids = [...new Set(itemIds.filter(Boolean))]
+  const map = {}
+  if (!ids.length) return map
+
+  for (let i = 0; i < ids.length; i += GRAMMAR_LAB_CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + GRAMMAR_LAB_CHUNK_SIZE)
+    let offset = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('box_drill_answers')
+        .select('item_id, box_index, start_char, end_char')
+        .in('item_id', chunk)
+        .order('item_id', { ascending: true })
+        .order('box_index', { ascending: true })
+        .range(offset, offset + BOX_ANSWER_PAGE_SIZE - 1)
+      if (error) throw error
+      if (!data?.length) break
+      for (const row of data) {
+        if (!map[row.item_id]) map[row.item_id] = []
+        map[row.item_id].push({
+          box_index: row.box_index,
+          start_char: row.start_char,
+          end_char: row.end_char,
+        })
+      }
+      if (data.length < BOX_ANSWER_PAGE_SIZE) break
+      offset += BOX_ANSWER_PAGE_SIZE
+    }
+  }
+  return map
+}
