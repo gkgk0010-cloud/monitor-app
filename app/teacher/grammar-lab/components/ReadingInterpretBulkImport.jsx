@@ -9,8 +9,8 @@ function downloadTemplate() {
   const aoa = [
     ['영어 문장', '정답 의역', 'Day (1~30)'],
     [
-      'The selection of new vendors will take about two weeks.',
-      '새 공급업체를 선정하는 데 약 2주가 걸린다',
+      'What did [the accountant] [submit] [before the deadline]?',
+      '회계 담당자가? / 마감 전에? / 무엇을 제출했나?',
       '1',
     ],
   ]
@@ -94,7 +94,8 @@ export default function ReadingInterpretBulkImport({ open, onClose, onImported, 
       >
         <h2 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 800 }}>가져오기 추가</h2>
         <p style={{ margin: '0 0 16px', fontSize: 13, color: COLORS.textSecondary }}>
-          A 영어 문장 · B 정답 의역 · C Day (1~30, 비우면 NULL). 핵심단어·힌트·어색패턴은 AI 도우미로 채웁니다.
+          A 영어 문장 · B 정답 의역 · C Day (1~30, 비우면 NULL). A열에 <code>[ ]</code>가 있으면 박스가
+          자동 파싱됩니다. 핵심단어·힌트·어색패턴은 AI 도우미로 채웁니다.
         </p>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -121,6 +122,7 @@ export default function ReadingInterpretBulkImport({ open, onClose, onImported, 
                 <tr style={{ background: COLORS.primarySoft }}>
                   <th style={thStyle}>#</th>
                   <th style={thStyle}>Day</th>
+                  <th style={thStyle}>박스</th>
                   <th style={thStyle}>영어 문장</th>
                   <th style={thStyle}>정답 의역</th>
                 </tr>
@@ -130,7 +132,8 @@ export default function ReadingInterpretBulkImport({ open, onClose, onImported, 
                   <tr key={i}>
                     <td style={tdStyle}>{i + 1}</td>
                     <td style={tdStyle}>{row.day != null ? row.day : '-'}</td>
-                    <td style={tdStyle}>{rowPreviewSentence(row.sentence_en)}</td>
+                    <td style={tdStyle}>{row.box_count ? `${row.box_count}개` : '-'}</td>
+                    <td style={tdStyle}>{rowPreviewSentence(row.boxed_sentence || row.sentence_en)}</td>
                     <td style={tdStyle}>{rowPreviewTranslation(row.correct_translation)}</td>
                   </tr>
                 ))}

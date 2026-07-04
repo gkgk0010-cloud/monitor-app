@@ -15,6 +15,7 @@ import {
 } from '../../utils/readingInterpretRows'
 import { batchInsertReadingInterpretItems, batchUpdateReadingInterpretItems, scheduleClearSaveProgress } from '../../utils/readingInterpretBatchSave'
 import { deleteReadingInterpretItem } from '../../utils/readingInterpretDelete'
+import { syncBoxesAfterBulkInsert, syncInterpretItemBoxesFromRow } from '../../utils/readingInterpretItemBoxes'
 import { bulkGenerateInterpretMeta } from '../../utils/readingInterpretAi'
 import ReadingInterpretItemTable from '../../components/ReadingInterpretItemTable'
 import ReadingInterpretBulkImport from '../../components/ReadingInterpretBulkImport'
@@ -106,7 +107,7 @@ function ReadingInterpretSetDetailContent() {
     if (!setId) return
     const { data, error } = await supabase
       .from('reading_interpret_items')
-      .select('id, set_id, order_index, day, sentence_en, correct_translation, key_words, hint, awkward_patterns, critical_phrases')
+      .select('id, set_id, order_index, day, sentence_en, boxed_sentence, correct_translation, key_words, hint, awkward_patterns, critical_phrases')
       .eq('set_id', setId)
       .order('day', { ascending: true, nullsFirst: false })
       .order('order_index', { ascending: true })
@@ -115,7 +116,28 @@ function ReadingInterpretSetDetailContent() {
       setRows([])
       return
     }
-    setRows(sortInterpretRowsByDay((data || []).map((item, i) => itemToRow(item, i))))
+    const items = data || []
+    const ids = items.map((r) => r.id).filter(Boolean)
+    let boxCounts = {}
+    if (ids.length) {
+      const { data: boxRows } = await supabase.from('reading_interpret_boxes').select('item_id').in('item_id', ids)
+      for (const b of boxRows || []) {
+        boxCounts[b.item_id] = (boxCounts[b.item_id] || 0) + 1
+      }
+    }
+    setRows(
+      sortInterpretRowsByDay(
+        items.map((item, i) =>
+          itemToRow(
+            {
+              ...item,
+              box_count: boxCounts[item.id] || (String(item.boxed_sentence || '').trim() ? 1 : 0),
+            },
+            i,
+          ),
+        ),
+      ),
+    )
   }, [setId])
 
   const reload = useCallback(async () => {
@@ -161,6 +183,7 @@ function ReadingInterpretSetDetailContent() {
           alert('저장 실패: ' + error.message)
           return
         }
+        await syncInterpretItemBoxesFromRow(supabase, data.id, row)
         setRows((prev) =>
           prev.map((r) =>
             r.id === row.id ? { ...itemToRow({ ...payload, id: data.id }), _expanded: false } : r,
@@ -178,6 +201,7 @@ function ReadingInterpretSetDetailContent() {
         alert('저장 실패: ' + error.message)
         return
       }
+      await syncInterpretItemBoxesFromRow(supabase, row.id, row)
       setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, ...payload, _expanded: false } : r)))
     } finally {
       setSavingRowId(null)
@@ -207,6 +231,7 @@ function ReadingInterpretSetDetailContent() {
         rowToItemInsert(
           {
             sentence_en: row.sentence_en,
+            boxed_sentence: row.boxed_sentence,
             correct_translation: row.correct_translation,
             key_words: row.key_words,
             hint: row.hint,
@@ -217,7 +242,9 @@ function ReadingInterpretSetDetailContent() {
         ),
       )
       setSaveProgress({ stage: '문항 등록', current: 0, total: payload.length })
-      await batchInsertReadingInterpretItems(supabase, payload, (p) => setSaveProgress(p))
+      const inserted = await batchInsertReadingInterpretItems(supabase, payload, (p) => setSaveProgress(p))
+      setSaveProgress({ stage: '박스 정보 저장', current: 0, total: imported.length })
+      await syncBoxesAfterBulkInsert(supabase, inserted, imported)
       scheduleClearSaveProgress(setSaveProgress, payload.length)
       setBulkOpen(false)
       await loadItems()
@@ -481,6 +508,7 @@ function ReadingInterpretSetDetailContent() {
         teacherId={teacherId}
         awkwardGuide={quizSet.awkward_guide}
         boxSourceSetName={quizSet.box_source_set_name}
+        selfBoxItemCount={rows.filter((r) => Number(r.box_count) > 0 || String(r.boxed_sentence || '').trim()).length}
         onUpdated={() => void reload()}
         onItemsCopied={() => void loadItems()}
         onCopyProgress={(p) => {

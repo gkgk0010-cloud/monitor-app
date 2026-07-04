@@ -1,3 +1,5 @@
+import { applyBracketParseToRow, parseBracketBoxSegments } from './readingInterpretBracketParse'
+
 export const READING_INTERPRET_CHUNK_SIZE = 100
 
 let tempIdCounter = 0
@@ -53,6 +55,8 @@ export function emptyInterpretRow(orderIndex = 0) {
     order_index: orderIndex,
     day: null,
     sentence_en: '',
+    boxed_sentence: '',
+    box_count: 0,
     correct_translation: '',
     key_words: [emptyKeyWordRow()],
     hint: '',
@@ -70,6 +74,8 @@ export function itemToRow(item, index = 0) {
     order_index: item.order_index ?? index,
     day: item.day != null && Number.isFinite(Number(item.day)) ? Math.floor(Number(item.day)) : null,
     sentence_en: String(item.sentence_en ?? ''),
+    boxed_sentence: String(item.boxed_sentence ?? ''),
+    box_count: Number(item.box_count) || 0,
     correct_translation: String(item.correct_translation ?? ''),
     key_words: kws.length ? kws.map((k) => ({ word: String(k.word ?? ''), meaning: String(k.meaning ?? '') })) : [emptyKeyWordRow()],
     hint: String(item.hint ?? ''),
@@ -112,11 +118,13 @@ export function rowPreviewKeyWords(keyWords) {
 
 /** @param {object} row @param {string} setId */
 export function rowToItemInsert(row, setId, orderIndex) {
+  const parsed = applyBracketParseToRow(row)
   return {
     set_id: setId,
     order_index: orderIndex,
     day: parseInterpretDayCell(row.day),
-    sentence_en: String(row.sentence_en).trim(),
+    sentence_en: parsed.sentence_en,
+    boxed_sentence: parsed.boxed_sentence,
     correct_translation: String(row.correct_translation).trim(),
     key_words: trimKeyWords(row.key_words),
     hint: String(row.hint ?? '').trim() || null,
@@ -127,10 +135,12 @@ export function rowToItemInsert(row, setId, orderIndex) {
 
 /** @param {object} row */
 export function rowToItemUpdate(row) {
+  const parsed = applyBracketParseToRow(row)
   return {
     order_index: row.order_index,
     day: parseInterpretDayCell(row.day),
-    sentence_en: String(row.sentence_en).trim(),
+    sentence_en: parsed.sentence_en,
+    boxed_sentence: parsed.boxed_sentence,
     correct_translation: String(row.correct_translation).trim(),
     key_words: trimKeyWords(row.key_words),
     hint: String(row.hint ?? '').trim() || null,
@@ -149,15 +159,19 @@ export function sortInterpretRowsByDay(rows) {
   })
 }
 
-/** @param {string[][]} rows — 엑셀 A~C (헤더 제외): A 영어, B 정답, C Day */
+/** @param {string[][]} rows — 엑셀 A~C (헤더 제외): A 영어([ ] 포함 가능), B 정답, C Day */
 export function parseInterpretExcelRows(rows) {
   const parsed = []
   for (const cells of rows) {
-    const sentence = String(cells[0] ?? '').trim()
+    const rawSentence = String(cells[0] ?? '').trim()
     const translation = String(cells[1] ?? '').trim()
-    if (!sentence || !translation) continue
+    if (!rawSentence || !translation) continue
+    const bracket = parseBracketBoxSegments(rawSentence)
     parsed.push({
-      sentence_en: sentence,
+      sentence_en: bracket.sentence_en,
+      boxed_sentence: bracket.boxed_sentence,
+      boxes: bracket.boxes,
+      box_count: bracket.boxes.length,
       correct_translation: translation,
       key_words: [],
       hint: '',

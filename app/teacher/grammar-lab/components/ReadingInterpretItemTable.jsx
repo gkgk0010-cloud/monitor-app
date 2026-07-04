@@ -130,7 +130,25 @@ export default function ReadingInterpretItemTable({
               >
                 <td style={tdStyle}>{idx + 1}</td>
                 <td style={tdStyle}>{row.day != null && row.day !== '' ? `Day ${row.day}` : '-'}</td>
-                <td style={tdStyle}>{rowPreviewSentence(row.sentence_en)}</td>
+                <td style={tdStyle}>
+                  {rowPreviewSentence(row.sentence_en)}
+                  {Number(row.box_count) > 0 || String(row.boxed_sentence || '').trim() ? (
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        marginLeft: 6,
+                        padding: '1px 6px',
+                        borderRadius: 999,
+                        background: '#dcfce7',
+                        color: '#166534',
+                        fontSize: 11,
+                        fontWeight: 800,
+                      }}
+                    >
+                      박스 {Number(row.box_count) || '?'}개
+                    </span>
+                  ) : null}
+                </td>
                 <td style={tdStyle}>{rowPreviewTranslation(row.correct_translation)}</td>
                 <td style={tdStyle}>{rowPreviewKeyWords(row.key_words)}</td>
                 <td style={tdStyle}>
@@ -175,7 +193,7 @@ export default function ReadingInterpretItemTable({
                       </label>
 
                       <label style={fieldLabel}>
-                        영어 문장
+                        영어 문장 ([ ] 포함 시 저장 시 박스 자동 파싱)
                         <input
                           value={row.sentence_en}
                           onChange={(e) => updateRow(row.id, { sentence_en: e.target.value })}

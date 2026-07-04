@@ -21,6 +21,7 @@ import { ROLE_HINT_SUGGESTIONS } from '../utils/slotDrillMode'
  *   teacherId: string,
  *   awkwardGuide?: string | null,
  *   boxSourceSetName?: string | null,
+ *   selfBoxItemCount?: number,
  *   onUpdated?: () => void,
  *   onItemsCopied?: () => void,
  *   onCopyProgress?: (p: { stage: string, current: number, total: number } | null) => void,
@@ -32,6 +33,7 @@ export default function SlotDrillSetPanel({
   teacherId,
   awkwardGuide = '',
   boxSourceSetName = '',
+  selfBoxItemCount = 0,
   onUpdated,
   onItemsCopied,
   onCopyProgress,
@@ -298,6 +300,27 @@ export default function SlotDrillSetPanel({
         </label>
       </div>
 
+      {selfBoxItemCount > 0 ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: '10px 12px',
+            borderRadius: RADIUS.md,
+            border: '1px solid #86efac',
+            background: '#f0fdf4',
+            fontSize: 13,
+            lineHeight: 1.45,
+          }}
+        >
+          <strong style={{ color: '#166534' }}>✅ 박스 정보 자동 파싱됨</strong>
+          <span style={{ color: COLORS.textSecondary }}>
+            {' '}
+            — {selfBoxItemCount}개 문항에 엑셀 <code>[ ]</code> 박스가 저장되어 있습니다. 별도 박스 만들기
+            세트 없이 끊어읽기(박스별) 가능합니다.
+          </span>
+        </div>
+      ) : null}
+
       <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
         <label style={{ fontWeight: 700, fontSize: 13, minWidth: 140 }}>박스별 끊어읽기 출처</label>
         <select
@@ -417,11 +440,14 @@ export default function SlotDrillSetPanel({
       ) : null}
 
       <p style={{ margin: '10px 0 0', fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
-        <strong>출처 → 해석 문항 복사</strong>: 문장분석 세트의 영문·의역(힌트)을 아래 표에 한 번에
+        <strong>엑셀 [ ] 박스 (B 방식)</strong>: A열 영문에 <code>[단어]</code> 형태로 넣으면 업로드 시 자동 파싱됩니다.
+        자체 박스가 있으면 학생앱에서 출처 세트 없이 박스별 끊어읽기가 됩니다 (출처는 폴백).
+        <br />
+        <strong>출처 → 해석 문항 복사 (A 방식)</strong>: 문장분석 세트의 영문·의역(힌트)을 아래 표에 한 번에
         등록합니다. 끊어읽기 출처도 함께 저장됩니다.
         <br />
-        한 줄 끊어읽기만 쓸 때는 출처 없이 ON 가능합니다. 박스별 입력은 해석{' '}
-        <code>sentence_en</code> ↔ 박스 세트 <code>sentence_text</code> 매칭 + 출처 세트가 필요합니다.
+        한 줄 끊어읽기만 쓸 때는 출처 없이 ON 가능합니다. 박스별 입력은 자체 [ ] 박스 또는 출처 세트가
+        필요합니다.
       </p>
     </section>
   )
