@@ -229,6 +229,8 @@ function GrammarLabDashboardContent() {
     invalidateGrammarLabListCache(teacherId)
     void refreshList({ invalidate: true })
   }
+
+  const handleCreateInterpret = async (values) => {
     if (!teacherId) return
     setSaving(true)
     try {
