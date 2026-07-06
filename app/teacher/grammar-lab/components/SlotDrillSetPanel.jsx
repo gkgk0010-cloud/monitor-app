@@ -441,7 +441,7 @@ export default function SlotDrillSetPanel({
 
       <p style={{ margin: '10px 0 0', fontSize: 12, color: COLORS.textSecondary, lineHeight: 1.45 }}>
         <strong>엑셀 [ ] 박스 (B 방식)</strong>: A열 영문에 <code>[단어]</code> 형태로 넣으면 업로드 시 자동 파싱됩니다.
-        자체 박스가 있으면 학생앱에서 출처 세트 없이 박스별 끊어읽기가 됩니다 (출처는 폴백).
+        자체 박스 위치를 쓰고, 출처 세트가 연결되어 있으면 같은 문장의 박스 역할(role_hint)은 출처에서 표시됩니다.
         <br />
         <strong>출처 → 해석 문항 복사 (A 방식)</strong>: 문장분석 세트의 영문·의역(힌트)을 아래 표에 한 번에
         등록합니다. 끊어읽기 출처도 함께 저장됩니다.
