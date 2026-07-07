@@ -1,17 +1,36 @@
 import { ANTHROPIC_SONNET_MODEL } from '@/utils/anthropicModel'
 import { callAnthropicMessages } from '@/utils/callAnthropicMessages'
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+const OPTIONS_HEADERS = {
+  ...CORS_HEADERS,
+  'Access-Control-Max-Age': '86400',
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: OPTIONS_HEADERS })
+}
+
+function jsonResponse(data, status = 200) {
+  return Response.json(data, { status, headers: CORS_HEADERS })
+}
+
 export async function POST(req) {
   const key = process.env.ANTHROPIC_API_KEY
   if (!key) {
-    return Response.json({ error: 'ANTHROPIC_API_KEY missing' }, { status: 500 })
+    return jsonResponse({ error: 'ANTHROPIC_API_KEY missing' }, 500)
   }
 
   let body
   try {
     body = await req.json()
   } catch {
-    return Response.json({ error: 'Invalid JSON' }, { status: 400 })
+    return jsonResponse({ error: 'Invalid JSON' }, 400)
   }
 
   const mode = String(body.mode || 'word').trim()
@@ -23,7 +42,7 @@ export async function POST(req) {
     const phraseType = String(body.phrase_type || 'noun_phrase').trim()
 
     if (!structure && !phrase) {
-      return Response.json({ error: 'structure or phrase required' }, { status: 400 })
+      return jsonResponse({ error: 'structure or phrase required' }, 400)
     }
 
     const prompt = `
@@ -55,7 +74,7 @@ export async function POST(req) {
         msg =
           '[Anthropic/Claude] API 크레딧이 부족합니다. console.anthropic.com → Plans & Billing 에서 충전 또는 플랜을 확인하세요. '
       }
-      return Response.json({ error: msg }, { status: 502 })
+      return jsonResponse({ error: msg }, 502)
     }
 
     try {
@@ -69,17 +88,17 @@ export async function POST(req) {
         .filter((row) => row.en)
         .slice(0, 3)
       if (!examples.length) {
-        return Response.json({ error: '빈 예시 응답' }, { status: 502 })
+        return jsonResponse({ error: '빈 예시 응답' }, 502)
       }
-      return Response.json({ examples })
+      return jsonResponse({ examples })
     } catch {
-      return Response.json({ error: '예시 파싱 실패' }, { status: 502 })
+      return jsonResponse({ error: '예시 파싱 실패' }, 502)
     }
   }
 
   const word = String(body.word || '').trim()
   if (!word) {
-    return Response.json({ error: 'word is required' }, { status: 400 })
+    return jsonResponse({ error: 'word is required' }, 400)
   }
 
   const meaning = body.meaning != null ? String(body.meaning).trim() : ''
@@ -128,7 +147,7 @@ export async function POST(req) {
       msg =
         '[Anthropic/Claude] API 크레딧이 부족합니다. console.anthropic.com → Plans & Billing 에서 충전 또는 플랜을 확인하세요. '
     }
-    return Response.json({ error: msg }, { status: 502 })
+    return jsonResponse({ error: msg }, 502)
   }
 
   try {
@@ -137,10 +156,10 @@ export async function POST(req) {
     const example_sentence = String(parsed.example_sentence || '').trim()
     const example_ko = String(parsed.example_ko || '').trim()
     if (!example_sentence) {
-      return Response.json({ error: '빈 예문 응답' }, { status: 502 })
+      return jsonResponse({ error: '빈 예문 응답' }, 502)
     }
-    return Response.json({ example_sentence, example_ko })
+    return jsonResponse({ example_sentence, example_ko })
   } catch {
-    return Response.json({ error: '예문 파싱 실패' }, { status: 502 })
+    return jsonResponse({ error: '예문 파싱 실패' }, 502)
   }
 }
