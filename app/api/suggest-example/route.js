@@ -40,6 +40,7 @@ export async function POST(req) {
     const structure = String(body.structure || '').trim()
     const phrase = String(body.phrase || '').trim()
     const phraseType = String(body.phrase_type || 'noun_phrase').trim()
+    const phraseSubtype = String(body.phrase_subtype || '').trim()
 
     if (!structure && !phrase) {
       return jsonResponse({ error: 'structure or phrase required' }, 400)
@@ -48,15 +49,35 @@ export async function POST(req) {
     const phraseLabels = {
       noun_phrase: '명사구',
       prep_phrase: '전치사구',
+      infinitive_phrase: 'to부정사구',
+      participle_phrase: '분사구',
     }
     const phraseLabel = phraseLabels[phraseType] || '구'
-    const exampleJson =
-      phraseType === 'prep_phrase'
-        ? '{"examples":[{"en":"in the room","ko":"그 방 안에"},{"en":"on the smart girl","ko":"그 똑똑한 소녀 위에"},{"en":"at the very pretty desk","ko":"그 아주 예쁜 책상 옆에"}]}'
-        : '{"examples":[{"en":"the very smart girl","ko":"그 매우 똑똑한 소녀"},{"en":"a really pretty flower","ko":"정말 예쁜 꽃"},{"en":"an incredibly tall boy","ko":"엄청나게 키 큰 소년"}]}'
+
+    let exampleJson =
+      '{"examples":[{"en":"the very smart girl","ko":"그 매우 똑똑한 소녀"},{"en":"a really pretty flower","ko":"정말 예쁜 꽃"},{"en":"an incredibly tall boy","ko":"엄청나게 키 큰 소년"}]}'
+    let extraHint = ''
+
+    if (phraseType === 'prep_phrase') {
+      exampleJson =
+        '{"examples":[{"en":"in the room","ko":"그 방 안에"},{"en":"on the smart girl","ko":"그 똑똑한 소녀 위에"},{"en":"at the very pretty desk","ko":"그 아주 예쁜 책상 옆에"}]}'
+    } else if (phraseType === 'infinitive_phrase') {
+      exampleJson =
+        '{"examples":[{"en":"to study hard","ko":"열심히 공부하기"},{"en":"to read English","ko":"영어를 읽기"},{"en":"to write a very interesting book","ko":"아주 재미있는 책을 쓰기"}]}'
+    } else if (phraseType === 'participle_phrase') {
+      if (phraseSubtype === 'passive') {
+        extraHint = '과거분사구(수동, V-ed) 예시입니다. '
+        exampleJson =
+          '{"examples":[{"en":"broken yesterday","ko":"어제 깨진"},{"en":"broken by him","ko":"그에 의해 깨진"},{"en":"written carefully by the author","ko":"저자에 의해 조심스럽게 쓰인"}]}'
+      } else {
+        extraHint = '현재분사구(능동, V-ing) 예시입니다. '
+        exampleJson =
+          '{"examples":[{"en":"studying English","ko":"영어를 공부하는"},{"en":"reading a book","ko":"책을 읽는"},{"en":"reading the very interesting book","ko":"그 아주 재미있는 책을 읽는"}]}'
+      }
+    }
 
     const prompt = `
-학생이 영어 ${phraseLabel} 구조를 카드로 조합했어요.
+${extraHint}학생이 영어 ${phraseLabel} 구조를 카드로 조합했어요.
 
 품사 순서: ${structure || '(미지정)'}
 조합 예시: ${phrase || '(미지정)'}
