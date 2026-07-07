@@ -43,7 +43,7 @@ export async function callAnthropicMessages({
     }
 
     const usage = data.usage || {}
-    logAiInteraction({
+    await logAiInteraction({
       user_id,
       feature,
       model,
@@ -61,7 +61,7 @@ export async function callAnthropicMessages({
     const text = data.content?.[0]?.text || ''
     return { ok: res.ok, status: res.status, data, raw, text }
   } catch (e) {
-    logAiInteraction({
+    await logAiInteraction({
       user_id,
       feature,
       model,
