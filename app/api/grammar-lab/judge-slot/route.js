@@ -1,5 +1,6 @@
 import { ANTHROPIC_HAIKU_MODEL } from '@/utils/anthropicModel'
 import { friendlyHttpError } from '@/utils/fetchApiJson'
+import { callAnthropicMessages } from '@/utils/callAnthropicMessages'
 import { ROLE_HINT_SUGGESTIONS } from '../../../teacher/grammar-lab/utils/slotDrillMode'
 
 const CORS_HEADERS = {
@@ -65,34 +66,21 @@ function parseScores(text) {
     .filter((r) => Number.isFinite(r.box_index))
 }
 
-async function callClaude(key, prompt, retry, boxCount) {
+async function callClaude(key, prompt, retry, boxCount, user_id) {
   const maxTokens = Math.min(2048, Math.max(400, (boxCount || 4) * 90))
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: ANTHROPIC_HAIKU_MODEL,
-      max_tokens: maxTokens,
-      system: JUDGE_SLOT_SYSTEM,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+  const { ok, data, text, raw, status } = await callAnthropicMessages({
+    apiKey: key,
+    model: ANTHROPIC_HAIKU_MODEL,
+    feature: 'slot_drill_grading',
+    user_id,
+    system: JUDGE_SLOT_SYSTEM,
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: maxTokens,
   })
-  const raw = await res.text()
-  let data
-  try {
-    data = raw ? JSON.parse(raw) : {}
-  } catch {
-    throw new Error(friendlyHttpError(res.status, raw))
-  }
-  if (!res.ok) {
-    const msg = data.error?.message || friendlyHttpError(res.status, raw)
+  if (!ok) {
+    const msg = data.error?.message || friendlyHttpError(status, raw)
     throw new Error(msg)
   }
-  const text = data.content?.[0]?.text || '[]'
   try {
     return parseScores(text)
   } catch (e) {
@@ -102,6 +90,7 @@ async function callClaude(key, prompt, retry, boxCount) {
         `${prompt}\n\n이전 응답 JSON 파싱 실패. 유효한 JSON 배열만 다시 출력.`,
         true,
         boxCount,
+        user_id,
       )
     }
     console.error('[judge-slot] parse failed', e?.message, text?.slice?.(0, 400))
@@ -125,6 +114,7 @@ export async function POST(req) {
   }
 
   const itemId = String(body.item_id ?? '').trim()
+  const userId = body.user_id != null ? String(body.user_id).trim() : ''
   const answers = Array.isArray(body.answers) ? body.answers : []
   const sentenceText = String(body.sentence_text ?? '').trim()
   const hintKo = body.hint_ko != null ? String(body.hint_ko).trim() : ''
@@ -152,6 +142,7 @@ export async function POST(req) {
       buildJudgePrompt({ sentence_text: sentenceText, hint_ko: hintKo, boxes }),
       false,
       boxes.length,
+      userId || null,
     )
     const scoreByIdx = new Map(scores.map((s) => [s.box_index, s]))
     const merged = boxes.map((b) => {

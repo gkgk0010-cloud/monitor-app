@@ -1,5 +1,6 @@
 import { ANTHROPIC_SONNET_MODEL } from '@/utils/anthropicModel'
 import { friendlyHttpError } from '@/utils/fetchApiJson'
+import { callAnthropicMessages } from '@/utils/callAnthropicMessages'
 import { ROLE_HINT_SUGGESTIONS } from '../../../teacher/grammar-lab/utils/slotDrillMode'
 
 /** Vercel serverless — Claude 호출 여유 */
@@ -63,30 +64,18 @@ function normalizeFilled(arr) {
     .filter((f) => f.item_id && Number.isFinite(f.box_index) && f.role_hint)
 }
 
-async function callClaude(key, prompt, system) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: ANTHROPIC_SONNET_MODEL,
-      max_tokens: 8192,
-      system: system || BATCH_SYSTEM,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+async function callClaude(key, prompt, system, user_id) {
+  const { ok, data, text, raw, status } = await callAnthropicMessages({
+    apiKey: key,
+    model: ANTHROPIC_SONNET_MODEL,
+    feature: 'grammar_lab_fill_role_hints',
+    user_id,
+    system: system || BATCH_SYSTEM,
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 8192,
   })
-  const raw = await res.text()
-  let data
-  try {
-    data = raw ? JSON.parse(raw) : {}
-  } catch {
-    throw new Error(friendlyHttpError(res.status, raw))
-  }
-  if (!res.ok) {
-    let msg = data.error?.message || data.detail || friendlyHttpError(res.status, raw)
+  if (!ok) {
+    let msg = data.error?.message || data.detail || friendlyHttpError(status, raw)
     if (/model|retired|not found|does not exist/i.test(String(msg))) {
       msg = `[Anthropic] 모델 오류 (${ANTHROPIC_SONNET_MODEL}): ${msg}`
     }
@@ -97,14 +86,14 @@ async function callClaude(key, prompt, system) {
     throw new Error(msg)
   }
   return {
-    text: data.content?.[0]?.text || '[]',
+    text: text || '[]',
     stopReason: data.stop_reason,
   }
 }
 
-async function fillChunk(key, items) {
+async function fillChunk(key, items, user_id) {
   const prompt = buildPrompt(items)
-  let { text, stopReason } = await callClaude(key, prompt, BATCH_SYSTEM)
+  let { text, stopReason } = await callClaude(key, prompt, BATCH_SYSTEM, user_id)
 
   try {
     return normalizeFilled(tryParseJsonArray(text))
@@ -114,6 +103,7 @@ async function fillChunk(key, items) {
       key,
       `${prompt}\n\n이전 응답이 JSON 파싱에 실패했습니다. 유효한 JSON 배열만 다시 출력하세요.`,
       `${BATCH_SYSTEM} 반드시 유효한 JSON 배열만.`,
+      user_id,
     ))
     try {
       return normalizeFilled(tryParseJsonArray(text))
@@ -154,7 +144,7 @@ export async function POST(req) {
   }
 
   try {
-    const filled = await fillChunk(key, payload)
+    const filled = await fillChunk(key, payload, body.user_id)
     return Response.json({
       filled,
       failedChunks: 0,

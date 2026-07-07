@@ -1,4 +1,5 @@
 import { ANTHROPIC_SONNET_MODEL } from '@/utils/anthropicModel'
+import { callAnthropicMessages } from '@/utils/callAnthropicMessages'
 
 export async function POST(req) {
   const key = process.env.ANTHROPIC_API_KEY
@@ -20,6 +21,7 @@ export async function POST(req) {
 
   const meaning = body.meaning != null ? String(body.meaning).trim() : ''
   const defaultLang = String(body.default_lang || 'en-US').trim() || 'en-US'
+  const user_id = body.user_id
 
   const LANG_LABEL = {
     'en-US': 'English',
@@ -48,23 +50,17 @@ export async function POST(req) {
 {"example_sentence":"<학습 언어 예문 한 문장>","example_ko":"<한국어 번역 또는 해설>"}
 `.trim()
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: ANTHROPIC_SONNET_MODEL,
-      max_tokens: 400,
-      system: 'JSON만 응답. 코드블록 없음.',
-      messages: [{ role: 'user', content: prompt }],
-    }),
+  const { ok, data, text } = await callAnthropicMessages({
+    apiKey: key,
+    model: ANTHROPIC_SONNET_MODEL,
+    feature: 'grammar_card_examples',
+    user_id,
+    system: 'JSON만 응답. 코드블록 없음.',
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 400,
   })
 
-  const data = await res.json()
-  if (!res.ok) {
+  if (!ok) {
     let msg = data.error?.message || data.detail || 'Claude 요청 실패'
     if (/credit|balance|billing|insufficient|payment/i.test(String(msg))) {
       msg =
@@ -72,8 +68,6 @@ export async function POST(req) {
     }
     return Response.json({ error: msg }, { status: 502 })
   }
-
-  const text = data.content?.[0]?.text || ''
 
   try {
     const cleaned = text.replace(/```json|```/g, '').trim()

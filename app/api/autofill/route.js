@@ -1,4 +1,5 @@
 import { ANTHROPIC_SONNET_MODEL } from '@/utils/anthropicModel'
+import { callAnthropicMessages } from '@/utils/callAnthropicMessages'
 
 export async function POST(req) {
   const key = process.env.ANTHROPIC_API_KEY
@@ -6,7 +7,7 @@ export async function POST(req) {
     return Response.json({ filled: [], error: 'ANTHROPIC_API_KEY missing' }, { status: 500 })
   }
 
-  const { words } = await req.json()
+  const { words, user_id } = await req.json()
 
   const prompt = `
 다음 토익 단어 목록에서 비어있는 필드를 채워줘.
@@ -29,23 +30,17 @@ ${JSON.stringify(
 변경된 항목만 포함. 마크다운 없음.
 `.trim()
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: ANTHROPIC_SONNET_MODEL,
-      max_tokens: 4000,
-      system: 'JSON 배열만 응답. 마크다운 없음. 코드블록 없음.',
-      messages: [{ role: 'user', content: prompt }],
-    }),
+  const { ok, data, text } = await callAnthropicMessages({
+    apiKey: key,
+    model: ANTHROPIC_SONNET_MODEL,
+    feature: 'vocab_word_autofill',
+    user_id,
+    system: 'JSON 배열만 응답. 마크다운 없음. 코드블록 없음.',
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 4000,
   })
 
-  const data = await res.json()
-  if (!res.ok) {
+  if (!ok) {
     let msg = data.error?.message || data.detail || 'Claude 요청 실패'
     if (/credit|balance|billing|insufficient|payment/i.test(String(msg))) {
       msg =
@@ -53,8 +48,6 @@ ${JSON.stringify(
     }
     return Response.json({ filled: [], error: msg }, { status: 502 })
   }
-
-  const text = data.content?.[0]?.text || '[]'
 
   try {
     const cleaned = text.replace(/```json|```/g, '').trim()

@@ -1,4 +1,5 @@
 import { ANTHROPIC_SONNET_MODEL } from '@/utils/anthropicModel'
+import { callAnthropicMessages } from '@/utils/callAnthropicMessages'
 
 const BATCH_SYSTEM =
   'JSON 배열만 응답. 마크다운·코드블록·설명 없음. 각 id마다 hint_ko는 반드시 비어 있지 않은 한국어 문자열.'
@@ -46,23 +47,17 @@ function parseFilledArray(text) {
     .filter((row) => row.id && row.hint_ko)
 }
 
-async function callClaude(key, prompt, system) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: ANTHROPIC_SONNET_MODEL,
-      max_tokens: 4000,
-      system: system || BATCH_SYSTEM,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+async function callClaude(key, prompt, system, user_id) {
+  const { ok, data, text } = await callAnthropicMessages({
+    apiKey: key,
+    model: ANTHROPIC_SONNET_MODEL,
+    feature: 'grammar_lab_fill_hints',
+    user_id,
+    system: system || BATCH_SYSTEM,
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 4000,
   })
-  const data = await res.json()
-  if (!res.ok) {
+  if (!ok) {
     let msg = data.error?.message || data.detail || 'Claude 요청 실패'
     if (/credit|balance|billing|insufficient|payment/i.test(String(msg))) {
       msg =
@@ -72,7 +67,7 @@ async function callClaude(key, prompt, system) {
     err.status = 502
     throw err
   }
-  return data.content?.[0]?.text || '[]'
+  return text || '[]'
 }
 
 export async function POST(req) {
@@ -106,9 +101,10 @@ export async function POST(req) {
   }
 
   const prompt = buildFillHintsPrompt(needFill)
+  const user_id = body.user_id
 
   try {
-    let text = await callClaude(key, prompt, BATCH_SYSTEM)
+    let text = await callClaude(key, prompt, BATCH_SYSTEM, user_id)
     let filled
     try {
       filled = parseFilledArray(text)
@@ -118,6 +114,7 @@ export async function POST(req) {
         key,
         `${prompt}\n\n이전 응답이 JSON 파싱에 실패했습니다. 유효한 JSON 배열만 다시 출력하세요.`,
         `${BATCH_SYSTEM} 반드시 유효한 JSON 배열만.`,
+        user_id,
       )
       try {
         filled = parseFilledArray(text)
