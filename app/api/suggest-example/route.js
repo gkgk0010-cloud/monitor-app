@@ -45,17 +45,27 @@ export async function POST(req) {
       return jsonResponse({ error: 'structure or phrase required' }, 400)
     }
 
+    const phraseLabels = {
+      noun_phrase: '명사구',
+      prep_phrase: '전치사구',
+    }
+    const phraseLabel = phraseLabels[phraseType] || '구'
+    const exampleJson =
+      phraseType === 'prep_phrase'
+        ? '{"examples":[{"en":"in the room","ko":"그 방 안에"},{"en":"on the smart girl","ko":"그 똑똑한 소녀 위에"},{"en":"at the very pretty desk","ko":"그 아주 예쁜 책상 옆에"}]}'
+        : '{"examples":[{"en":"the very smart girl","ko":"그 매우 똑똑한 소녀"},{"en":"a really pretty flower","ko":"정말 예쁜 꽃"},{"en":"an incredibly tall boy","ko":"엄청나게 키 큰 소년"}]}'
+
     const prompt = `
-학생이 영어 ${phraseType === 'noun_phrase' ? '명사구' : '구'} 구조를 카드로 조합했어요.
+학생이 영어 ${phraseLabel} 구조를 카드로 조합했어요.
 
 품사 순서: ${structure || '(미지정)'}
 조합 예시: ${phrase || '(미지정)'}
 
-위 구조와 같은 패턴의 자연스러운 영어 ${phraseType === 'noun_phrase' ? '명사구' : '표현'} 예시를 **정확히 3개** 만들어 주세요.
+위 구조와 같은 패턴의 자연스러운 영어 ${phraseLabel} 예시를 **정확히 3개** 만들어 주세요.
 각 예시마다 한국어 뜻을 함께 제공하세요.
 
 응답은 JSON 한 줄만 (마크다운·코드블록 금지):
-{"examples":[{"en":"the very smart girl","ko":"그 매우 똑똑한 소녀"},{"en":"a really pretty flower","ko":"정말 예쁜 꽃"},{"en":"an incredibly tall boy","ko":"엄청나게 키 큰 소년"}]}
+${exampleJson}
 `.trim()
 
     const { ok, data, text } = await callAnthropicMessages({
