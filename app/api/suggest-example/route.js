@@ -62,8 +62,15 @@ export async function POST(req) {
       exampleJson =
         '{"examples":[{"en":"in the room","ko":"그 방 안에"},{"en":"on the smart girl","ko":"그 똑똑한 소녀 위에"},{"en":"at the very pretty desk","ko":"그 아주 예쁜 책상 옆에"}]}'
     } else if (phraseType === 'infinitive_phrase') {
-      exampleJson =
-        '{"examples":[{"en":"to study hard","ko":"열심히 공부하기"},{"en":"to read English","ko":"영어를 읽기"},{"en":"to write a very interesting book","ko":"아주 재미있는 책을 쓰기"}]}'
+      if (phraseSubtype === 'intransitive') {
+        extraHint = '자동사 to부정사구 예시입니다. to+자동사+부사 패턴. '
+        exampleJson =
+          '{"examples":[{"en":"to run fast","ko":"빨리 달리기"},{"en":"to sleep well","ko":"잘 자기"},{"en":"to arrive very early","ko":"아주 일찍 도착하기"}]}'
+      } else {
+        extraHint = '타동사 to부정사구 예시입니다. to+타동사+명사구(+부사) 패턴. '
+        exampleJson =
+          '{"examples":[{"en":"to study English","ko":"영어를 공부하기"},{"en":"to read the book","ko":"그 책을 읽기"},{"en":"to write English hard","ko":"영어를 열심히 쓰기"}]}'
+      }
     } else if (phraseType === 'participle_phrase') {
       if (phraseSubtype === 'passive') {
         extraHint = '과거분사구(수동, V-ed) 예시입니다. '
