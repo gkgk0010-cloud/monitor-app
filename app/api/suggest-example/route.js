@@ -75,7 +75,7 @@ export async function POST(req) {
       if (phraseSubtype === 'passive') {
         extraHint = '과거분사구(수동, V-ed) 예시입니다. '
         exampleJson =
-          '{"examples":[{"en":"broken yesterday","ko":"어제 깨진"},{"en":"broken by him","ko":"그에 의해 깨진"},{"en":"written carefully by the author","ko":"저자에 의해 조심스럽게 쓰인"}]}'
+          '{"examples":[{"en":"broken yesterday","ko":"어제 깨진"},{"en":"broken in the room","ko":"그 방 안에서 깨진"},{"en":"carefully broken in the dark","ko":"어둠 속에서 조심스럽게 깨진"}]}'
       } else {
         extraHint = '현재분사구(능동, V-ing) 예시입니다. '
         exampleJson =
@@ -87,9 +87,11 @@ export async function POST(req) {
 ${extraHint}학생이 영어 ${phraseLabel} 구조를 카드로 조합했어요.
 
 품사 순서: ${structure || '(미지정)'}
-조합 예시: ${phrase || '(미지정)'}
+조합 예시(카드 표시 단어): ${phrase || '(미지정)'}
 
-위 구조와 같은 패턴의 자연스러운 영어 ${phraseLabel} 예시를 **정확히 3개** 만들어 주세요.
+위 **품사 순서(구조 패턴)** 와 같은 형태의 자연스러운 영어 ${phraseLabel} 예시를 **정확히 3개** 만들어 주세요.
+카드에 표시된 예시 단어에 얽매이지 말고, **같은 구조라도 서로 다른 단어**로 다양하게 작성하세요.
+(예: the smart girl → a pretty flower, an incredibly tall boy)
 각 예시마다 한국어 뜻을 함께 제공하세요.
 
 응답은 JSON 한 줄만 (마크다운·코드블록 금지):
@@ -101,7 +103,7 @@ ${exampleJson}
       model: ANTHROPIC_SONNET_MODEL,
       feature: 'grammar_card_examples',
       user_id,
-      system: 'JSON만 응답. examples 배열에 en, ko 필드 3개.',
+      system: 'JSON만 응답. examples 배열에 en, ko 필드 3개. 같은 구조 패턴이면 카드 예시 단어와 다른 어휘로 다양하게 작성.',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 600,
     })
