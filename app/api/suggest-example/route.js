@@ -41,6 +41,7 @@ export async function POST(req) {
     const phrase = String(body.phrase || '').trim()
     const phraseType = String(body.phrase_type || 'noun_phrase').trim()
     const phraseSubtype = String(body.phrase_subtype || '').trim()
+    const connectorKey = String(body.connector_key || '').trim()
 
     if (!structure && !phrase) {
       return jsonResponse({ error: 'structure or phrase required' }, 400)
@@ -85,7 +86,10 @@ export async function POST(req) {
           '{"examples":[{"en":"studying English","ko":"영어를 공부하는"},{"en":"reading a book","ko":"책을 읽는"},{"en":"reading the very interesting book","ko":"그 아주 재미있는 책을 읽는"}]}'
       }
     } else if (phraseType === 'noun_clause') {
-      extraHint = '명사절(that + 주어 + 동사) 예시입니다. '
+      extraHint =
+        '명사절 예시입니다. 접속사/의문사 ' +
+        (connectorKey || 'that') +
+        ' + 학생 배치 구조. '
       if (phraseSubtype === 'intransitive') {
         exampleJson =
           '{"examples":[{"en":"that he runs fast","ko":"그가 빨리 뛴다는 것"},{"en":"that she sleeps well","ko":"그녀가 잘 잔다는 것"},{"en":"that the smart girl runs very fast","ko":"그 똑똑한 소녀가 아주 빨리 뛴다는 것"}]}'
@@ -97,7 +101,10 @@ export async function POST(req) {
           '{"examples":[{"en":"that he runs","ko":"그가 뛴다는 것"},{"en":"that she studies English","ko":"그녀가 영어를 공부한다는 것"},{"en":"that the smart girl runs fast","ko":"그 똑똑한 소녀가 빨리 뛴다는 것"}]}'
       }
     } else if (phraseType === 'adj_clause') {
-      extraHint = '형용사절(관계대명사 who) 예시입니다. 명사를 꾸미는 형태로 작성하세요. '
+      extraHint =
+        '형용사절(관계사 ' +
+        (connectorKey || 'who') +
+        ') 예시입니다. 명사를 꾸미는 형태로 작성하세요. '
       if (phraseSubtype === 'intransitive') {
         exampleJson =
           '{"examples":[{"en":"the boy who runs fast","ko":"빨리 뛰는 소년"},{"en":"the girl who sleeps well","ko":"잘 자는 소녀"},{"en":"the student who arrives very early","ko":"아주 일찍 도착하는 학생"}]}'
@@ -106,7 +113,10 @@ export async function POST(req) {
           '{"examples":[{"en":"the girl who studies English","ko":"영어를 공부하는 소녀"},{"en":"the boy who reads the book","ko":"그 책을 읽는 소년"},{"en":"the teacher who teaches the smart student hard","ko":"그 똑똑한 학생을 열심히 가르치는 선생님"}]}'
       }
     } else if (phraseType === 'adv_clause') {
-      extraHint = '부사절(접속사 when + 주어 + 동사) 예시입니다. '
+      extraHint =
+        '부사절 예시입니다. 접속사 ' +
+        (connectorKey || 'when') +
+        ' + 완전한 문장. '
       if (phraseSubtype === 'intransitive') {
         exampleJson =
           '{"examples":[{"en":"when he runs fast","ko":"그가 빨리 뛸 때"},{"en":"when she sleeps well","ko":"그녀가 잘 잘 때"},{"en":"when the smart girl runs very fast","ko":"그 똑똑한 소녀가 아주 빨리 뛸 때"}]}'
