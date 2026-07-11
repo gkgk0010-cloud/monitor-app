@@ -140,6 +140,14 @@ export async function POST(req) {
       } else if (phraseSubtype === 'svc') {
         exampleJson =
           '{"examples":[{"en":"She is smart","ko":"그녀는 똑똑하다"},{"en":"He is a doctor","ko":"그는 의사이다"},{"en":"The girl is very pretty","ko":"그 소녀는 아주 예쁘다"}]}'
+      } else if (phraseSubtype === 'svc_progressive') {
+        extraHint = '2형식 be + V-ing 현재진행 예시입니다. 한국어 뜻도 진행형(~하고 있다)으로 작성하세요. '
+        exampleJson =
+          '{"examples":[{"en":"She is studying","ko":"그녀는 공부하고 있다"},{"en":"He is studying English","ko":"그는 영어를 공부하고 있다"},{"en":"The smart girl is reading a book","ko":"그 똑똑한 소녀는 책을 읽고 있다"}]}'
+      } else if (phraseSubtype === 'svc_passive') {
+        extraHint = '2형식 be + V-ed 수동태 예시입니다. 한국어 뜻도 수동(~되어 있다)으로 작성하세요. '
+        exampleJson =
+          '{"examples":[{"en":"The window is broken","ko":"창문이 깨져 있다"},{"en":"The door is broken by him","ko":"문이 그에 의해 깨져 있다"},{"en":"The book is written in English","ko":"그 책은 영어로 쓰여 있다"}]}'
       } else if (phraseSubtype === 'svo') {
         exampleJson =
           '{"examples":[{"en":"I love her","ko":"나는 그녀를 사랑한다"},{"en":"She studies English","ko":"그녀는 영어를 공부한다"},{"en":"The smart girl reads a book","ko":"그 똑똑한 소녀는 책을 읽는다"}]}'
