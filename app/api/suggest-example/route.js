@@ -55,6 +55,7 @@ export async function POST(req) {
       noun_clause: '명사절',
       adj_clause: '형용사절',
       adv_clause: '부사절',
+      verb_phrase: '동사구',
     }
     const phraseLabel = phraseLabels[phraseType] || '구'
 
@@ -123,6 +124,34 @@ export async function POST(req) {
       } else {
         exampleJson =
           '{"examples":[{"en":"when she studies English","ko":"그녀가 영어를 공부할 때"},{"en":"when he reads the book","ko":"그가 그 책을 읽을 때"},{"en":"when the smart girl studies the interesting book hard","ko":"그 똑똑한 소녀가 그 재미있는 책을 열심히 공부할 때"}]}'
+      }
+    } else if (phraseType === 'verb_phrase') {
+      const formLabels = {
+        sv: '1형식(주어+자동사+부사)',
+        svc: '2형식(주어+be동사+보어)',
+        svo: '3형식(주어+타동사+목적어)',
+        svoo: '4형식(주어+타동사+간접목적어+직접목적어)',
+        svoc: '5형식(주어+타동사+목적어+목적격보어)',
+      }
+      extraHint = (formLabels[phraseSubtype] || '동사구') + ' 문장 예시입니다. '
+      if (phraseSubtype === 'sv') {
+        exampleJson =
+          '{"examples":[{"en":"He runs","ko":"그는 달린다"},{"en":"She sleeps well","ko":"그녀는 잘 잔다"},{"en":"The smart girl runs fast","ko":"그 똑똑한 소녀는 빨리 달린다"}]}'
+      } else if (phraseSubtype === 'svc') {
+        exampleJson =
+          '{"examples":[{"en":"She is smart","ko":"그녀는 똑똑하다"},{"en":"He is a doctor","ko":"그는 의사이다"},{"en":"The girl is very pretty","ko":"그 소녀는 아주 예쁘다"}]}'
+      } else if (phraseSubtype === 'svo') {
+        exampleJson =
+          '{"examples":[{"en":"I love her","ko":"나는 그녀를 사랑한다"},{"en":"She studies English","ko":"그녀는 영어를 공부한다"},{"en":"The smart girl reads a book","ko":"그 똑똑한 소녀는 책을 읽는다"}]}'
+      } else if (phraseSubtype === 'svoo') {
+        exampleJson =
+          '{"examples":[{"en":"I gave him a book","ko":"나는 그에게 책을 주었다"},{"en":"She told me the truth","ko":"그녀는 나에게 진실을 말했다"},{"en":"He made his mother a cake","ko":"그는 어머니께 케이크를 만들어 드렸다"}]}'
+      } else if (phraseSubtype === 'svoc') {
+        exampleJson =
+          '{"examples":[{"en":"I made her happy","ko":"나는 그녀를 행복하게 만들었다"},{"en":"She calls me a genius","ko":"그녀는 나를 천재라고 부른다"},{"en":"He found the movie interesting","ko":"그는 그 영화가 재미있다고 생각했다"}]}'
+      } else {
+        exampleJson =
+          '{"examples":[{"en":"He runs","ko":"그는 달린다"},{"en":"She is smart","ko":"그녀는 똑똑하다"},{"en":"I love her","ko":"나는 그녀를 사랑한다"}]}'
       }
     }
 
