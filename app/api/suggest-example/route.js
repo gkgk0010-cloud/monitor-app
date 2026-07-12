@@ -52,6 +52,7 @@ export async function POST(req) {
       prep_phrase: '전치사구',
       infinitive_phrase: 'to부정사구',
       participle_phrase: '분사구',
+      gerund_phrase: '동명사구',
       noun_clause: '명사절',
       adj_clause: '형용사절',
       adv_clause: '부사절',
@@ -76,6 +77,11 @@ export async function POST(req) {
         exampleJson =
           '{"examples":[{"en":"to study English","ko":"영어를 공부하기"},{"en":"to read the book","ko":"그 책을 읽기"},{"en":"to write English hard","ko":"영어를 열심히 쓰기"}]}'
       }
+    } else if (phraseType === 'gerund_phrase') {
+      extraHint =
+        '동명사구(V-ing) 예시입니다. V-ing가 명사 역할(주어·목적어)을 합니다. 한국어 뜻도 동명사(~하는 것, ~하기)로 써 주세요. '
+      exampleJson =
+        '{"examples":[{"en":"studying hard","ko":"열심히 공부하는 것"},{"en":"reading books","ko":"책 읽기"},{"en":"studying English","ko":"영어 공부하기"}]}'
     } else if (phraseType === 'participle_phrase') {
       if (phraseSubtype === 'passive') {
         extraHint = '수동분사구(V-ed) 예시입니다. '
